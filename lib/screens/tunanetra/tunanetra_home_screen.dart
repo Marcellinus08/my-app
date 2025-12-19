@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../utils/constants.dart';
-import '../../services/tts_service.dart';
-import '../../services/stt_service.dart';
 
 class TunaNetraHomeScreen extends StatefulWidget {
   const TunaNetraHomeScreen({super.key});
@@ -13,8 +11,6 @@ class TunaNetraHomeScreen extends StatefulWidget {
 
 class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> 
     with TickerProviderStateMixin {
-  final TtsService _ttsService = TtsService();
-  final SttService _sttService = SttService();
   bool _isBluetoothConnected = false;
   bool _isListening = false;
   
@@ -26,7 +22,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   void initState() {
     super.initState();
     _initializeAnimations();
-    _initializeServices();
   }
 
   void _initializeAnimations() {
@@ -47,65 +42,24 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _fadeController.forward();
   }
 
-  Future<void> _initializeServices() async {
-    await _ttsService.initialize();
-    await _sttService.initialize();
-    
-    _ttsService.speak(
-      'Selamat datang di beranda. Anda memiliki empat pilihan menu'
-    );
-  }
-
   void _startVoiceAssistant() async {
-    if (_isListening) {
-      await _sttService.stopListening();
-      setState(() => _isListening = false);
-      _ttsService.speak('Asisten suara berhenti mendengarkan');
-    } else {
-      setState(() => _isListening = true);
-      _ttsService.speak('Asisten suara aktif. Silakan bicara');
-      
-      await _sttService.startListening(
-        onResult: (text) {
-          _handleVoiceCommand(text);
-          setState(() => _isListening = false);
-        },
-      );
-    }
-  }
-
-  void _handleVoiceCommand(String command) {
-    String lowerCommand = command.toLowerCase();
-    _ttsService.speak('Anda berkata: $command');
-    
-    if (lowerCommand.contains('navigasi') || lowerCommand.contains('peta')) {
-      _navigateToNavigation();
-    } else if (lowerCommand.contains('bluetooth') || lowerCommand.contains('tongkat')) {
-      _navigateToBluetooth();
-    } else if (lowerCommand.contains('pengaturan') || lowerCommand.contains('setting')) {
-      _navigateToSettings();
-    } else {
-      _ttsService.speak('Maaf, perintah tidak dikenali. Coba lagi.');
-    }
+    setState(() => _isListening = !_isListening);
+    // Voice assistant functionality disabled
   }
 
   void _navigateToNavigation() {
-    _ttsService.speak('Membuka halaman navigasi');
     Navigator.pushNamed(context, AppRoutes.tunaNetraNavigation);
   }
 
   void _navigateToBluetooth() {
-    _ttsService.speak('Membuka halaman bluetooth');
     Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
   }
 
   void _navigateToSettings() {
-    _ttsService.speak('Membuka pengaturan');
     Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
   }
 
   void _triggerEmergency() {
-    _ttsService.speak('Tombol darurat ditekan');
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -146,7 +100,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
               ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  _ttsService.speak('Batal panggilan darurat');
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.white,
@@ -356,14 +309,14 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                             title: 'Navigasi',
                             gradient: AppColors.primaryGradient,
                             onTap: _navigateToNavigation,
-                            onHover: () => _ttsService.announceButton('Navigasi'),
+                            onHover: () {},
                           ),
                           _ModernMenuCard(
                             icon: Icons.bluetooth_rounded,
                             title: 'Bluetooth',
                             gradient: AppColors.successGradient,
                             onTap: _navigateToBluetooth,
-                            onHover: () => _ttsService.announceButton('Bluetooth'),
+                            onHover: () {},
                           ),
                           _ModernMenuCard(
                             icon: _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
@@ -372,7 +325,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                               colors: [Color(0xFF2196F3), Color(0xFF03A9F4)],
                             ),
                             onTap: _startVoiceAssistant,
-                            onHover: () => _ttsService.announceButton('Asisten'),
+                            onHover: () {},
                           ),
                           _ModernMenuCard(
                             icon: Icons.settings_rounded,
@@ -381,7 +334,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                               colors: [Color(0xFF64748B), Color(0xFF475569)],
                             ),
                             onTap: _navigateToSettings,
-                            onHover: () => _ttsService.announceButton('Pengaturan'),
+                            onHover: () {},
                           ),
                         ],
                       ),
@@ -390,7 +343,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                       
                       _EmergencyButton(
                         onTap: _triggerEmergency,
-                        onHover: () => _ttsService.announceButton('Darurat'),
+                        onHover: () {},
                       ),
                     ],
                   ),
@@ -405,7 +358,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   void dispose() {
     _fadeController.dispose();
     _rotationController.dispose();
-    _sttService.dispose();
     super.dispose();
   }
 }

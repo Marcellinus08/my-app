@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
-import '../../services/tts_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,7 +12,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final TtsService _ttsService = TtsService();
   
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -24,13 +22,6 @@ class _LoginScreenState extends State<LoginScreen> {
     super.didChangeDependencies();
     // Get user type from navigation arguments
     _userType = ModalRoute.of(context)?.settings.arguments as UserType?;
-    
-    if (_userType != null) {
-      String roleText = _userType == UserType.tunanetra 
-          ? 'Pengguna Tunanetra' 
-          : 'Keluarga';
-      _ttsService.speak('Halaman login $roleText. Masukkan email dan kata sandi Anda');
-    }
   }
 
   @override
@@ -44,8 +35,6 @@ class _LoginScreenState extends State<LoginScreen> {
     // Simplified login - bypass authentication untuk frontend development
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      
-      _ttsService.speak('Login berhasil. Selamat datang');
 
       // Simulate loading
       await Future.delayed(const Duration(milliseconds: 500));
@@ -93,7 +82,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         icon: const Icon(Icons.arrow_back_rounded, size: 28),
                         color: Colors.white,
                         onPressed: () {
-                          _ttsService.speak('Kembali');
                           Navigator.pop(context);
                         },
                       ),
@@ -247,7 +235,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 // Register Link
                                 TextButton(
                                   onPressed: () {
-                                    _ttsService.speak('Daftar akun baru');
                                     Navigator.pushNamed(
                                       context,
                                       AppRoutes.register,
@@ -343,12 +330,10 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
         validator: (value) {
           if (value == null || value.isEmpty) {
-            _ttsService.speak('$label harus diisi');
             return '$label harus diisi';
           }
           return null;
         },
-        onTap: () => _ttsService.speak('Kolom $label'),
       ),
     );
   }

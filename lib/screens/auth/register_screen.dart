@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
-import '../../services/tts_service.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -15,7 +14,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
-  final TtsService _ttsService = TtsService();
   
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -25,13 +23,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _userType = ModalRoute.of(context)?.settings.arguments as UserType?;
-    
-    if (_userType != null) {
-      String roleText = _userType == UserType.tunanetra 
-          ? 'Pengguna Tunanetra' 
-          : 'Keluarga';
-      _ttsService.speak('Halaman pendaftaran $roleText');
-    }
   }
 
   @override
@@ -46,8 +37,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _handleRegister() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
-      
-      _ttsService.speak('Pendaftaran berhasil. Silakan login');
 
       await Future.delayed(const Duration(milliseconds: 500));
 
@@ -90,7 +79,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         icon: const Icon(Icons.arrow_back_rounded, size: 28),
                         color: Colors.white,
                         onPressed: () {
-                          _ttsService.speak('Kembali');
                           Navigator.pop(context);
                         },
                       ),
@@ -261,7 +249,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 // Login Link
                                 TextButton(
                                   onPressed: () {
-                                    _ttsService.speak('Kembali ke halaman login');
                                     Navigator.pop(context);
                                   },
                                   child: Text.rich(
@@ -353,12 +340,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ),
         validator: (value) {
           if (value == null || value.isEmpty) {
-            _ttsService.speak('$label harus diisi');
             return '$label harus diisi';
           }
           return null;
         },
-        onTap: () => _ttsService.speak('Kolom $label'),
       ),
     );
   }
