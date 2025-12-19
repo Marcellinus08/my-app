@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import '../../utils/constants.dart';
 import '../../services/tts_service.dart';
 import '../../services/stt_service.dart';
@@ -10,16 +11,40 @@ class TunaNetraHomeScreen extends StatefulWidget {
   State<TunaNetraHomeScreen> createState() => _TunaNetraHomeScreenState();
 }
 
-class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> {
+class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> 
+    with TickerProviderStateMixin {
   final TtsService _ttsService = TtsService();
   final SttService _sttService = SttService();
   bool _isBluetoothConnected = false;
   bool _isListening = false;
+  
+  late AnimationController _fadeController;
+  late AnimationController _rotationController;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
     _initializeServices();
+  }
+
+  void _initializeAnimations() {
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+
+    _rotationController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 25),
+    )..repeat();
+
+    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
+    );
+
+    _fadeController.forward();
   }
 
   Future<void> _initializeServices() async {
@@ -88,7 +113,11 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> {
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-            gradient: AppColors.accentGradient,
+            gradient: LinearGradient(
+              colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
             borderRadius: BorderRadius.circular(24),
           ),
           child: Column(
@@ -148,7 +177,53 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> {
             end: Alignment.bottomCenter,
           ),
         ),
-        child: SafeArea(
+        child: Stack(
+          children: [
+            // Animated rotating circles background
+            ...List.generate(4, (index) {
+              return AnimatedBuilder(
+                animation: _rotationController,
+                builder: (context, child) {
+                  final angle = _rotationController.value * 2 * math.pi + (index * math.pi / 2);
+                  final size = 120.0 + (index * 40);
+                  final distance = 150.0 + (index * 30);
+                  
+                  return Positioned(
+                    left: MediaQuery.of(context).size.width / 2 + 
+                          math.cos(angle) * distance - size / 2,
+                    top: MediaQuery.of(context).size.height / 3 + 
+                         math.sin(angle) * distance - size / 2,
+                    child: Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: RadialGradient(
+                          colors: [
+                            AppColors.primaryLight.withOpacity(0.06),
+                            Colors.transparent,
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              );
+            }),
+            
+            // Main content with fade animation
+            FadeTransition(
+              opacity: _fadeAnimation,
+              child: _buildMainContent(),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMainContent() {
+    return SafeArea(
           child: Column(
             children: [
               // Elegant AppBar with glassmorphism
@@ -294,7 +369,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> {
                             icon: _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
                             title: 'Asisten',
                             gradient: _isListening ? AppColors.accentGradient : const LinearGradient(
-                              colors: [Color(0xFF8B5CF6), Color(0xFFEC4899)],
+                              colors: [Color(0xFF2196F3), Color(0xFF03A9F4)],
                             ),
                             onTap: _startVoiceAssistant,
                             onHover: () => _ttsService.announceButton('Asisten'),
@@ -323,13 +398,13 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> {
               ),
             ],
           ),
-        ),
-      ),
-    );
+        );
   }
 
   @override
   void dispose() {
+    _fadeController.dispose();
+    _rotationController.dispose();
     _sttService.dispose();
     super.dispose();
   }

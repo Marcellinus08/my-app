@@ -8,14 +8,14 @@ class AppConstants {
 
 // Colors - Elegant & Sophisticated
 class AppColors {
-  // Primary gradient colors - Deep Purple/Blue
-  static const Color primary = Color(0xFF667EEA); // Elegant Purple-Blue
-  static const Color primaryLight = Color(0xFF7C8FF5);
-  static const Color primaryDark = Color(0xFF5A67D8);
+  // Primary gradient colors - Blue
+  static const Color primary = Color(0xFF1E88E5); // Elegant Blue
+  static const Color primaryLight = Color(0xFF42A5F5);
+  static const Color primaryDark = Color(0xFF1565C0);
   
-  static const Color accent = Color(0xFFFF6B9D); // Rose Pink
-  static const Color accentLight = Color(0xFFFF8DB5);
-  static const Color accentDark = Color(0xFFE54E82);
+  static const Color accent = Color(0xFF29B6F6); // Light Blue
+  static const Color accentLight = Color(0xFF4FC3F7);
+  static const Color accentDark = Color(0xFF039BE5);
   
   // Secondary colors
   static const Color secondary = Color(0xFF00C9A7); // Teal
@@ -47,13 +47,13 @@ class AppColors {
   
   // Gradient definitions - Sophisticated multi-color gradients
   static const LinearGradient primaryGradient = LinearGradient(
-    colors: [Color(0xFF667EEA), Color(0xFF764BA2)],
+    colors: [Color(0xFF1E88E5), Color(0xFF1565C0)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
   
   static const LinearGradient accentGradient = LinearGradient(
-    colors: [Color(0xFFFF6B9D), Color(0xFFFEC163)],
+    colors: [Color(0xFF29B6F6), Color(0xFF42A5F5)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -65,7 +65,7 @@ class AppColors {
   );
   
   static const LinearGradient elegantGradient = LinearGradient(
-    colors: [Color(0xFF4A00E0), Color(0xFF8E2DE2), Color(0xFFDA22FF)],
+    colors: [Color(0xFF0D47A1), Color(0xFF1976D2), Color(0xFF42A5F5)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

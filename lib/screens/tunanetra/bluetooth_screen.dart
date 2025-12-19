@@ -174,7 +174,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
               ),
               
               Expanded(
-                child: Padding(
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.all(20.0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -244,9 +244,11 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            const Text(
-                              'Hubungkan Otomatis',
-                              style: AppTextStyles.bodyLarge,
+                            const Expanded(
+                              child: Text(
+                                'Hubungkan Otomatis',
+                                style: AppTextStyles.bodyLarge,
+                              ),
                             ),
                           ],
                         ),
@@ -311,9 +313,11 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                               ),
                             ),
                             const SizedBox(width: 12),
-                            const Text(
-                              'Getar saat Halangan',
-                              style: AppTextStyles.bodyLarge,
+                            const Expanded(
+                              child: Text(
+                                'Getar saat Halangan',
+                                style: AppTextStyles.bodyLarge,
+                              ),
                             ),
                           ],
                         ),
