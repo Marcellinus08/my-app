@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../utils/constants.dart';
-import '../../services/tts_service.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
   const RoleSelectionScreen({super.key});
@@ -12,7 +11,6 @@ class RoleSelectionScreen extends StatefulWidget {
 
 class _RoleSelectionScreenState extends State<RoleSelectionScreen> 
     with TickerProviderStateMixin {
-  final TtsService _ttsService = TtsService();
   late AnimationController _fadeController;
   late AnimationController _slideController;
   late AnimationController _rotationController;
@@ -25,7 +23,6 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
   void initState() {
     super.initState();
     _initializeAnimations();
-    _initializeTts();
   }
 
   void _initializeAnimations() {
@@ -63,21 +60,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
     _slideController.forward();
   }
 
-  Future<void> _initializeTts() async {
-    await _ttsService.initialize();
-    // Announce screen untuk user tunanetra
-    await _ttsService.speak(
-      'Selamat datang di ${AppConstants.appName}. Pilih peran Anda: Pengguna Tunanetra atau Keluarga'
-    );
-  }
-
   void _selectRole(UserType userType) {
-    if (userType == UserType.tunanetra) {
-      _ttsService.speak('Anda memilih sebagai Pengguna Tunanetra');
-    } else {
-      _ttsService.speak('Anda memilih sebagai Keluarga');
-    }
-    
     // Navigate to login with selected role
     Navigator.pushNamed(
       context,
@@ -254,7 +237,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
                               subtitle: 'Saya adalah pengguna tongkat pintar',
                               gradient: AppColors.primaryGradient,
                               onTap: () => _selectRole(UserType.tunanetra),
-                              onHover: () => _ttsService.announceButton('Pengguna Tunanetra'),
+                              onHover: () {},
                             ),
                             const SizedBox(height: 20),
                             
@@ -264,7 +247,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen>
                               subtitle: 'Saya ingin memonitor keluarga saya',
                               gradient: AppColors.accentGradient,
                               onTap: () => _selectRole(UserType.family),
-                              onHover: () => _ttsService.announceButton('Keluarga'),
+                              onHover: () {},
                             ),
                           ],
                         ),

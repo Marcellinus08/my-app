@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
-import '../../services/tts_service.dart';
 
 class FamilyHomeScreen extends StatefulWidget {
   const FamilyHomeScreen({super.key});
@@ -10,8 +9,6 @@ class FamilyHomeScreen extends StatefulWidget {
 }
 
 class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
-  final TtsService _ttsService = TtsService();
-  
   // Dummy data untuk contoh
   final List<Map<String, dynamic>> _connectedUsers = [
     {
@@ -26,17 +23,13 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
   @override
   void initState() {
     super.initState();
-    _ttsService.initialize();
-    _ttsService.speak('Beranda keluarga. Anda dapat melihat status pengguna yang Anda monitor');
   }
 
   void _viewMonitoring(Map<String, dynamic> user) {
-    _ttsService.speak('Membuka monitoring untuk ${user['name']}');
     Navigator.pushNamed(context, AppRoutes.familyMonitoring, arguments: user);
   }
 
   void _navigateToSettings() {
-    _ttsService.speak('Membuka pengaturan');
     Navigator.pushNamed(context, AppRoutes.familySettings);
   }
 
@@ -122,44 +115,49 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 20),
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Container(
-                          padding: const EdgeInsets.all(18),
+                          width: 70,
+                          height: 70,
                           decoration: BoxDecoration(
                             gradient: AppColors.accentGradient,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: const Icon(
                             Icons.family_restroom_rounded,
-                            size: 42,
+                            size: 40,
                             color: Colors.white,
                           ),
                         ),
-                        const SizedBox(width: 20),
+                        const SizedBox(width: 16),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
                                 'Monitor Keluarga',
                                 style: AppTextStyles.heading2.copyWith(
-                                  fontSize: 20,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.w600,
+                                  height: 1.2,
                                 ),
                               ),
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                                 decoration: BoxDecoration(
                                   gradient: AppColors.accentGradient,
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
                                   '${_connectedUsers.length} Pengguna Terhubung',
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: Colors.white,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -203,7 +201,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
                   ),
                   child: ElevatedButton(
                     onPressed: () {
-                      _ttsService.speak('Tambah pengguna baru');
                       _showAddUserDialog();
                     },
                     style: ElevatedButton.styleFrom(
@@ -608,7 +605,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              _ttsService.speak('Pengguna berhasil ditambahkan');
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Pengguna berhasil ditambahkan')),
               );

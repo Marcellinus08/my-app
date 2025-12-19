@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
-import '../../services/tts_service.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -10,14 +9,6 @@ class NavigationScreen extends StatefulWidget {
 }
 
 class _NavigationScreenState extends State<NavigationScreen> {
-  final TtsService _ttsService = TtsService();
-
-  @override
-  void initState() {
-    super.initState();
-    _ttsService.speak('Halaman navigasi. Fitur ini akan segera tersedia');
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -73,7 +64,6 @@ class _NavigationScreenState extends State<NavigationScreen> {
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                         onPressed: () {
-                          _ttsService.speak('Kembali');
                           Navigator.pop(context);
                         },
                       ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
-import '../../services/tts_service.dart';
 
 class TunaNetraSettingsScreen extends StatefulWidget {
   const TunaNetraSettingsScreen({super.key});
@@ -10,16 +9,9 @@ class TunaNetraSettingsScreen extends StatefulWidget {
 }
 
 class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
-  final TtsService _ttsService = TtsService();
   double _voiceSpeed = 0.5;
   bool _vibrateOnObstacle = true;
   bool _autoConnect = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _ttsService.speak('Halaman pengaturan');
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +73,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                         onPressed: () {
-                          _ttsService.speak('Kembali');
                           Navigator.pop(context);
                         },
                       ),
@@ -180,9 +171,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                               onChanged: (value) {
                                 setState(() => _voiceSpeed = value);
                               },
-                              onChangeEnd: (value) {
-                                _ttsService.speak('Kecepatan suara diatur ke ${(value * 100).round()} persen');
-                              },
                             ),
                           ),
                           Container(
@@ -264,9 +252,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                         value: _autoConnect,
                         onChanged: (value) {
                           setState(() => _autoConnect = value);
-                          _ttsService.speak(value 
-                              ? 'Hubungkan otomatis diaktifkan' 
-                              : 'Hubungkan otomatis dinonaktifkan');
                         },
                         activeColor: AppColors.success,
                       ),
@@ -333,9 +318,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                         value: _vibrateOnObstacle,
                         onChanged: (value) {
                           setState(() => _vibrateOnObstacle = value);
-                          _ttsService.speak(value 
-                              ? 'Getar saat halangan diaktifkan' 
-                              : 'Getar saat halangan dinonaktifkan');
                         },
                         activeColor: AppColors.accent,
                       ),
@@ -413,7 +395,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                           ),
                         ),
                         onTap: () {
-                          _ttsService.speak('Membuka kontak darurat');
                           // TODO: Navigate to emergency contacts screen
                         },
                       ),
@@ -473,9 +454,7 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                                 color: Colors.white,
                               ),
                             ),
-                            onTap: () {
-                              _ttsService.speak('Membuka profil');
-                            },
+                            onTap: () {},
                           ),
                           Divider(
                             height: 1,
@@ -522,7 +501,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                               ),
                             ),
                             onTap: () {
-                              _ttsService.speak('Keluar dari aplikasi');
                               _showLogoutDialog();
                             },
                           ),
@@ -588,7 +566,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              _ttsService.speak('Batal');
             },
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
@@ -619,7 +596,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                   AppRoutes.roleSelection,
                   (route) => false,
                 );
-                _ttsService.speak('Anda telah keluar');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.transparent,

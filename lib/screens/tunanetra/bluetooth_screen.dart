@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
-import '../../services/tts_service.dart';
 import '../../services/bluetooth_service.dart';
 
 class BluetoothScreen extends StatefulWidget {
@@ -11,7 +10,6 @@ class BluetoothScreen extends StatefulWidget {
 }
 
 class _BluetoothScreenState extends State<BluetoothScreen> {
-  final TtsService _ttsService = TtsService();
   final BluetoothService _bluetoothService = BluetoothService();
   bool _isScanning = false;
   bool _isConnected = false;
@@ -19,27 +17,23 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   @override
   void initState() {
     super.initState();
-    _ttsService.speak('Halaman Bluetooth. Hubungkan tongkat pintar Anda');
     
     // Listen to connection state
     _bluetoothService.connectionStateStream.listen((connected) {
       if (mounted) {
         setState(() => _isConnected = connected);
-        _ttsService.announceBluetoothStatus(connected);
       }
     });
   }
 
   Future<void> _scanDevices() async {
     setState(() => _isScanning = true);
-    _ttsService.speak('Memindai perangkat Bluetooth');
     
     // Simulate scanning
     await Future.delayed(const Duration(seconds: 3));
     
     if (mounted) {
       setState(() => _isScanning = false);
-      _ttsService.speak('Pemindaian selesai');
       
       _showDeviceDialog();
     }
@@ -75,19 +69,15 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   }
 
   void _connectDevice() async {
-    _ttsService.speak('Menghubungkan ke tongkat pintar');
-    
     // Simulate connection
     await Future.delayed(const Duration(seconds: 2));
     
     if (mounted) {
       setState(() => _isConnected = true);
-      _ttsService.speak('Berhasil terhubung ke tongkat pintar');
     }
   }
 
   void _disconnect() async {
-    _ttsService.speak('Memutuskan koneksi');
     await _bluetoothService.disconnect();
     
     if (mounted) {
@@ -150,7 +140,6 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                         onPressed: () {
-                          _ttsService.speak('Kembali');
                           Navigator.pop(context);
                         },
                       ),
