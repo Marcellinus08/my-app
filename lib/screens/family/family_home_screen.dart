@@ -145,8 +145,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
                               Text(
                                 'Monitor Keluarga',
                                 style: AppTextStyles.heading2.copyWith(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                               const SizedBox(height: 6),
