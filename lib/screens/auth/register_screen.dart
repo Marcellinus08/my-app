@@ -227,25 +227,31 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   style: AppTextStyles.heading2.copyWith(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w800,
+                                    fontSize: 28,
                                   ),
                                 ),
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 8),
                                 Text(
-                                  'Pilih tipe akun untuk melanjutkan',
+                                  'Daftar sekarang dan nikmati pengalaman terbaik',
                                   style: AppTextStyles.bodyMedium.copyWith(
-                                    color: Colors.white.withOpacity(0.85),
-                                    fontSize: 14,
+                                    color: Colors.white.withOpacity(0.9),
+                                    fontSize: 15,
+                                    height: 1.4,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 28),
                           Container(
                             margin: const EdgeInsets.symmetric(horizontal: 16),
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
+                              color: Colors.white.withOpacity(0.15),
                               borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.2),
+                                width: 1.5,
+                              ),
                             ),
                             child: TabBar(
                               controller: _tabController,
@@ -254,20 +260,30 @@ class _RegisterScreenState extends State<RegisterScreen>
                               indicator: BoxDecoration(
                                 borderRadius: BorderRadius.circular(12),
                                 color: Colors.white,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.1),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
                               ),
                               indicatorSize: TabBarIndicatorSize.tab,
                               labelColor: AppColors.primary,
                               unselectedLabelColor: Colors.white,
                               labelStyle: AppTextStyles.bodyLarge.copyWith(
                                 fontWeight: FontWeight.w700,
+                                fontSize: 14,
                               ),
-                              unselectedLabelStyle: AppTextStyles.bodyMedium,
+                              unselectedLabelStyle: AppTextStyles.bodyMedium.copyWith(
+                                fontSize: 14,
+                              ),
                               tabs: [
                                 Tab(
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Icon(Icons.person_rounded, size: 20),
+                                      const Icon(Icons.person_rounded, size: 22),
                                       const SizedBox(width: 8),
                                       const Text('Pengguna'),
                                     ],
@@ -277,7 +293,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                                   child: Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Icon(Icons.family_restroom_rounded, size: 20),
+                                      const Icon(Icons.family_restroom_rounded, size: 22),
                                       const SizedBox(width: 8),
                                       const Text('Keluarga'),
                                     ],
@@ -286,7 +302,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 24),
+                          const SizedBox(height: 28),
                           SizedBox(
                             height: 550,
                             child: TabBarView(
@@ -320,21 +336,35 @@ class _RegisterScreenState extends State<RegisterScreen>
           children: [
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(26),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 16,
-                    offset: const Offset(0, 8),
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF0D47A1).withOpacity(0.1),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Text(
+                    'Data Pengguna',
+                    style: AppTextStyles.heading3.copyWith(
+                      color: const Color(0xFF0D47A1),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
                   ModernTextField(
                     controller: _userNameController,
                     label: 'Nama Lengkap',
@@ -342,7 +372,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input nama lengkap',
                     validator: _validateFullName,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   ModernTextField(
                     controller: _userPhoneController,
                     label: 'Nomor Telepon Anda',
@@ -351,7 +381,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input nomor telepon anda',
                     validator: _validatePhoneNumber,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   ModernTextField(
                     controller: _familyPhoneController,
                     label: 'Nomor Telepon Keluarga',
@@ -360,7 +390,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input nomor telepon keluarga',
                     validator: _validatePhoneNumber,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   ModernTextField(
                     controller: _userUsernameController,
                     label: 'Username',
@@ -368,7 +398,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input username',
                     validator: _validateUsername,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   ModernTextField(
                     controller: _userPasswordController,
                     label: 'Password',
@@ -378,66 +408,90 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input password',
                     validator: _validatePassword,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 26),
                   _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : Container(
+                      ? Container(
+                          height: 54,
                           decoration: BoxDecoration(
                             gradient: AppColors.primaryGradient,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.4),
-                                blurRadius: 12,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          child: ElevatedButton(
-                            onPressed: _handleUserRegister,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                          child: const Center(
+                            child: SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             ),
-                            child: Text(
-                              'DAFTAR',
-                              style: AppTextStyles.button.copyWith(
-                                fontSize: 15,
+                          ),
+                        )
+                      : GestureDetector(
+                          onTap: _handleUserRegister,
+                          child: Container(
+                            height: 54,
+                            decoration: BoxDecoration(
+                              gradient: AppColors.primaryGradient,
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withOpacity(0.35),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: _handleUserRegister,
+                                borderRadius: BorderRadius.circular(14),
+                                child: Center(
+                                  child: Text(
+                                    'DAFTAR SEKARANG',
+                                    style: AppTextStyles.button.copyWith(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.8,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.pushReplacementNamed(
+                          context,
+                          AppRoutes.login,
+                          arguments: UserType.tunanetra,
+                        );
+                      },
+                      child: Text.rich(
+                        TextSpan(
+                          text: 'Sudah punya akun? ',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: 'Masuk di sini',
+                              style: TextStyle(
+                                color: AppColors.primary,
                                 fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
+                                fontSize: 14,
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pushReplacementNamed(
-                        context,
-                        AppRoutes.login,
-                        arguments: UserType.tunanetra,
-                      );
-                    },
-                    child: Text.rich(
-                      TextSpan(
-                        text: 'Sudah punya akun? ',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                        ),
-                        children: [
-                          TextSpan(
-                            text: 'Login',
-                            style: TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
                       ),
                     ),
                   ),
@@ -460,21 +514,35 @@ class _RegisterScreenState extends State<RegisterScreen>
           children: [
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(26),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 16,
-                    offset: const Offset(0, 8),
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, 12),
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF0D47A1).withOpacity(0.1),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Text(
+                    'Data Keluarga',
+                    style: AppTextStyles.heading3.copyWith(
+                      color: const Color(0xFF0D47A1),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
                   ModernTextField(
                     controller: _familyNameController,
                     label: 'Nama Lengkap',
@@ -482,7 +550,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input nama lengkap',
                     validator: _validateFullName,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   ModernTextField(
                     controller: _familyPhoneNumberController,
                     label: 'Nomor Telepon',
@@ -491,7 +559,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input nomor telepon',
                     validator: _validatePhoneNumber,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   ModernTextField(
                     controller: _familyUsernameController,
                     label: 'Username',
@@ -499,7 +567,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input username',
                     validator: _validateUsername,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   ModernTextField(
                     controller: _familyPasswordController,
                     label: 'Password',
@@ -509,66 +577,90 @@ class _RegisterScreenState extends State<RegisterScreen>
                     semanticLabel: 'Kolom input password',
                     validator: _validatePassword,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 26),
                   _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : Container(
+                      ? Container(
+                          height: 54,
                           decoration: BoxDecoration(
-                            gradient: AppColors.accentGradient,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accent.withOpacity(0.4),
-                                blurRadius: 12,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
+                            gradient: AppColors.primaryGradient,
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          child: ElevatedButton(
-                            onPressed: _handleFamilyRegister,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
+                          child: const Center(
+                            child: SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             ),
-                            child: Text(
-                              'DAFTAR',
-                              style: AppTextStyles.button.copyWith(
-                                fontSize: 15,
+                          ),
+                        )
+                      : GestureDetector(
+                          onTap: _handleFamilyRegister,
+                          child: Container(
+                            height: 54,
+                            decoration: BoxDecoration(
+                              gradient: AppColors.primaryGradient,
+                              borderRadius: BorderRadius.circular(14),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withOpacity(0.35),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: _handleFamilyRegister,
+                                borderRadius: BorderRadius.circular(14),
+                                child: Center(
+                                  child: Text(
+                                    'DAFTAR SEKARANG',
+                                    style: AppTextStyles.button.copyWith(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.8,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                  const SizedBox(height: 16),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.pushReplacementNamed(
+                          context,
+                          AppRoutes.login,
+                          arguments: UserType.family,
+                        );
+                      },
+                      child: Text.rich(
+                        TextSpan(
+                          text: 'Sudah punya akun? ',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                          ),
+                          children: [
+                            TextSpan(
+                              text: 'Masuk di sini',
+                              style: TextStyle(
+                                color: AppColors.primary,
                                 fontWeight: FontWeight.w700,
-                                letterSpacing: 0.5,
+                                fontSize: 14,
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pushReplacementNamed(
-                        context,
-                        AppRoutes.login,
-                        arguments: UserType.family,
-                      );
-                    },
-                    child: Text.rich(
-                      TextSpan(
-                        text: 'Sudah punya akun? ',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                        ),
-                        children: [
-                          TextSpan(
-                            text: 'Login',
-                            style: TextStyle(
-                              color: AppColors.accent,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
                       ),
                     ),
                   ),

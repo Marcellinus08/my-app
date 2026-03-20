@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'utils/constants.dart';
 import 'screens/auth/splash_screen.dart';
-import 'screens/auth/role_selection_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/tunanetra/tunanetra_home_screen.dart';
@@ -59,7 +58,6 @@ class MyApp extends StatelessWidget {
         initialRoute: AppRoutes.splash,
         routes: {
           AppRoutes.splash: (context) => const SplashScreen(),
-          AppRoutes.roleSelection: (context) => const RoleSelectionScreen(),
           AppRoutes.login: (context) => const LoginScreen(),
           AppRoutes.register: (context) => const RegisterScreen(),
           

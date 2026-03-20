@@ -593,7 +593,7 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                 Navigator.pop(context);
                 Navigator.pushNamedAndRemoveUntil(
                   context,
-                  AppRoutes.roleSelection,
+                  AppRoutes.login,
                   (route) => false,
                 );
               },
