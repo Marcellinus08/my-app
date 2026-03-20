@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
+import '../../models/register_model.dart';
+import '../../widgets/modern_text_field.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -8,274 +10,295 @@ class RegisterScreen extends StatefulWidget {
   State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _phoneController = TextEditingController();
-  
+class _RegisterScreenState extends State<RegisterScreen>
+    with TickerProviderStateMixin {
+  late TabController _tabController;
+
+  // Form keys
+  final _userFormKey = GlobalKey<FormState>();
+  final _familyFormKey = GlobalKey<FormState>();
+
+  // User Form Controllers
+  final _userNameController = TextEditingController();
+  final _userPhoneController = TextEditingController();
+  final _familyPhoneController = TextEditingController();
+  final _userUsernameController = TextEditingController();
+  final _userPasswordController = TextEditingController();
+
+  // Family Form Controllers
+  final _familyNameController = TextEditingController();
+  final _familyPhoneNumberController = TextEditingController();
+  final _familyUsernameController = TextEditingController();
+  final _familyPasswordController = TextEditingController();
+
   bool _isLoading = false;
-  bool _obscurePassword = true;
-  UserType? _userType;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _userType = ModalRoute.of(context)?.settings.arguments as UserType?;
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
-    _phoneController.dispose();
+    _tabController.dispose();
+    _userNameController.dispose();
+    _userPhoneController.dispose();
+    _familyPhoneController.dispose();
+    _userUsernameController.dispose();
+    _userPasswordController.dispose();
+    _familyNameController.dispose();
+    _familyPhoneNumberController.dispose();
+    _familyUsernameController.dispose();
+    _familyPasswordController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleRegister() async {
-    if (_formKey.currentState!.validate()) {
+  String? _validatePhoneNumber(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Nomor telepon harus diisi';
+    }
+    if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
+      return 'Nomor telepon hanya boleh berisi angka';
+    }
+    if (value.length < 10) {
+      return 'Nomor telepon minimal 10 digit';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Password harus diisi';
+    }
+    if (value.length < 6) {
+      return 'Password minimal 6 karakter';
+    }
+    return null;
+  }
+
+  String? _validateUsername(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Username harus diisi';
+    }
+    if (value.length < 3) {
+      return 'Username minimal 3 karakter';
+    }
+    return null;
+  }
+
+  String? _validateFullName(String? value) {
+    if (value == null || value.isEmpty) {
+      return 'Nama lengkap harus diisi';
+    }
+    return null;
+  }
+
+  Future<void> _handleUserRegister() async {
+    if (_userFormKey.currentState!.validate()) {
       setState(() => _isLoading = true);
 
-      await Future.delayed(const Duration(milliseconds: 500));
+      try {
+        final _registerData = RegisterUserModel(
+          fullName: _userNameController.text,
+          phoneNumber: _userPhoneController.text,
+          familyPhoneNumber: _familyPhoneController.text,
+          username: _userUsernameController.text,
+          password: _userPasswordController.text,
+        );
 
-      if (!mounted) return;
-      
-      setState(() => _isLoading = false);
-      
-      // Kembali ke login screen
-      Navigator.pop(context);
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pendaftaran berhasil!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        await Future.delayed(const Duration(seconds: 1));
+        if (mounted) {
+          Navigator.pushReplacementNamed(
+            context,
+            AppRoutes.login,
+            arguments: UserType.tunanetra,
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
+    }
+  }
+
+  Future<void> _handleFamilyRegister() async {
+    if (_familyFormKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
+
+      try {
+        final _registerData = RegisterFamilyModel(
+          fullName: _familyNameController.text,
+          phoneNumber: _familyPhoneNumberController.text,
+          username: _familyUsernameController.text,
+          password: _familyPasswordController.text,
+        );
+
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Pendaftaran berhasil!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        await Future.delayed(const Duration(seconds: 1));
+        if (mounted) {
+          Navigator.pushReplacementNamed(
+            context,
+            AppRoutes.login,
+            arguments: UserType.family,
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    String title = _userType == UserType.tunanetra 
-        ? 'Daftar Pengguna' 
-        : 'Daftar Keluarga';
-
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
-          gradient: _userType == UserType.tunanetra
-              ? AppColors.primaryGradient
-              : AppColors.accentGradient,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0D47A1), Color(0xFF1976D2)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
         ),
         child: SafeArea(
           child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Modern AppBar
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Row(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded, size: 28),
-                        color: Colors.white,
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      title,
-                      style: AppTextStyles.heading3.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              Expanded(
+              Flexible(
                 child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 10),
-                        
-                        // Icon Container
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                          child: Icon(
-                            _userType == UserType.tunanetra 
-                                ? Icons.person_add_rounded 
-                                : Icons.family_restroom_rounded,
-                            size: 70,
-                            color: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        
-                        // Title
-                        Text(
-                          'Buat Akun Baru',
-                          style: AppTextStyles.heading1.copyWith(
-                            color: Colors.white,
-                            fontSize: 32,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Daftarkan diri Anda',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 16,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: 30),
-                        
-                        // Register Card
-                        Container(
-                          padding: const EdgeInsets.all(28),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(30),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
-                              ),
-                            ],
-                          ),
-                          child: Form(
-                            key: _formKey,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 500),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildModernTextField(
-                                  controller: _nameController,
-                                  label: 'Nama Lengkap',
-                                  icon: Icons.person_rounded,
-                                  semanticLabel: 'Kolom input nama lengkap',
-                                ),
-                                const SizedBox(height: 16),
-                                
-                                _buildModernTextField(
-                                  controller: _emailController,
-                                  label: 'Email',
-                                  icon: Icons.email_rounded,
-                                  keyboardType: TextInputType.emailAddress,
-                                  semanticLabel: 'Kolom input email',
-                                ),
-                                const SizedBox(height: 16),
-                                
-                                _buildModernTextField(
-                                  controller: _phoneController,
-                                  label: 'Nomor Telepon',
-                                  icon: Icons.phone_rounded,
-                                  keyboardType: TextInputType.phone,
-                                  semanticLabel: 'Kolom input nomor telepon',
-                                ),
-                                const SizedBox(height: 16),
-                                
-                                _buildModernTextField(
-                                  controller: _passwordController,
-                                  label: 'Password',
-                                  icon: Icons.lock_rounded,
-                                  obscureText: _obscurePassword,
-                                  semanticLabel: 'Kolom input password',
-                                  suffixIcon: IconButton(
-                                    icon: Icon(
-                                      _obscurePassword
-                                          ? Icons.visibility_off_rounded
-                                          : Icons.visibility_rounded,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _obscurePassword = !_obscurePassword;
-                                      });
-                                    },
+                                Text(
+                                  'Buat Akun Baru',
+                                  style: AppTextStyles.heading2.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
                                   ),
                                 ),
-                                const SizedBox(height: 30),
-                                
-                                // Register Button
-                                _isLoading
-                                    ? const Center(child: CircularProgressIndicator())
-                                    : Container(
-                                        decoration: BoxDecoration(
-                                          gradient: _userType == UserType.tunanetra
-                                              ? AppColors.primaryGradient
-                                              : AppColors.accentGradient,
-                                          borderRadius: BorderRadius.circular(16),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: (_userType == UserType.tunanetra
-                                                      ? AppColors.primary
-                                                      : AppColors.accent)
-                                                  .withOpacity(0.4),
-                                              blurRadius: 12,
-                                              offset: const Offset(0, 6),
-                                            ),
-                                          ],
-                                        ),
-                                        child: ElevatedButton(
-                                          onPressed: _handleRegister,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.transparent,
-                                            shadowColor: Colors.transparent,
-                                            padding: const EdgeInsets.symmetric(vertical: 18),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius: BorderRadius.circular(16),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            'DAFTAR',
-                                            style: AppTextStyles.button.copyWith(
-                                              fontSize: 18,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                const SizedBox(height: 20),
-                                
-                                // Login Link
-                                TextButton(
-                                  onPressed: () {
-                                    Navigator.pop(context);
-                                  },
-                                  child: Text.rich(
-                                    TextSpan(
-                                      text: 'Sudah punya akun? ',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: AppColors.textSecondary,
-                                      ),
-                                      children: [
-                                        TextSpan(
-                                          text: 'Login',
-                                          style: TextStyle(
-                                            color: _userType == UserType.tunanetra
-                                                ? AppColors.primary
-                                                : AppColors.accent,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Pilih tipe akun untuk melanjutkan',
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    color: Colors.white.withOpacity(0.85),
+                                    fontSize: 14,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 20),
+                          Container(
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: TabBar(
+                              controller: _tabController,
+                              dividerColor: Colors.transparent,
+                              dividerHeight: 0,
+                              indicator: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.white,
+                              ),
+                              indicatorSize: TabBarIndicatorSize.tab,
+                              labelColor: AppColors.primary,
+                              unselectedLabelColor: Colors.white,
+                              labelStyle: AppTextStyles.bodyLarge.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                              unselectedLabelStyle: AppTextStyles.bodyMedium,
+                              tabs: [
+                                Tab(
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.person_rounded, size: 20),
+                                      const SizedBox(width: 8),
+                                      const Text('Pengguna'),
+                                    ],
+                                  ),
+                                ),
+                                Tab(
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.family_restroom_rounded, size: 20),
+                                      const SizedBox(width: 8),
+                                      const Text('Keluarga'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            height: 550,
+                            child: TabBarView(
+                              controller: _tabController,
+                              children: [
+                                _buildUserRegisterForm(),
+                                _buildFamilyRegisterForm(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -286,64 +309,274 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
     );
   }
-  
-  Widget _buildModernTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    TextInputType? keyboardType,
-    bool obscureText = false,
-    String? semanticLabel,
-    Widget? suffixIcon,
-  }) {
-    return Semantics(
-      label: semanticLabel ?? label,
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        obscureText: obscureText,
-        style: AppTextStyles.bodyMedium,
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: AppTextStyles.bodyMedium.copyWith(
-            color: AppColors.textSecondary,
-          ),
-          prefixIcon: Icon(icon, color: AppColors.primary),
-          suffixIcon: suffixIcon,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: BorderSide(
-              color: _userType == UserType.tunanetra
-                  ? AppColors.primary
-                  : AppColors.accent,
-              width: 2,
+
+  Widget _buildUserRegisterForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Form(
+        key: _userFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ModernTextField(
+                    controller: _userNameController,
+                    label: 'Nama Lengkap',
+                    icon: Icons.person_rounded,
+                    semanticLabel: 'Kolom input nama lengkap',
+                    validator: _validateFullName,
+                  ),
+                  const SizedBox(height: 12),
+                  ModernTextField(
+                    controller: _userPhoneController,
+                    label: 'Nomor Telepon Anda',
+                    icon: Icons.phone_rounded,
+                    keyboardType: TextInputType.phone,
+                    semanticLabel: 'Kolom input nomor telepon anda',
+                    validator: _validatePhoneNumber,
+                  ),
+                  const SizedBox(height: 12),
+                  ModernTextField(
+                    controller: _familyPhoneController,
+                    label: 'Nomor Telepon Keluarga',
+                    icon: Icons.phone_rounded,
+                    keyboardType: TextInputType.phone,
+                    semanticLabel: 'Kolom input nomor telepon keluarga',
+                    validator: _validatePhoneNumber,
+                  ),
+                  const SizedBox(height: 12),
+                  ModernTextField(
+                    controller: _userUsernameController,
+                    label: 'Username',
+                    icon: Icons.alternate_email_rounded,
+                    semanticLabel: 'Kolom input username',
+                    validator: _validateUsername,
+                  ),
+                  const SizedBox(height: 12),
+                  ModernTextField(
+                    controller: _userPasswordController,
+                    label: 'Password',
+                    icon: Icons.lock_rounded,
+                    obscureText: true,
+                    isPassword: true,
+                    semanticLabel: 'Kolom input password',
+                    validator: _validatePassword,
+                  ),
+                  const SizedBox(height: 24),
+                  _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : Container(
+                          decoration: BoxDecoration(
+                            gradient: AppColors.primaryGradient,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(0.4),
+                                blurRadius: 12,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            onPressed: _handleUserRegister,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              'DAFTAR',
+                              style: AppTextStyles.button.copyWith(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacementNamed(
+                        context,
+                        AppRoutes.login,
+                        arguments: UserType.tunanetra,
+                      );
+                    },
+                    child: Text.rich(
+                      TextSpan(
+                        text: 'Sudah punya akun? ',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: 'Login',
+                            style: TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: AppColors.error, width: 2),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(16),
-            borderSide: const BorderSide(color: AppColors.error, width: 2),
-          ),
-          filled: true,
-          fillColor: AppColors.background,
+          ],
         ),
-        validator: (value) {
-          if (value == null || value.isEmpty) {
-            return '$label harus diisi';
-          }
-          return null;
-        },
+      ),
+    );
+  }
+
+  Widget _buildFamilyRegisterForm() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Form(
+        key: _familyFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ModernTextField(
+                    controller: _familyNameController,
+                    label: 'Nama Lengkap',
+                    icon: Icons.person_rounded,
+                    semanticLabel: 'Kolom input nama lengkap',
+                    validator: _validateFullName,
+                  ),
+                  const SizedBox(height: 12),
+                  ModernTextField(
+                    controller: _familyPhoneNumberController,
+                    label: 'Nomor Telepon',
+                    icon: Icons.phone_rounded,
+                    keyboardType: TextInputType.phone,
+                    semanticLabel: 'Kolom input nomor telepon',
+                    validator: _validatePhoneNumber,
+                  ),
+                  const SizedBox(height: 12),
+                  ModernTextField(
+                    controller: _familyUsernameController,
+                    label: 'Username',
+                    icon: Icons.alternate_email_rounded,
+                    semanticLabel: 'Kolom input username',
+                    validator: _validateUsername,
+                  ),
+                  const SizedBox(height: 12),
+                  ModernTextField(
+                    controller: _familyPasswordController,
+                    label: 'Password',
+                    icon: Icons.lock_rounded,
+                    obscureText: true,
+                    isPassword: true,
+                    semanticLabel: 'Kolom input password',
+                    validator: _validatePassword,
+                  ),
+                  const SizedBox(height: 24),
+                  _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : Container(
+                          decoration: BoxDecoration(
+                            gradient: AppColors.accentGradient,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.accent.withOpacity(0.4),
+                                blurRadius: 12,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            onPressed: _handleFamilyRegister,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: Text(
+                              'DAFTAR',
+                              style: AppTextStyles.button.copyWith(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacementNamed(
+                        context,
+                        AppRoutes.login,
+                        arguments: UserType.family,
+                      );
+                    },
+                    child: Text.rich(
+                      TextSpan(
+                        text: 'Sudah punya akun? ',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                        children: [
+                          TextSpan(
+                            text: 'Login',
+                            style: TextStyle(
+                              color: AppColors.accent,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
