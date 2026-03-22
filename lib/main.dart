@@ -6,6 +6,8 @@ import 'screens/auth/register_screen.dart';
 import 'screens/tunanetra/tunanetra_home_screen.dart';
 import 'screens/tunanetra/navigation_screen.dart';
 import 'screens/tunanetra/bluetooth_screen.dart';
+import 'screens/tunanetra/ebook_screen.dart';
+import 'screens/tunanetra/smartcane_monitoring_screen.dart';
 import 'screens/tunanetra/settings_screen.dart';
 import 'screens/family/family_home_screen.dart';
 
@@ -65,6 +67,8 @@ class MyApp extends StatelessWidget {
           AppRoutes.tunaNetraHome: (context) => const TunaNetraHomeScreen(),
           AppRoutes.tunaNetraNavigation: (context) => const NavigationScreen(),
           AppRoutes.tunaNetraBluetooth: (context) => const BluetoothScreen(),
+          AppRoutes.tunaNetraEbook: (context) => const EbookScreen(),
+          AppRoutes.tunaNetraSmartcane: (context) => const SmartcaneMonitoringScreen(),
           AppRoutes.tunaNetraSettings: (context) => const TunaNetraSettingsScreen(),
           
           // Family routes

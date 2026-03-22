@@ -11,8 +11,8 @@ class TunaNetraHomeScreen extends StatefulWidget {
 
 class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> 
     with TickerProviderStateMixin {
-  bool _isBluetoothConnected = false;
-  bool _isListening = false;
+  bool _isSmartcaneConnected = true;
+  double _smartcaneBattery = 85;
   
   late AnimationController _fadeController;
   late AnimationController _rotationController;
@@ -42,17 +42,20 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _fadeController.forward();
   }
 
-  void _startVoiceAssistant() async {
-    setState(() => _isListening = !_isListening);
-    // Voice assistant functionality disabled
-  }
-
   void _navigateToNavigation() {
     Navigator.pushNamed(context, AppRoutes.tunaNetraNavigation);
   }
 
   void _navigateToBluetooth() {
     Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
+  }
+
+  void _navigateToEbook() {
+    Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
+  }
+
+  void _navigateToSmartcane() {
+    Navigator.pushNamed(context, AppRoutes.tunaNetraSmartcane);
   }
 
   void _navigateToSettings() {
@@ -242,16 +245,16 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                       decoration: BoxDecoration(
-                        gradient: _isBluetoothConnected 
+                        gradient: _isSmartcaneConnected 
                             ? AppColors.successGradient
                             : LinearGradient(
                                 colors: [
-                                  AppColors.textSecondary.withOpacity(0.2),
-                                  AppColors.textSecondary.withOpacity(0.1),
+                                  Colors.grey.withOpacity(0.4),
+                                  Colors.grey.withOpacity(0.3),
                                 ],
                               ),
                         borderRadius: BorderRadius.circular(20),
-                        boxShadow: _isBluetoothConnected
+                        boxShadow: _isSmartcaneConnected
                             ? [
                                 BoxShadow(
                                   color: AppColors.success.withOpacity(0.3),
@@ -261,24 +264,26 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                               ]
                             : [],
                         border: Border.all(
-                          color: _isBluetoothConnected
+                          color: _isSmartcaneConnected
                               ? Colors.white.withOpacity(0.5)
-                              : AppColors.textSecondary.withOpacity(0.3),
+                              : Colors.grey.withOpacity(0.3),
                           width: 1.5,
                         ),
                       ),
                       child: Row(
                         children: [
                           Icon(
-                            _isBluetoothConnected 
-                                ? Icons.bluetooth_connected_rounded 
-                                : Icons.bluetooth_disabled_rounded,
+                            _isSmartcaneConnected 
+                                ? Icons.accessibility_new_rounded
+                                : Icons.close_rounded,
                             color: Colors.white,
                             size: 20,
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            _isBluetoothConnected ? 'ON' : 'OFF',
+                            _isSmartcaneConnected 
+                                ? '${_smartcaneBattery.toInt()}%'
+                                : '0%',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 14,
@@ -319,12 +324,21 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                             onHover: () {},
                           ),
                           _ModernMenuCard(
-                            icon: _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                            title: 'Asisten',
-                            gradient: _isListening ? AppColors.accentGradient : const LinearGradient(
-                              colors: [Color(0xFF2196F3), Color(0xFF03A9F4)],
+                            icon: Icons.book_rounded,
+                            title: 'Buku Panduan',
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
                             ),
-                            onTap: _startVoiceAssistant,
+                            onTap: _navigateToEbook,
+                            onHover: () {},
+                          ),
+                          _ModernMenuCard(
+                            icon: Icons.accessibility_new_rounded,
+                            title: 'SmartCane',
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFEC4899), Color(0xFFDB2777)],
+                            ),
+                            onTap: _navigateToSmartcane,
                             onHover: () {},
                           ),
                           _ModernMenuCard(
@@ -336,14 +350,16 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                             onTap: _navigateToSettings,
                             onHover: () {},
                           ),
+                          _ModernMenuCard(
+                            icon: Icons.warning_rounded,
+                            title: 'Darurat',
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
+                            ),
+                            onTap: _triggerEmergency,
+                            onHover: () {},
+                          ),
                         ],
-                      ),
-                      
-                      const SizedBox(height: 24),
-                      
-                      _EmergencyButton(
-                        onTap: _triggerEmergency,
-                        onHover: () {},
                       ),
                     ],
                   ),
@@ -447,97 +463,6 @@ class _ModernMenuCard extends StatelessWidget {
                     letterSpacing: 0.3,
                   ),
                   textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _EmergencyButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final VoidCallback onHover;
-
-  const _EmergencyButton({
-    required this.onTap,
-    required this.onHover,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        onHover: (hovering) {
-          if (hovering) onHover();
-        },
-        borderRadius: BorderRadius.circular(24),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 20),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Colors.white,
-                Colors.white.withOpacity(0.95),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.accent.withOpacity(0.2),
-                blurRadius: 30,
-                spreadRadius: 0,
-                offset: const Offset(0, 15),
-              ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 20,
-                spreadRadius: -5,
-                offset: const Offset(0, 10),
-              ),
-            ],
-            border: Border.all(
-              color: AppColors.accent.withOpacity(0.15),
-              width: 1.5,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  gradient: AppColors.accentGradient,
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.accent.withOpacity(0.4),
-                      blurRadius: 15,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.warning_rounded,
-                  size: 38,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 18),
-              ShaderMask(
-                shaderCallback: (bounds) => AppColors.accentGradient.createShader(bounds),
-                child: const Text(
-                  'TOMBOL DARURAT',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
-                  ),
                 ),
               ),
             ],

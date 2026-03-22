@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
-import '../../models/register_model.dart';
 import '../../widgets/modern_text_field.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -99,14 +98,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       setState(() => _isLoading = true);
 
       try {
-        final _registerData = RegisterUserModel(
-          fullName: _userNameController.text,
-          phoneNumber: _userPhoneController.text,
-          familyPhoneNumber: _familyPhoneController.text,
-          username: _userUsernameController.text,
-          password: _userPasswordController.text,
-        );
-
+        // Mock registration - no actual data processing needed yet
         await Future.delayed(const Duration(milliseconds: 500));
 
         if (!mounted) return;
@@ -149,13 +141,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       setState(() => _isLoading = true);
 
       try {
-        final _registerData = RegisterFamilyModel(
-          fullName: _familyNameController.text,
-          phoneNumber: _familyPhoneNumberController.text,
-          username: _familyUsernameController.text,
-          password: _familyPasswordController.text,
-        );
-
+        // Mock registration - no actual data processing needed yet
         await Future.delayed(const Duration(milliseconds: 500));
 
         if (!mounted) return;

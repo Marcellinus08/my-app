@@ -148,6 +148,8 @@ class AppRoutes {
   static const String tunaNetraHome = '/tunanetra/home';
   static const String tunaNetraNavigation = '/tunanetra/navigation';
   static const String tunaNetraBluetooth = '/tunanetra/bluetooth';
+  static const String tunaNetraEbook = '/tunanetra/ebook';
+  static const String tunaNetraSmartcane = '/tunanetra/smartcane';
   static const String tunaNetraSettings = '/tunanetra/settings';
   
   // Family routes
