@@ -288,7 +288,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                               ],
                             ),
                           ),
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 12),
                           SizedBox(
                             height: 550,
                             child: TabBarView(
@@ -314,7 +314,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   Widget _buildUserRegisterForm() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: EdgeInsets.zero,
       child: Form(
         key: _userFormKey,
         child: Column(
@@ -361,7 +361,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   const SizedBox(height: 16),
                   ModernTextField(
                     controller: _userPhoneController,
-                    label: 'Nomor Telepon Anda',
+                    label: 'Telepon',
                     icon: Icons.phone_rounded,
                     keyboardType: TextInputType.phone,
                     semanticLabel: 'Kolom input nomor telepon anda',
@@ -370,7 +370,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   const SizedBox(height: 16),
                   ModernTextField(
                     controller: _familyPhoneController,
-                    label: 'Nomor Telepon Keluarga',
+                    label: 'Telepon Keluarga',
                     icon: Icons.phone_rounded,
                     keyboardType: TextInputType.phone,
                     semanticLabel: 'Kolom input nomor telepon keluarga',
@@ -492,7 +492,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
   Widget _buildFamilyRegisterForm() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(vertical: 16),
+      padding: EdgeInsets.zero,
       child: Form(
         key: _familyFormKey,
         child: Column(
@@ -539,7 +539,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   const SizedBox(height: 16),
                   ModernTextField(
                     controller: _familyPhoneNumberController,
-                    label: 'Nomor Telepon',
+                    label: 'Telepon',
                     icon: Icons.phone_rounded,
                     keyboardType: TextInputType.phone,
                     semanticLabel: 'Kolom input nomor telepon',

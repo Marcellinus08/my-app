@@ -95,12 +95,14 @@ class _EbookScreenState extends State<EbookScreen> {
                       child: Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
+                          ),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(
+                        child: const Icon(
                           Icons.arrow_back_rounded,
-                          color: AppColors.primary,
+                          color: Colors.white,
                           size: 24,
                         ),
                       ),
@@ -111,8 +113,9 @@ class _EbookScreenState extends State<EbookScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           ShaderMask(
-                            shaderCallback: (bounds) =>
-                                AppColors.primaryGradient.createShader(bounds),
+                            shaderCallback: (bounds) => const LinearGradient(
+                              colors: [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
+                            ).createShader(bounds),
                             child: Text(
                               'Buku Panduan',
                               style: AppTextStyles.heading2.copyWith(

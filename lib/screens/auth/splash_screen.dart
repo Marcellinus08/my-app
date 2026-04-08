@@ -88,10 +88,10 @@ class _SplashScreenState extends State<SplashScreen>
 
     _mainController.forward();
 
-    // Navigate to register screen after 3.5 seconds
+    // Navigate to login screen after 3.5 seconds
     Timer(const Duration(milliseconds: 3500), () {
       if (mounted) {
-        Navigator.pushReplacementNamed(context, AppRoutes.register);
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
       }
     });
   }

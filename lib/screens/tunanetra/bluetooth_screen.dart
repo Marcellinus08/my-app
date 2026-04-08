@@ -93,7 +93,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
           gradient: LinearGradient(
             colors: [
               const Color(0xFFFAFBFC),
-              AppColors.secondary.withOpacity(0.08),
+              AppColors.primary.withOpacity(0.08),
             ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -104,58 +104,72 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
             children: [
               // Elegant Header
               Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                margin: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      Colors.white,
-                      Colors.white.withOpacity(0.95),
-                    ],
+                    colors: [Colors.white, Colors.white.withOpacity(0.95)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.secondary.withOpacity(0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
+                      color: AppColors.primary.withOpacity(0.15),
+                      blurRadius: 25,
+                      offset: const Offset(0, 10),
                     ),
                   ],
                   border: Border.all(
-                    color: AppColors.secondary.withOpacity(0.1),
+                    color: AppColors.primary.withOpacity(0.1),
                     width: 1,
                   ),
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: AppColors.successGradient,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded, size: 24),
-                        color: Colors.white,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.successGradient,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: ShaderMask(
-                        shaderCallback: (bounds) => AppColors.successGradient.createShader(bounds),
-                        child: Text(
-                          'Bluetooth',
-                          style: AppTextStyles.heading3.copyWith(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: Text(
+                              'Bluetooth',
+                              style: AppTextStyles.heading2.copyWith(
+                                color: Colors.white,
+                                fontSize: 26,
+                                height: 1.0,
+                                letterSpacing: 0,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Kelola Koneksi Perangkat',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -164,7 +178,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
               
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -190,7 +204,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                           ],
                           border: Border.all(
                             color: (_isConnected 
-                                ? AppColors.success 
+                                ? AppColors.primary 
                                 : AppColors.textSecondary).withOpacity(0.2),
                             width: 1.5,
                           ),
@@ -201,7 +215,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                               padding: const EdgeInsets.all(24),
                               decoration: BoxDecoration(
                                 gradient: _isConnected
-                                    ? AppColors.successGradient
+                                    ? AppColors.primaryGradient
                                     : LinearGradient(
                                         colors: [
                                           AppColors.textSecondary.withOpacity(0.7),
@@ -212,7 +226,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                                 boxShadow: [
                                   BoxShadow(
                                     color: (_isConnected
-                                        ? AppColors.success
+                                        ? AppColors.primary
                                         : AppColors.textSecondary).withOpacity(0.3),
                                     blurRadius: 20,
                                     offset: const Offset(0, 8),
@@ -230,7 +244,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                             const SizedBox(height: 24),
                             ShaderMask(
                               shaderCallback: (bounds) => (_isConnected
-                                  ? AppColors.successGradient
+                                  ? AppColors.primaryGradient
                                   : LinearGradient(
                                       colors: [
                                         AppColors.textSecondary,
@@ -251,13 +265,13 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                                 decoration: BoxDecoration(
-                                  color: AppColors.success.withOpacity(0.1),
+                                  color: AppColors.primary.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                                 child: Text(
                                   'Smart Cane #1234',
                                   style: AppTextStyles.bodyLarge.copyWith(
-                                    color: AppColors.success,
+                                    color: AppColors.primary,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),

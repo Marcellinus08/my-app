@@ -21,7 +21,7 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
           gradient: LinearGradient(
             colors: [
               const Color(0xFFFAFBFC),
-              AppColors.textSecondary.withOpacity(0.05),
+              const Color(0xFF64748B).withOpacity(0.08),
             ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -32,21 +32,20 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
             children: [
               // Elegant Header
               Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                margin: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      Colors.white,
-                      Colors.white.withOpacity(0.95),
-                    ],
+                    colors: [Colors.white, Colors.white.withOpacity(0.95)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.textSecondary.withOpacity(0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
+                      color: AppColors.textSecondary.withOpacity(0.15),
+                      blurRadius: 25,
+                      offset: const Offset(0, 10),
                     ),
                   ],
                   border: Border.all(
@@ -55,45 +54,52 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                   ),
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.textSecondary,
-                            AppColors.textSecondary.withOpacity(0.8),
-                          ],
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF64748B), Color(0xFF475569)],
+                          ),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded, size: 24),
-                        color: Colors.white,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () {
-                          Navigator.pop(context);
-                        },
+                        child: const Icon(
+                          Icons.arrow_back_rounded,
+                          color: Colors.white,
+                          size: 24,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
-                      child: ShaderMask(
-                        shaderCallback: (bounds) => LinearGradient(
-                          colors: [
-                            AppColors.textSecondary,
-                            AppColors.textSecondary.withOpacity(0.7),
-                          ],
-                        ).createShader(bounds),
-                        child: Text(
-                          'Pengaturan',
-                          style: AppTextStyles.heading3.copyWith(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w700,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ShaderMask(
+                            shaderCallback: (bounds) => const LinearGradient(
+                              colors: [Color(0xFF64748B), Color(0xFF475569)],
+                            ).createShader(bounds),
+                            child: Text(
+                              'Pengaturan',
+                              style: AppTextStyles.heading2.copyWith(
+                                color: Colors.white,
+                                fontSize: 26,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Personalisasi Pengalaman',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -102,7 +108,7 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
               
               Expanded(
                 child: ListView(
-                  padding: const EdgeInsets.all(20.0),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                   children: [
                     // Voice Settings
                     _buildSectionTitle('Pengaturan Suara'),
