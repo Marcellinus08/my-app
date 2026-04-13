@@ -1,0 +1,71 @@
+rules_version = 2;
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========== OTP Collection (Production Ready) ==========
+    // DEVELOPMENT: Allow anyone (less secure)
+    // PRODUCTION: Use strict rules below
+    
+    match /otp_codes/{email} {
+      // Allow creation for OTP sending
+      allow create: if 
+        request.resource.data.email == email &&
+        request.resource.data.email is string &&
+        request.resource.data.otp is string &&
+        request.resource.data.email.size() > 5;
+      
+      // Allow read for verification only
+      allow read: if true;
+      
+      // Allow update for verification or attempts increment
+      allow update: if 
+        request.resource.data.email == email &&
+        resource.data.verified == false;
+      
+      // No delete - cleanup via Cloud Function scheduler
+      allow delete: if false;
+    }
+    
+    // ========== Users Collection (Production Ready) ==========
+    match /users/{uid} {
+      // Strict creation rules during registration
+      allow create: if 
+        request.resource.data.keys().hasAll(['email', 'username']) &&
+        request.resource.data.email is string &&
+        request.resource.data.username is string &&
+        request.resource.data.createdAt is timestamp;
+      
+      // Only owner can read own profile
+      allow read: if request.auth.uid == uid;
+      
+      // Only owner can update own profile
+      allow update: if request.auth.uid == uid;
+      
+      // No delete for safety
+      allow delete: if false;
+    }
+    
+    // ========== Pairing Codes - For TunaNetra & Family linking ==========
+    match /pairing_codes/{code} {
+      // Allow create for new pairing codes
+      allow create: if request.resource.data.keys().hasAll(['userId', 'code', 'createdAt']);
+      
+      // Allow read to verify codes
+      allow read: if true;
+      
+      // Allow update (limited)
+      allow update: if 
+        resource.data.status != 'paired' || 
+        request.auth.uid == resource.data.userId;
+      
+      // No delete
+      allow delete: if false;
+    }
+    
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

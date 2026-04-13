@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import '../../utils/constants.dart';
+import '../../services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -88,10 +89,32 @@ class _SplashScreenState extends State<SplashScreen>
 
     _mainController.forward();
 
-    // Navigate to login screen after 3.5 seconds
-    Timer(const Duration(milliseconds: 3500), () {
+    // Check authentication status and navigate accordingly after 3.5 seconds
+    Timer(const Duration(milliseconds: 3500), () async {
       if (mounted) {
-        Navigator.pushReplacementNamed(context, AppRoutes.login);
+        final authService = AuthService();
+        
+        // Check if user is already logged in
+        if (authService.isAuthenticated) {
+          print('[SPLASH] User is authenticated, checking user type...');
+          
+          // Get user type
+          final userType = await authService.getUserType();
+          
+          if (userType == UserType.tunanetra) {
+            print('[SPLASH] User is Tunanetra, navigating to home...');
+            Navigator.pushReplacementNamed(context, AppRoutes.tunaNetraHome);
+          } else if (userType == UserType.family) {
+            print('[SPLASH] User is Family, navigating to family home...');
+            Navigator.pushReplacementNamed(context, AppRoutes.familyHome);
+          } else {
+            print('[SPLASH] User type not found, going to login');
+            Navigator.pushReplacementNamed(context, AppRoutes.login);
+          }
+        } else {
+          print('[SPLASH] User is not authenticated, navigating to login...');
+          Navigator.pushReplacementNamed(context, AppRoutes.login);
+        }
       }
     });
   }

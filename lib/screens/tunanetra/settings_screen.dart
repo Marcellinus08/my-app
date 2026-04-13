@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
+import '../../services/auth_service.dart';
 
 class TunaNetraSettingsScreen extends StatefulWidget {
   const TunaNetraSettingsScreen({super.key});
@@ -595,8 +596,14 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
               borderRadius: BorderRadius.circular(12),
             ),
             child: ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(context);
+                
+                // Call logout from AuthService
+                final authService = AuthService();
+                await authService.logout();
+                
+                // Navigate to login and clear all previous routes
                 Navigator.pushNamedAndRemoveUntil(
                   context,
                   AppRoutes.login,

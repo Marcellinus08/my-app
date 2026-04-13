@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'firebase_options.dart';
+import 'services/auth_service.dart';
 import 'utils/constants.dart';
 import 'screens/auth/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -11,9 +15,54 @@ import 'screens/tunanetra/smartcane_monitoring_screen.dart';
 import 'screens/tunanetra/settings_screen.dart';
 import 'screens/family/family_home_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  try {
+    print('\n🔥🔥🔥 [FIREBASE INITIALIZATION START] 🔥🔥🔥');
+    
+    // Initialize Firebase
+    print('📡 Calling Firebase.initializeApp()...');
+    final startInit = DateTime.now();
+    
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        print('❌ Firebase.initializeApp() timed out after 30s!');
+        throw Exception('Firebase initialization timeout');
+      },
+    );
+    
+    final initTime = DateTime.now().difference(startInit).inSeconds;
+    print('✅ Firebase initialized successfully in ${initTime}s!');
+    
+    print('\n🔥🔥🔥 [FIREBASE INITIALIZATION COMPLETE] 🔥🔥🔥\n');
+  } catch (e) {
+    print('\n❌ CRITICAL: Firebase initialization error:');
+    print('   Error type: ${e.runtimeType}');
+    print('   Error message: $e');
+    print('   This will cause Auth and Firestore to fail!');
+    print('   → Check Firebase Console: https://console.firebase.google.com/');
+    print('   → Verify package name matches');
+    print('   → Verify google-services.json is correct\n');
+  }
+  
   runApp(const MyApp());
+}
+
+/// Test Firebase Auth connection
+Future<bool> _testAuthConnection() async {
+  try {
+    print('  Testing Auth.currentUser...');
+    final user = FirebaseAuth.instance.currentUser;
+    print('  Current user: ${user?.email ?? "none (expected for new app)"}');
+    return true;
+  } catch (e) {
+    print('  ❌ Auth connection failed: $e');
+    return false;
+  }
 }
 
 class MyApp extends StatelessWidget {

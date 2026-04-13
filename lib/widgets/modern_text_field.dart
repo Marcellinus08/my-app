@@ -38,7 +38,8 @@ class _ModernTextFieldState extends State<ModernTextField> {
   @override
   void initState() {
     super.initState();
-    _obscureText = widget.obscureText;
+    // Set password hidden by default if isPassword is true
+    _obscureText = widget.isPassword ? true : widget.obscureText;
   }
 
   @override

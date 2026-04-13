@@ -17,6 +17,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _authService = AuthService();
 
   bool _isLoading = false;
+  bool _obscurePassword = true;
   UserType _selectedUserType = UserType.tunanetra;
 
   @override
@@ -67,62 +68,15 @@ class _LoginScreenState extends State<LoginScreen> {
 
       print('✅ Login successful, UID: ${userCredential.user!.uid}');
 
-      // Check if email is verified
-      print('\n🔍 Checking email verification status...');
-      final isVerified = await _authService.isEmailVerified();
-      
-      if (!isVerified) {
-        print('⚠️ Email not verified yet');
-        if (!mounted) return;
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text('⏳ Email belum diverifikasi\n\nCek inbox Anda untuk link verifikasi'),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: 'Kirim Ulang',
-              onPressed: () async {
-                try {
-                  await _authService.resendVerificationEmail();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('✅ Email verifikasi dikirim ulang'),
-                        backgroundColor: Colors.green,
-                        duration: Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('❌ Gagal kirim ulang: $e'),
-                        backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                }
-              },
-            ),
-          ),
-        );
-        
-        // Keep user logged in but prevent navigation until verified
-        // Or optionally allow login and show verification reminder
-        // For now, allow login but show the warning above
-      } else {
-        print('✅ Email verified - proceeding with login');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Login berhasil!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Login berhasil!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
 
       await Future.delayed(const Duration(milliseconds: 500));
 
@@ -221,7 +175,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 28),
                           
-                          // User Type Selection with Animation
+                          // User Type Selection
                           Container(
                             margin: const EdgeInsets.symmetric(horizontal: 16),
                             decoration: BoxDecoration(
@@ -393,8 +347,22 @@ class _LoginScreenState extends State<LoginScreen> {
                                     label: 'Password',
                                     icon: Icons.lock_rounded,
                                     semanticLabel: 'Password untuk login',
-                                    isPassword: true,
+                                    obscureText: _obscurePassword,
                                     validator: _validatePassword,
+                                    suffixIcon: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _obscurePassword = !_obscurePassword;
+                                        });
+                                      },
+                                      child: Icon(
+                                        _obscurePassword
+                                            ? Icons.visibility_rounded
+                                            : Icons.visibility_off_rounded,
+                                        color: AppColors.textSecondary,
+                                        size: 20,
+                                      ),
+                                    ),
                                   ),
                                   const SizedBox(height: 28),
 
@@ -527,7 +495,6 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
-                          const SizedBox(height: 18),
                         ],
                       ),
                     ),
@@ -541,4 +508,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-
