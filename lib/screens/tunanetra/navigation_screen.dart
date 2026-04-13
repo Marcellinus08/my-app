@@ -34,6 +34,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // Route polyline points
   List<LatLng> _routePoints = [];
   bool _isLoadingRoute = false;
+  String _routeLoadError = ''; // Error message for route
   
   // Route info (distance, duration)
   double _routeDistanceKm = 0.0;
@@ -233,7 +234,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateBottomSheet) => Container(
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: const BorderRadius.only(
@@ -365,6 +367,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
             ],
           ),
         ),
+        ),
       ),
     );
   }
@@ -447,6 +450,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
       _routePoints = [];
       _routeDistanceKm = 0.0;
       _routeDurationMinutes = 0.0;
+      _routeLoadError = '';
     });
 
     try {
@@ -458,36 +462,56 @@ class _NavigationScreenState extends State<NavigationScreen> {
       final points = await _routingService.getRoute(
         origin: _userLocation,
         destination: destination,
+        profile: 'walking',
       );
       
       // Get route info (distance, duration)
       final routeInfo = await _routingService.getRouteInfo(
         origin: _userLocation,
         destination: destination,
+        profile: 'walking',
       );
 
       if (mounted) {
         setState(() {
           _routePoints = points;
           _isLoadingRoute = false;
-          _routeDistanceMeters = routeInfo['distance'] as double;
-          _routeDurationSeconds = routeInfo['duration'] as double;
-          _routeDistanceKm = routeInfo['distance_km'] as double;
-          _routeDurationMinutes = routeInfo['duration_minutes'] as double;
+          _routeLoadError = '';
+          _routeDistanceMeters = (routeInfo['distance'] as num).toDouble();
+          _routeDurationSeconds = (routeInfo['duration'] as num).toDouble();
+          _routeDistanceKm = (routeInfo['distance_km'] as num).toDouble();
+          _routeDurationMinutes = (routeInfo['duration_minutes'] as num).toDouble();
         });
       }
       print('[ROUTING] ✅ Route loaded: ${_routeDistanceKm.toStringAsFixed(1)} km, ${_routeDurationMinutes.toStringAsFixed(0)} minutes');
     } catch (e) {
       print('[ROUTING] ❌ Error loading route: $e');
       if (mounted) {
+        // Extract and format error message with better descriptions
+        String errorMsg = e.toString().replaceFirst('Exception: ', '');
+        
+        // Map generic messages to user-friendly Indonesian messages
+        String userFriendlyMsg = errorMsg;
+        if (errorMsg.contains('Failed') || errorMsg.contains('network')) {
+          userFriendlyMsg = '❌ Tidak dapat terhubung ke server.\nPastikan koneksi internet Anda stabil.';
+        } else if (errorMsg.contains('timeout') || errorMsg.contains('Time')) {
+          userFriendlyMsg = '⏱️ Koneksi lambat atau server tidak merespons.\nCoba lagi dalam beberapa saat.';
+        } else if (errorMsg.contains('connection')) {
+          userFriendlyMsg = '📡 Tidak ada koneksi internet.\nSilakan periksa jaringan Anda.';
+        } else {
+          userFriendlyMsg = '⚠️ Gagal menghitung rute.\nPesan: $errorMsg';
+        }
+        
         setState(() {
           _isLoadingRoute = false;
+          _routeLoadError = userFriendlyMsg;
         });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error loading route: $e'),
+            content: Text(userFriendlyMsg),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 5),
           ),
         );
       }
@@ -631,8 +655,20 @@ class _NavigationScreenState extends State<NavigationScreen> {
               // Content
               Expanded(
                 child: _isLoadingPlaces
-                    ? const Center(
-                        child: CircularProgressIndicator(),
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            Text(
+                              'Memuat tempat...',
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
                       )
                     : _places.isEmpty
                         ? Center(
@@ -649,6 +685,13 @@ class _NavigationScreenState extends State<NavigationScreen> {
                                   'Tidak ada tempat tersedia',
                                   style: AppTextStyles.heading3.copyWith(
                                     color: Colors.grey[600],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Silakan tambahkan tempat terlebih dahulu',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: Colors.grey[500],
                                   ),
                                 ),
                               ],
@@ -1212,107 +1255,235 @@ class _NavigationScreenState extends State<NavigationScreen> {
           ),
           
           // Route info panel (Bottom)
-          if (_selectedPlace != null && _routeDistanceKm > 0)
+          if (_selectedPlace != null)
             Positioned(
               bottom: 20,
               left: 16,
               right: 16,
-              child: GestureDetector(
-                onTap: _showRouteInfoPanel,
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.white,
-                        Colors.white.withOpacity(0.95),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 20,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.1),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      // Route icon
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(12),
+              child: _isLoadingRoute
+                  ? Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.white,
+                            Colors.white.withOpacity(0.95),
+                          ],
                         ),
-                        child: const Icon(
-                          Icons.route_rounded,
-                          color: Colors.white,
-                          size: 24,
-                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 20,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 16),
-                      // Route details
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'Rute ke ${_selectedPlace?.name ?? "Destinasi"}',
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            const SizedBox(height: 6),
-                            Row(
+                            child: SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '${_routeDistanceKm.toStringAsFixed(1)} km',
-                                  style: const TextStyle(
-                                    color: Colors.blue,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
+                                  'Menghitung Rute...',
+                                  style: AppTextStyles.bodyLarge.copyWith(
+                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                Container(
-                                  width: 1,
-                                  height: 16,
-                                  color: AppColors.primary.withOpacity(0.3),
-                                ),
-                                const SizedBox(width: 12),
+                                const SizedBox(height: 4),
                                 Text(
-                                  '${_routeDurationMinutes.toStringAsFixed(0).split(".")[0]} min',
-                                  style: const TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
+                                  'Menunggu data dari server',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textSecondary,
                                   ),
                                 ),
                               ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
-                      // Arrow icon
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        color: AppColors.primary,
-                        size: 28,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
+                    )
+                  : _routeLoadError.isNotEmpty
+                      ? Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: Colors.red.withOpacity(0.3),
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: const Icon(
+                                  Icons.error_outline_rounded,
+                                  color: Colors.red,
+                                  size: 24,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Rute Tidak Dapat Dihitung',
+                                      style: AppTextStyles.bodyLarge.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.red[700],
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      _routeLoadError,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: Colors.red[600],
+                                        height: 1.4,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : _routeDistanceKm > 0
+                          ? GestureDetector(
+                              onTap: _showRouteInfoPanel,
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Colors.white,
+                                      Colors.white.withOpacity(0.95),
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.15),
+                                      blurRadius: 20,
+                                      offset: const Offset(0, 5),
+                                    ),
+                                  ],
+                                  border: Border.all(
+                                    color: AppColors.primary.withOpacity(0.1),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    // Route icon
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        gradient: AppColors.primaryGradient,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Icon(
+                                        Icons.route_rounded,
+                                        color: Colors.white,
+                                        size: 24,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    // Route details
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            'Rute ke ${_selectedPlace?.name ?? "Destinasi"}',
+                                            style: AppTextStyles.bodyLarge.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 15,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Text(
+                                                '${_routeDistanceKm.toStringAsFixed(1)} km',
+                                                style: const TextStyle(
+                                                  color: Colors.blue,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Container(
+                                                width: 1,
+                                                height: 16,
+                                                color: AppColors.primary.withOpacity(0.3),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Text(
+                                                '${_routeDurationMinutes.toStringAsFixed(0).split(".")[0]} min',
+                                                style: const TextStyle(
+                                                  color: Colors.green,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    // Arrow icon
+                                    Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: AppColors.primary,
+                                      size: 28,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          : const SizedBox.shrink(),
             ),
         ],
       ),

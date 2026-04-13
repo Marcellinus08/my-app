@@ -3,28 +3,37 @@ import 'package:latlong2/latlong.dart';
 
 class RoutingService {
   // Menggunakan OSRM (Open Source Routing Machine) - gratis, tidak perlu API key
-  static const String _baseUrl = 'https://router.project-osrm.org/route/v1/driving';
+  static const String _baseUrlDriving = 'https://router.project-osrm.org/route/v1/driving';
+  static const String _baseUrlWalking = 'https://router.project-osrm.org/route/v1/walking';
 
   final Dio _dio = Dio(
     BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(seconds: 30),
     ),
   );
 
+  /// Get base URL berdasarkan profile
+  String _getBaseUrl(String profile) {
+    return profile == 'walking' ? _baseUrlWalking : _baseUrlDriving;
+  }
+
   /// Get polyline route points dari origin ke destination
   /// Returns list of LatLng points yang membentuk rute
+  /// profile: 'driving' atau 'walking' (default: 'driving')
   Future<List<LatLng>> getRoute({
     required LatLng origin,
     required LatLng destination,
+    String profile = 'driving',
   }) async {
     try {
+      final baseUrl = _getBaseUrl(profile);
       // OSRM format: lon,lat;lon,lat
       final coordinates =
           '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
-      final url = '$_baseUrl/$coordinates?geometries=geojson&overview=full';
+      final url = '$baseUrl/$coordinates?geometries=geojson&overview=full';
 
-      print('[ROUTING] Requesting route from: $url');
+      print('[ROUTING] Requesting route ($profile) from: $url');
 
       final response = await _dio.get(url);
 
@@ -45,7 +54,10 @@ class RoutingService {
 
         // Convert dari [lon, lat] ke LatLng
         final polylinePoints = coordinates
-            .map((coord) => LatLng(coord[1] as double, coord[0] as double))
+            .map((coord) => LatLng(
+                  (coord[1] as num).toDouble(),
+                  (coord[0] as num).toDouble(),
+                ))
             .toList();
 
         return polylinePoints;
@@ -53,20 +65,33 @@ class RoutingService {
         throw Exception('Failed to get route: ${response.statusCode}');
       }
     } catch (e) {
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout) {
+          print('[ROUTING] ❌ Timeout: Server took too long to respond');
+          throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
+        } else if (e.type == DioExceptionType.connectionError) {
+          print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
+          throw Exception('Tidak ada koneksi internet. Silakan periksa jaringan Anda.');
+        }
+      }
       print('[ROUTING] ❌ Error getting route: $e');
       rethrow;
     }
   }
 
   /// Get route details (distance, duration, dll)
+  /// profile: 'driving' atau 'walking' (default: 'driving')
   Future<Map<String, dynamic>> getRouteInfo({
     required LatLng origin,
     required LatLng destination,
+    String profile = 'driving',
   }) async {
     try {
+      final baseUrl = _getBaseUrl(profile);
       final coordinates =
           '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
-      final url = '$_baseUrl/$coordinates?overview=full';
+      final url = '$baseUrl/$coordinates?overview=full';
 
       final response = await _dio.get(url);
 
@@ -94,6 +119,16 @@ class RoutingService {
         throw Exception('Failed to get route info: ${response.statusCode}');
       }
     } catch (e) {
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout) {
+          print('[ROUTING] ❌ Timeout: Server took too long to respond');
+          throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
+        } else if (e.type == DioExceptionType.connectionError) {
+          print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
+          throw Exception('Tidak ada koneksi internet. Silakan periksa jaringan Anda.');
+        }
+      }
       print('[ROUTING] ❌ Error getting route info: $e');
       rethrow;
     }
