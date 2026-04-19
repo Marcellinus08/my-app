@@ -50,10 +50,9 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen>
         child: SafeArea(
           child: Column(
             children: [
-              // Header
               Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(20),
+                margin: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [Colors.white, Colors.white.withOpacity(0.95)],
@@ -74,6 +73,8 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen>
                   ),
                 ),
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     GestureDetector(
                       onTap: () => Navigator.pop(context),
@@ -96,16 +97,22 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen>
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) => const LinearGradient(
-                              colors: [Color(0xFFEC4899), Color(0xFFDB2777)],
-                            ).createShader(bounds),
-                            child: Text(
-                              'SmartCane',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 26,
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: ShaderMask(
+                              shaderCallback: (bounds) => const LinearGradient(
+                                colors: [Color(0xFFEC4899), Color(0xFFDB2777)],
+                              ).createShader(bounds),
+                              child: Text(
+                                'SmartCane',
+                                style: AppTextStyles.heading2.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  height: 1.0,
+                                  letterSpacing: 0,
+                                ),
                               ),
                             ),
                           ),

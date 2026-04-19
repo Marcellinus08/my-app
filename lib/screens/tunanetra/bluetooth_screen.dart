@@ -152,13 +152,16 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                         children: [
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Text(
-                              'Bluetooth',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 26,
-                                height: 1.0,
-                                letterSpacing: 0,
+                            child: ShaderMask(
+                              shaderCallback: (bounds) => AppColors.successGradient.createShader(bounds),
+                              child: Text(
+                                'Bluetooth',
+                                style: AppTextStyles.heading2.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 26,
+                                  height: 1.0,
+                                  letterSpacing: 0,
+                                ),
                               ),
                             ),
                           ),

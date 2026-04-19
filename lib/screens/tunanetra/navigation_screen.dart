@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:ui' as ui;
+import 'dart:async';
 import '../../utils/constants.dart';
 import '../../models/place_model.dart';
 import '../../services/places_service.dart';
@@ -23,6 +24,8 @@ class _NavigationScreenState extends State<NavigationScreen> {
   // Default location: Bandung, Indonesia
   final LatLng defaultLocation = const LatLng(-6.9147, 107.6098);
   late LatLng _userLocation;
+  bool _isLocationReady = false; // Track if real user location has been obtained
+  StreamSubscription<Position>? _positionStreamSubscription; // For continuous location updates
   
   // Places from Firestore
   List<PlaceModel> _places = [];
@@ -85,6 +88,23 @@ class _NavigationScreenState extends State<NavigationScreen> {
     try {
       print('[NAVIGATION] Requesting location permission...');
       
+      // Check if location service is enabled
+      bool isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!isServiceEnabled) {
+        print('[NAVIGATION] ❌ Location service is disabled');
+        setState(() {
+          _userLocation = defaultLocation;
+          _isLocationReady = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enable Location Service'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+      
       // Check and request location permission
       LocationPermission permission = await Geolocator.checkPermission();
       
@@ -94,50 +114,120 @@ class _NavigationScreenState extends State<NavigationScreen> {
       }
       
       if (permission == LocationPermission.deniedForever) {
-        print('[NAVIGATION] Permission permanently denied');
+        print('[NAVIGATION] ❌ Permission permanently denied');
         setState(() {
           _userLocation = defaultLocation;
+          _isLocationReady = false; // Keep false - using default location
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Location permission is required'),
+            duration: Duration(seconds: 3),
+          ),
+        );
         return;
       }
 
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
         try {
-          print('[NAVIGATION] Getting current position...');
+          print('[NAVIGATION] Getting initial GPS location (one-time, battery friendly)...');
           Position position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.high,
-            timeLimit: const Duration(seconds: 15),
+            desiredAccuracy: LocationAccuracy.bestForNavigation,
+            timeLimit: const Duration(seconds: 60),
           );
 
-          print('[NAVIGATION] Location obtained: ${position.latitude}, ${position.longitude}');
+          print('[NAVIGATION] ✅ Initial location obtained: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy.toStringAsFixed(1)}m)');
 
           if (mounted) {
             setState(() {
               _userLocation = LatLng(position.latitude, position.longitude);
+              _isLocationReady = true;
             });
 
-            await Future.delayed(const Duration(milliseconds: 500));
             _mapController.move(_userLocation, 15.0);
           }
         } catch (e) {
-          print('[NAVIGATION] Error getting position: $e');
+          print('[NAVIGATION] ❌ Error getting position: $e');
           setState(() {
             _userLocation = defaultLocation;
+            _isLocationReady = false; // Keep false - using default location
           });
         }
       }
     } catch (e) {
-      print('[NAVIGATION] Error: $e');
+      print('[NAVIGATION] ❌ Error: $e');
       setState(() {
         _userLocation = defaultLocation;
+        _isLocationReady = false; // Keep false - using default location
       });
     }
+  }
+
+  /// Start continuous location streaming for detailed navigation
+  /// Called when user starts navigating to a destination
+  void _startLocationStreaming() {
+    print('[NAVIGATION] Starting continuous location streaming for navigation...');
+    
+    // Cancel previous subscription if exists
+    _positionStreamSubscription?.cancel();
+    
+    bool hasLoadedRouteOnceFromStreaming = false; // Track if route loaded from streaming
+    
+    // Start listening to location updates with high accuracy
+    // Only update every 5 meters for detailed turn-by-turn navigation
+    _positionStreamSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 5, // Update every 5 meters for accurate turn guidance
+      ),
+    ).listen(
+      (Position position) {
+        print('[NAVIGATION] 📍 Navigation position: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy.toStringAsFixed(1)}m)');
+        
+        if (mounted) {
+          setState(() {
+            _userLocation = LatLng(position.latitude, position.longitude);
+            
+            // Mark as ready on first GPS location update
+            if (!_isLocationReady) {
+              _isLocationReady = true;
+              print('[NAVIGATION] ✅ Real GPS location obtained from streaming!');
+            }
+          });
+          
+          // Load route on first GPS location to ensure accuracy
+          if (!hasLoadedRouteOnceFromStreaming && _selectedPlace != null) {
+            print('[NAVIGATION] Loading route with real GPS location from streaming...');
+            _loadRoute();
+            hasLoadedRouteOnceFromStreaming = true;
+          }
+          
+          // Update map in real-time during navigation (with safety check)
+          try {
+            _mapController.move(_userLocation, 15.0);
+          } catch (e) {
+            print('[NAVIGATION] ⚠️ MapController not ready yet: $e');
+          }
+        }
+      },
+      onError: (e) {
+        print('[NAVIGATION] ❌ Location stream error during navigation: $e');
+      },
+    );
+  }
+
+  /// Stop continuous location streaming to save battery
+  void _stopLocationStreaming() {
+    print('[NAVIGATION] Stopping location streaming (battery save mode)...');
+    _positionStreamSubscription?.cancel();
+    _positionStreamSubscription = null;
   }
 
   @override
   void dispose() {
     _mapController.dispose();
+    _positionStreamSubscription?.cancel(); // Cancel location subscription
     super.dispose();
   }
 
@@ -713,7 +803,20 @@ class _NavigationScreenState extends State<NavigationScreen> {
                                     onTap: () {
                                       setState(() {
                                         _selectedPlace = place;
+                                        _isLoadingRoute = true;
                                       });
+                                      
+                                      // Start continuous location streaming for detailed navigation
+                                      // Route will load automatically from streaming when real GPS location is obtained
+                                      Future.delayed(
+                                        const Duration(milliseconds: 1500),
+                                        () {
+                                          if (mounted) {
+                                            _startLocationStreaming();
+                                          }
+                                        },
+                                      );
+                                      
                                       // Center map ke lokasi user (bukan tempat tujuan)
                                       Future.delayed(
                                         const Duration(milliseconds: 300),
@@ -849,13 +952,6 @@ class _NavigationScreenState extends State<NavigationScreen> {
 
   /// Build map screen setelah memilih place
   Widget _buildMapScreen() {
-    // Load route saat masuk ke map screen
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_routePoints.isEmpty && !_isLoadingRoute) {
-        _loadRoute();
-      }
-    });
-
     return Scaffold(
       body: Stack(
         children: [
@@ -897,46 +993,71 @@ class _NavigationScreenState extends State<NavigationScreen> {
                 // Markers
                 MarkerLayer(
                   markers: [
-                    // User current location marker (with green color)
+                    // User current location marker
                     Marker(
                       point: _userLocation,
-                      width: 80,
-                      height: 80,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(4),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Colors.black26,
-                                  blurRadius: 4,
-                                  offset: Offset(0, 2),
+                      width: 100,
+                      height: 110,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: RadialGradient(
+                                  colors: [
+                                    Colors.green.shade400,
+                                    Colors.green.shade600,
+                                  ],
                                 ),
-                              ],
-                            ),
-                            child: const Text(
-                              'Posisi Saya',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.green.withOpacity(0.6),
+                                    blurRadius: 12,
+                                    spreadRadius: 2,
+                                  ),
+                                ],
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.my_location_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 2),
-                          const Icon(
-                            Icons.location_on_rounded,
-                            color: Colors.green,
-                            size: 40,
-                          ),
-                        ],
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade600,
+                                borderRadius: BorderRadius.circular(6),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.green.withOpacity(0.4),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Text(
+                                'Posisi Saya',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     // Destination marker (selected place)
@@ -1095,6 +1216,7 @@ class _NavigationScreenState extends State<NavigationScreen> {
                     // Back button
                     GestureDetector(
                       onTap: () {
+                        _stopLocationStreaming(); // Stop detailed tracking when navigation ends
                         setState(() {
                           _selectedPlace = null;
                           _routePoints.clear();
@@ -1241,9 +1363,9 @@ class _NavigationScreenState extends State<NavigationScreen> {
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
                         padding: const EdgeInsets.all(12),
-                        child: const Icon(
-                          Icons.location_on_rounded,
-                          color: Colors.green,
+                        child: Icon(
+                          Icons.my_location_rounded,
+                          color: Colors.green.shade600,
                           size: 24,
                         ),
                       ),
