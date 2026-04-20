@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 // App Constants
 class AppConstants {
-  static const String appName = 'Smart Cane Assistant';
+  static const String appName = 'Teman Arah';
   static const String appVersion = '1.0.0';
 }
 

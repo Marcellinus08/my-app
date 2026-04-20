@@ -134,9 +134,14 @@ class _SplashScreenState extends State<SplashScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Color(0xFF0D47A1), Color(0xFF1976D2), Color(0xFF42A5F5)],
+            colors: [
+              Color(0xFF1E3C72),
+              Color(0xFF2A5298),
+              Color(0xFF7E8BA3),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
+            stops: [0.0, 0.5, 1.0],
           ),
         ),
         child: Stack(
@@ -232,13 +237,13 @@ class _SplashScreenState extends State<SplashScreen>
                         return Transform.scale(
                           scale: _pulseAnimation.value,
                           child: Container(
-                            width: 180,
-                            height: 180,
+                            width: 200,
+                            height: 200,
                             decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(45),
+                              borderRadius: BorderRadius.circular(50),
                               gradient: LinearGradient(
                                 colors: [
-                                  Colors.white.withOpacity(0.25),
+                                  Colors.white.withOpacity(0.3),
                                   Colors.white.withOpacity(0.15),
                                 ],
                                 begin: Alignment.topLeft,
@@ -246,25 +251,25 @@ class _SplashScreenState extends State<SplashScreen>
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.3),
+                                  color: Colors.white.withOpacity(0.5),
+                                  blurRadius: 60,
+                                  spreadRadius: 5,
+                                  offset: const Offset(0, 30),
+                                ),
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.4),
                                   blurRadius: 50,
                                   spreadRadius: -10,
                                   offset: const Offset(0, 25),
                                 ),
-                                BoxShadow(
-                                  color: Colors.white.withOpacity(0.1),
-                                  blurRadius: 30,
-                                  spreadRadius: -5,
-                                  offset: const Offset(0, -10),
-                                ),
                               ],
                               border: Border.all(
-                                color: Colors.white.withOpacity(0.4),
-                                width: 2,
+                                color: Colors.white.withOpacity(0.5),
+                                width: 2.5,
                               ),
                             ),
                             child: ClipRRect(
-                              borderRadius: BorderRadius.circular(45),
+                              borderRadius: BorderRadius.circular(50),
                               child: Stack(
                                 children: [
                                   // Shimmer effect
@@ -282,7 +287,7 @@ class _SplashScreenState extends State<SplashScreen>
                                               gradient: LinearGradient(
                                                 colors: [
                                                   Colors.transparent,
-                                                  Colors.white.withOpacity(0.3),
+                                                  Colors.white.withOpacity(0.4),
                                                   Colors.transparent,
                                                 ],
                                               ),
@@ -292,17 +297,33 @@ class _SplashScreenState extends State<SplashScreen>
                                       );
                                     },
                                   ),
-                                  // Icon
+                                  // Icon - Compass
                                   Center(
                                     child: Container(
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(45),
+                                        color: Colors.white.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(50),
                                       ),
-                                      child: const Icon(
-                                        Icons.accessibility_new,
-                                        size: 110,
-                                        color: Colors.white,
+                                      child: Stack(
+                                        alignment: Alignment.center,
+                                        children: [
+                                          Icon(
+                                            Icons.compass_calibration,
+                                            size: 130,
+                                            color: Colors.white,
+                                          ),
+                                          Positioned(
+                                            top: 20,
+                                            child: Container(
+                                              width: 8,
+                                              height: 8,
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -393,7 +414,7 @@ class _SplashScreenState extends State<SplashScreen>
                                 ),
                                 const SizedBox(width: 12),
                                 Text(
-                                  'Asisten Pintar untuk Tunanetra',
+                                  'Navigasi Cerdas Setiap Langkah',
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: Colors.white,
                                     fontSize: 15,
