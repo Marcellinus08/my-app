@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math' as math;
 import '../../utils/constants.dart';
+import '../../services/auth_service.dart';
+import '../../services/user_service.dart';
+import '../../services/weather_service.dart';
 
 class TunaNetraHomeScreen extends StatefulWidget {
   const TunaNetraHomeScreen({super.key});
@@ -13,15 +17,91 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     with TickerProviderStateMixin {
   bool _isSmartcaneConnected = true;
   double _smartcaneBattery = 85;
+  String _userName = 'Pengguna';
+  WeatherData? _weatherData;
+  bool _isLoadingWeather = true;
   
   late AnimationController _fadeController;
   late AnimationController _rotationController;
   late Animation<double> _fadeAnimation;
+  late Stream<String> _userNameStream;
+  late FirebaseFirestore _firestore;
 
   @override
   void initState() {
     super.initState();
     _initializeAnimations();
+    _firestore = FirebaseFirestore.instance;
+    _setupUserNameStream();
+    _loadWeather();
+  }
+
+  void _setupUserNameStream() {
+    final authService = AuthService();
+    final uid = authService.currentUserId;
+    
+    print('🔍 Home Screen - User UID: $uid');
+    
+    if (uid != null) {
+      _userNameStream = _firestore
+          .collection('users')
+          .doc(uid)
+          .snapshots()
+          .map((snapshot) {
+        if (snapshot.exists) {
+          final data = snapshot.data() as Map<String, dynamic>?;
+          final name = data?['name'] as String? ?? 'Pengguna';
+          print('📝 User name updated: $name');
+          return name;
+        }
+        print('⚠️ User document does not exist');
+        return 'Pengguna';
+      });
+      
+      // Subscribe to stream changes
+      _userNameStream.listen((newName) {
+        if (mounted) {
+          setState(() {
+            _userName = newName;
+          });
+        }
+      });
+    } else {
+      print('❌ User UID is null');
+      _userNameStream = Stream.value('Pengguna');
+    }
+  }
+
+  Future<void> _loadWeather() async {
+    try {
+      final weatherService = WeatherService();
+      final weather = await weatherService.getWeatherByLocation();
+      
+      if (mounted) {
+        setState(() {
+          _weatherData = weather;
+          _isLoadingWeather = false;
+        });
+      }
+    } catch (e) {
+      print('❌ Error loading weather: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingWeather = false;
+        });
+      }
+    }
+  }
+
+  /// Get battery color based on level
+  Color _getBatteryColor() {
+    if (_smartcaneBattery >= 50) {
+      return Colors.green;
+    } else if (_smartcaneBattery >= 20) {
+      return Colors.amber;
+    } else {
+      return Colors.red;
+    }
   }
 
   void _initializeAnimations() {
@@ -180,123 +260,250 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   Widget _buildMainContent() {
     return SafeArea(
-          child: Column(
-            children: [
-              // Elegant AppBar with glassmorphism
-              Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.white,
-                      Colors.white.withOpacity(0.95),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(28),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.15),
-                      blurRadius: 30,
-                      spreadRadius: 0,
-                      offset: const Offset(0, 10),
-                    ),
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 20,
-                      spreadRadius: -5,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                  border: Border.all(
-                    color: AppColors.primary.withOpacity(0.1),
-                    width: 1,
-                  ),
+      child: Column(
+        children: [
+          // Clean & Elegant Header
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF0D47A1),
+                  const Color(0xFF1565C0),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0D47A1).withOpacity(0.2),
+                  blurRadius: 25,
+                  offset: const Offset(0, 8),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ShaderMask(
-                          shaderCallback: (bounds) => AppColors.primaryGradient.createShader(bounds),
-                          child: Text(
-                            'Beranda',
-                            style: AppTextStyles.heading2.copyWith(
-                              color: Colors.white,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Selamat Datang Kembali',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textSecondary,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ],
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient: _isSmartcaneConnected 
-                            ? AppColors.successGradient
-                            : LinearGradient(
-                                colors: [
-                                  Colors.grey.withOpacity(0.4),
-                                  Colors.grey.withOpacity(0.3),
-                                ],
-                              ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: _isSmartcaneConnected
-                            ? [
-                                BoxShadow(
-                                  color: AppColors.success.withOpacity(0.3),
-                                  blurRadius: 15,
-                                  offset: const Offset(0, 5),
-                                ),
-                              ]
-                            : [],
-                        border: Border.all(
-                          color: _isSmartcaneConnected
-                              ? Colors.white.withOpacity(0.5)
-                              : Colors.grey.withOpacity(0.3),
-                          width: 1.5,
+              ],
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left: Greeting + Name + Weather
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Selamat Datang',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.white.withOpacity(0.85),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            _isSmartcaneConnected 
-                                ? Icons.accessibility_new_rounded
-                                : Icons.close_rounded,
-                            color: Colors.white,
-                            size: 20,
+                      const SizedBox(height: 4),
+                      Text(
+                        _userName,
+                        style: AppTextStyles.heading1.copyWith(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.visible,
+                      ),
+                      const SizedBox(height: 6),
+                      // Weather Info
+                      if (_isLoadingWeather)
+                        SizedBox(
+                          height: 18,
+                          child: Center(
+                            child: SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white.withOpacity(0.5),
+                                ),
+                              ),
+                            ),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            _isSmartcaneConnected 
-                                ? '${_smartcaneBattery.toInt()}%'
-                                : '0%',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
+                        )
+                      else if (_weatherData != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${WeatherService.getWeatherEmoji(_weatherData!.weatherCondition)} ${_weatherData!.temperature.toStringAsFixed(1)}°C',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '|',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: Colors.white.withOpacity(0.5),
+                                  fontSize: 9,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${_weatherData!.humidity}%',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 9,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '|',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: Colors.white.withOpacity(0.5),
+                                  fontSize: 9,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${_weatherData!.windSpeed.toStringAsFixed(0)} km/h',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: Colors.white.withOpacity(0.8),
+                                  fontSize: 9,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Right: Battery Indicator
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const SizedBox(height: 2),
+                      // Modern Battery Icon with Fill
+                      Container(
+                      width: 52,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.8),
+                          width: 2,
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Stack(
+                        children: [
+                          // Battery top bump
+                          Positioned(
+                            top: -4,
+                            left: 0,
+                            right: 0,
+                            child: Container(
+                              height: 4,
+                              margin: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.8),
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(2),
+                                  topRight: Radius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ),
+                          // Battery fill with gradient
+                          Container(
+                            width: double.infinity,
+                            height: double.infinity,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Stack(
+                              children: [
+                                // Background
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.05),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                ),
+                                // Fill based on battery level
+                                Align(
+                                  alignment: Alignment.bottomCenter,
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: (_smartcaneBattery / 100) * 60,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.bottomCenter,
+                                        end: Alignment.topCenter,
+                                        colors: [
+                                          _getBatteryColor(),
+                                          _getBatteryColor().withOpacity(0.6),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                ),
+                                // Percentage text overlay
+                                Center(
+                                  child: Text(
+                                    '${_smartcaneBattery.toInt()}%',
+                                    style: AppTextStyles.heading2.copyWith(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                      shadows: [
+                                        Shadow(
+                                          color: Colors.black.withOpacity(0.3),
+                                          blurRadius: 3,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 6),
+                    // Status text below
+                    Text(
+                      _isSmartcaneConnected ? 'Terhubung' : 'Offline',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: _isSmartcaneConnected
+                            ? Colors.green.withOpacity(0.9)
+                            : Colors.orange.withOpacity(0.9),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 2),
                   ],
                 ),
-              ),
+                ),
+              ],
+            ),
+          ),
               
+              // Main Content
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(20),

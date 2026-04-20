@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
+import 'tunanetra_profile_screen.dart';
+import 'emergency_contacts_screen.dart';
 
 class TunaNetraSettingsScreen extends StatefulWidget {
   const TunaNetraSettingsScreen({super.key});
@@ -402,7 +404,12 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                           ),
                         ),
                         onTap: () {
-                          // TODO: Navigate to emergency contacts screen
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const EmergencyContactsScreen(),
+                            ),
+                          );
                         },
                       ),
                     ),
@@ -461,7 +468,14 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                                 color: Colors.white,
                               ),
                             ),
-                            onTap: () {},
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const TunaNetraProfileScreen(),
+                                ),
+                              );
+                            },
                           ),
                           Divider(
                             height: 1,

@@ -51,6 +51,9 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat();
+    
+    // Start animations
+    _mainController.forward();
 
     // Fade animation
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -86,8 +89,6 @@ class _SplashScreenState extends State<SplashScreen>
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
-
-    _mainController.forward();
 
     // Check authentication status and navigate accordingly after 3.5 seconds
     Timer(const Duration(milliseconds: 3500), () async {
@@ -134,367 +135,96 @@ class _SplashScreenState extends State<SplashScreen>
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFF1E3C72),
-              Color(0xFF2A5298),
-              Color(0xFF7E8BA3),
-            ],
+            colors: [Color(0xFF0D47A1), Color(0xFF1976D2)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            stops: [0.0, 0.5, 1.0],
           ),
         ),
         child: Stack(
           children: [
-            // Animated rotating circles background
-            ...List.generate(5, (index) {
-              return AnimatedBuilder(
-                animation: _rotationAnimation,
-                builder: (context, child) {
-                  final angle = _rotationAnimation.value + (index * math.pi / 2.5);
-                  final size = 150.0 + (index * 50);
-                  final distance = 200.0 + (index * 30);
-                  
-                  return Positioned(
-                    left: MediaQuery.of(context).size.width / 2 + 
-                          math.cos(angle) * distance - size / 2,
-                    top: MediaQuery.of(context).size.height / 2 + 
-                         math.sin(angle) * distance - size / 2,
-                    child: Container(
-                      width: size,
-                      height: size,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            Colors.white.withOpacity(0.05),
-                            Colors.transparent,
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            }),
-
-            // Large decorative circles with fade animation
-            Positioned(
-              top: -100,
-              right: -100,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Container(
-                  width: 300,
-                  height: 300,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        Colors.white.withOpacity(0.15),
-                        Colors.white.withOpacity(0.05),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            
-            Positioned(
-              bottom: -150,
-              left: -100,
-              child: FadeTransition(
-                opacity: _fadeAnimation,
-                child: Container(
-                  width: 400,
-                  height: 400,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        Colors.white.withOpacity(0.1),
-                        Colors.white.withOpacity(0.05),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
             // Main content
             Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  // Animated Icon with pulse and scale
+                  // Animated Logo
                   ScaleTransition(
                     scale: _scaleAnimation,
-                    child: AnimatedBuilder(
-                      animation: _pulseAnimation,
-                      builder: (context, child) {
-                        return Transform.scale(
-                          scale: _pulseAnimation.value,
-                          child: Container(
-                            width: 200,
-                            height: 200,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(50),
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.white.withOpacity(0.3),
-                                  Colors.white.withOpacity(0.15),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.white.withOpacity(0.5),
-                                  blurRadius: 60,
-                                  spreadRadius: 5,
-                                  offset: const Offset(0, 30),
-                                ),
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.4),
-                                  blurRadius: 50,
-                                  spreadRadius: -10,
-                                  offset: const Offset(0, 25),
-                                ),
-                              ],
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.5),
-                                width: 2.5,
-                              ),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(50),
-                              child: Stack(
-                                children: [
-                                  // Shimmer effect
-                                  AnimatedBuilder(
-                                    animation: _waveController,
-                                    builder: (context, child) {
-                                      return Positioned(
-                                        left: -200 + (_waveController.value * 400),
-                                        child: Transform.rotate(
-                                          angle: 0.5,
-                                          child: Container(
-                                            width: 100,
-                                            height: 300,
-                                            decoration: BoxDecoration(
-                                              gradient: LinearGradient(
-                                                colors: [
-                                                  Colors.transparent,
-                                                  Colors.white.withOpacity(0.4),
-                                                  Colors.transparent,
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  // Icon - Compass
-                                  Center(
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.15),
-                                        borderRadius: BorderRadius.circular(50),
-                                      ),
-                                      child: Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          Icon(
-                                            Icons.compass_calibration,
-                                            size: 130,
-                                            color: Colors.white,
-                                          ),
-                                          Positioned(
-                                            top: 20,
-                                            child: Container(
-                                              width: 8,
-                                              height: 8,
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                    child: Image.asset(
+                      'assets/images/logo_fix.png',
+                      width: 160,
+                      height: 160,
+                      fit: BoxFit.contain,
                     ),
                   ),
                   
-                  const SizedBox(height: 60),
+                  const SizedBox(height: 50),
                   
                   // Animated App Name
                   FadeTransition(
                     opacity: _fadeAnimation,
                     child: SlideTransition(
                       position: _slideAnimation,
-                      child: Column(
-                        children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) => const LinearGradient(
-                              colors: [
-                                Colors.white,
-                                Color(0xFFE3F2FD),
-                              ],
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                            ).createShader(bounds),
-                            child: Text(
-                              AppConstants.appName,
-                              style: AppTextStyles.heading1.copyWith(
-                                color: Colors.white,
-                                fontSize: 32,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 2,
-                                height: 1.2,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          
-                          const SizedBox(height: 20),
-                          
-                          // Subtitle with modern design
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 28,
-                              vertical: 14,
-                            ),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.white.withOpacity(0.2),
-                                  Colors.white.withOpacity(0.1),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(6),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.remove_red_eye_outlined,
-                                    size: 18,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  'Navigasi Cerdas Setiap Langkah',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: Colors.white,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                      child: Text(
+                        'Teman Arah',
+                        style: AppTextStyles.heading1.copyWith(
+                          color: Colors.white,
+                          fontSize: 42,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   ),
                   
-                  const SizedBox(height: 80),
+                  const SizedBox(height: 10),
                   
-                  // Animated loading indicator with wave effect
+                  // Simple Subtitle Description
                   FadeTransition(
                     opacity: _fadeAnimation,
-                    child: Column(
-                      children: [
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            // Outer pulsing circle
-                            AnimatedBuilder(
-                              animation: _pulseAnimation,
-                              builder: (context, child) {
-                                return Container(
-                                  width: 80 * _pulseAnimation.value,
-                                  height: 80 * _pulseAnimation.value,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(
-                                        0.3 / _pulseAnimation.value,
-                                      ),
-                                      width: 2,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                            // Inner loading circle
-                            Container(
-                              padding: const EdgeInsets.all(18),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.2),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 10),
-                                  ),
-                                ],
-                              ),
-                              child: const SizedBox(
-                                width: 36,
-                                height: 36,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 3.5,
-                                ),
-                              ),
-                            ),
-                          ],
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 40),
+                      child: Text(
+                        'Temani Setiap Langkah',
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
+                          letterSpacing: 0.3,
                         ),
-                        const SizedBox(height: 20),
-                        Text(
-                          'Memuat...',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: Colors.white.withOpacity(0.9),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            letterSpacing: 1,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 100),
+                  
+                  // Simple Yet Attractive Loading Indicator
+                  FadeTransition(
+                    opacity: _fadeAnimation,
+                    child: RotationTransition(
+                      turns: _rotationAnimation,
+                      child: Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            width: 3,
+                            color: Colors.white,
+                          ),
+                          gradient: const SweepGradient(
+                            colors: [
+                              Colors.white,
+                              Color(0xFF42A5F5),
+                              Colors.white,
+                            ],
+                            stops: [0.0, 0.5, 1.0],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ],

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
+import '../../services/auth_service.dart';
+import '../../services/user_service.dart';
 
 class FamilyHomeScreen extends StatefulWidget {
   const FamilyHomeScreen({super.key});
@@ -19,10 +21,31 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
       'batteryLevel': 85,
     },
   ];
+  String _userName = 'Keluarga';
 
   @override
   void initState() {
     super.initState();
+    _loadUserName();
+  }
+
+  Future<void> _loadUserName() async {
+    try {
+      final authService = AuthService();
+      final userService = UserService();
+      
+      final uid = authService.currentUserId;
+      if (uid != null) {
+        final user = await userService.getFamilyUser(uid);
+        if (user != null && mounted) {
+          setState(() {
+            _userName = user.name;
+          });
+        }
+      }
+    } catch (e) {
+      print('❌ Error loading user name: $e');
+    }
   }
 
   void _viewMonitoring(Map<String, dynamic> user) {
@@ -50,62 +73,69 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
         child: SafeArea(
           child: Column(
             children: [
-              // Elegant Header
+              // Clean & Elegant Header
               Container(
-                margin: const EdgeInsets.all(16),
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      Colors.white,
-                      Colors.white.withOpacity(0.95),
+                      const Color(0xFFD32F2F),
+                      const Color(0xFFE53935),
                     ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(28),
+                  borderRadius: BorderRadius.circular(24),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.accent.withOpacity(0.15),
-                      blurRadius: 30,
-                      offset: const Offset(0, 15),
+                      color: const Color(0xFFD32F2F).withOpacity(0.2),
+                      blurRadius: 25,
+                      offset: const Offset(0, 8),
                     ),
                   ],
-                  border: Border.all(
-                    color: AppColors.accent.withOpacity(0.2),
-                    width: 1.5,
-                  ),
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Top Row: Title + Settings
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
-                          child: ShaderMask(
-                            shaderCallback: (bounds) => AppColors.accentGradient.createShader(bounds),
-                            child: Text(
-                              'Beranda Keluarga',
-                              style: AppTextStyles.heading3.copyWith(
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Pantau Keluarga',
+                              style: AppTextStyles.heading2.copyWith(
                                 color: Colors.white,
-                                fontSize: 26,
-                                fontWeight: FontWeight.w700,
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
                               ),
                             ),
-                          ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Monitor semua anggota keluarga',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: Colors.white.withOpacity(0.85),
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
                         ),
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            gradient: AppColors.accentGradient,
-                            borderRadius: BorderRadius.circular(16),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.accent.withOpacity(0.3),
-                                blurRadius: 15,
-                                offset: const Offset(0, 5),
-                              ),
-                            ],
+                            color: Colors.white.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.3),
+                              width: 1,
+                            ),
                           ),
                           child: IconButton(
-                            icon: const Icon(Icons.settings_rounded, size: 26),
+                            icon: const Icon(Icons.settings_rounded, size: 24),
                             color: Colors.white,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
@@ -115,57 +145,87 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen> {
                         ),
                       ],
                     ),
+                    
                     const SizedBox(height: 20),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Container(
-                          width: 70,
-                          height: 70,
-                          decoration: BoxDecoration(
-                            gradient: AppColors.accentGradient,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Icon(
-                            Icons.family_restroom_rounded,
-                            size: 40,
-                            color: Colors.white,
-                          ),
+                    
+                    // User Info Section
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.25),
+                          width: 1,
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Monitor Keluarga',
-                                style: AppTextStyles.heading2.copyWith(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.2,
-                                ),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.25),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.4),
+                                width: 1.5,
                               ),
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  gradient: AppColors.accentGradient,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '${_connectedUsers.length} Pengguna Terhubung',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: Colors.white,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
+                            ),
+                            child: const Icon(
+                              Icons.people_rounded,
+                              size: 32,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Dipantau oleh',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: Colors.white.withOpacity(0.75),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  _userName,
+                                  style: AppTextStyles.heading3.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.25),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: Colors.white.withOpacity(0.4),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              '${_connectedUsers.length}',
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),

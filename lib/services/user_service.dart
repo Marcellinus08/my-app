@@ -229,6 +229,7 @@ class UserService {
     String? phoneNumber,
     List<FamilyContact>? familyContacts,
     bool? isEmailVerified,
+    String? pairingCode,
   }) async {
     try {
       final updateData = <String, dynamic>{};
@@ -240,6 +241,7 @@ class UserService {
             familyContacts.map((c) => c.toMap()).toList();
       }
       if (isEmailVerified != null) updateData['isEmailVerified'] = isEmailVerified;
+      if (pairingCode != null) updateData['pairingCode'] = pairingCode;
 
       if (updateData.isNotEmpty) {
         await _firestore.collection('users').doc(uid).update(updateData);

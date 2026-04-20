@@ -131,7 +131,7 @@ class EmailOtpService {
         body: jsonEncode({
           'email': email,
           'otp': otp,
-          'appName': 'Smart Cane Assistant',
+          'appName': 'Teman Arah',
         }),
       );
 
@@ -246,7 +246,7 @@ class EmailOtpService {
     <body>
       <div class="container">
         <div class="header">
-          <h2>Smart Cane Assistant</h2>
+          <h2>Teman Arah</h2>
           <p>Verification Code</p>
         </div>
         <div class="content">
@@ -256,7 +256,7 @@ class EmailOtpService {
           <p style="color: #999; font-size: 12px;">If you did not request this code, please ignore this email.</p>
         </div>
         <div class="footer">
-          <p>© 2024 Smart Cane Assistant. All rights reserved.</p>
+          <p>© 2024 Teman Arah. All rights reserved.</p>
         </div>
       </div>
     </body>

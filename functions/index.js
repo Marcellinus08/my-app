@@ -14,7 +14,7 @@ admin.initializeApp();
  * {
  *   "email": "user@example.com",
  *   "otp": "123456",
- *   "appName": "Smart Cane Assistant"
+ *   "appName": "Teman Arah"
  * }
  * 
  * Response:
@@ -46,7 +46,7 @@ exports.sendOtpEmail = functions.https.onRequest(async (req, res) => {
   }
 
   try {
-    const { email, otp, appName = "Smart Cane Assistant" } = req.body;
+    const { email, otp, appName = "Teman Arah" } = req.body;
 
     console.log(`📧 [CLOUD FUNCTION] Received OTP email request`);
     console.log(`   Email: ${email}`);
