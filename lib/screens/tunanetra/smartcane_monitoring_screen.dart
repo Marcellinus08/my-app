@@ -384,18 +384,6 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen>
                       ),
                     ),
                     const SizedBox(height: 20),
-                    
-                    // Features Title
-                    Text(
-                      'Fitur Aktif',
-                      style: AppTextStyles.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    
-                    // Features Grid
-                    _buildFeatureSelector(),
                   ],
                 ),
               ),
@@ -403,90 +391,6 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen>
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildFeatureSelector() {
-    final features = [
-      {'name': 'Navigasi', 'icon': Icons.navigation_rounded},
-      {'name': 'Pendeteksi', 'icon': Icons.radar_rounded},
-      {'name': 'Getaran', 'icon': Icons.vibration_rounded},
-    ];
-
-    return GridView.count(
-      shrinkWrap: true,
-      crossAxisCount: 3,
-      crossAxisSpacing: 12,
-      mainAxisSpacing: 12,
-      physics: const NeverScrollableScrollPhysics(),
-      children: features
-          .map((feature) => Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          'Fitur ${feature['name']} aktif',
-                        ),
-                        backgroundColor: AppColors.primary,
-                        duration: const Duration(seconds: 1),
-                      ),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.white,
-                          Colors.white.withOpacity(0.95),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.08),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                      border: Border.all(
-                        color: AppColors.primary.withOpacity(0.1),
-                        width: 1,
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            gradient: AppColors.primaryGradient,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(
-                            feature['icon'] as IconData,
-                            color: Colors.white,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          feature['name'] as String,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ))
-          .toList(),
     );
   }
 }

@@ -92,9 +92,13 @@ class _LoginScreenState extends State<LoginScreen> {
             AppRoutes.tunaNetraHome,
           );
         } else {
+          final familyId = _authService.currentUserId ?? '';
           Navigator.pushReplacementNamed(
             context,
             AppRoutes.familyHome,
+            arguments: {
+              'familyId': familyId,
+            },
           );
         }
       }

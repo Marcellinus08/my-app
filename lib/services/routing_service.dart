@@ -1,10 +1,13 @@
 import 'package:dio/dio.dart';
 import 'package:latlong2/latlong.dart';
+import '../models/navigation_instruction_model.dart';
 
 class RoutingService {
-  // Menggunakan OSRM (Open Source Routing Machine) - gratis, tidak perlu API key
-  static const String _baseUrlDriving = 'https://router.project-osrm.org/route/v1/driving';
-  static const String _baseUrlWalking = 'https://router.project-osrm.org/route/v1/walking';
+  // Menggunakan OSRM Public (router.project-osrm.org) - gratis, stabil di Android, tidak perlu API key
+  // Profiles: 'car' untuk rute kendaraan, 'foot' untuk rute pejalan kaki
+  // Fallback logic diterapkan jika OSRM mengembalikan durasi yang sama
+  static const String _baseUrlCar = 'https://router.project-osrm.org/route/v1/car';
+  static const String _baseUrlFoot = 'https://router.project-osrm.org/route/v1/foot';
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -14,26 +17,30 @@ class RoutingService {
   );
 
   /// Get base URL berdasarkan profile
+  /// Profiles: 'car' atau 'foot' (default: 'foot')
   String _getBaseUrl(String profile) {
-    return profile == 'walking' ? _baseUrlWalking : _baseUrlDriving;
+    if (profile == 'car') {
+      return _baseUrlCar;
+    } else {
+      return _baseUrlFoot;
+    }
   }
 
   /// Get polyline route points dari origin ke destination
   /// Returns list of LatLng points yang membentuk rute
-  /// profile: 'driving' atau 'walking' (default: 'driving')
+  /// Selalu menggunakan profile 'foot' untuk konsistensi polyline
   Future<List<LatLng>> getRoute({
     required LatLng origin,
     required LatLng destination,
-    String profile = 'driving',
   }) async {
     try {
-      final baseUrl = _getBaseUrl(profile);
+      final baseUrl = _baseUrlFoot;
       // OSRM format: lon,lat;lon,lat
       final coordinates =
           '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
-      final url = '$baseUrl/$coordinates?geometries=geojson&overview=full';
+      final url = '$baseUrl/$coordinates?geometries=geojson&overview=full&steps=true';
 
-      print('[ROUTING] Requesting route ($profile) from: $url');
+      print('[ROUTING] Requesting route (foot) from: $url');
 
       final response = await _dio.get(url);
 
@@ -51,6 +58,8 @@ class RoutingService {
 
         final geometry = routes[0]['geometry'];
         final coordinates = geometry['coordinates'] as List;
+
+        print('[ROUTING] 📍 Polyline points: ${coordinates.length}');
 
         // Convert dari [lon, lat] ke LatLng
         final polylinePoints = coordinates
@@ -81,17 +90,27 @@ class RoutingService {
   }
 
   /// Get route details (distance, duration, dll)
-  /// profile: 'driving' atau 'walking' (default: 'driving')
+  /// profile: 'car' atau 'foot' (default: 'foot')
   Future<Map<String, dynamic>> getRouteInfo({
     required LatLng origin,
     required LatLng destination,
-    String profile = 'driving',
+    String profile = 'foot',
   }) async {
     try {
+      print('[ROUTING] ⭐ START getRouteInfo');
+      print('[ROUTING] Profile requested: $profile');
       final baseUrl = _getBaseUrl(profile);
+      print('[ROUTING] Base URL selected: $baseUrl');
+      
       final coordinates =
           '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
-      final url = '$baseUrl/$coordinates?overview=full';
+      final url = '$baseUrl/$coordinates?overview=full&geometries=geojson';
+
+      print('[ROUTING] Origin: ${origin.longitude}, ${origin.latitude}');
+      print('[ROUTING] Destination: ${destination.longitude}, ${destination.latitude}');
+      print('[ROUTING] 🌐 REQUEST URL:');
+      print('[ROUTING] $url');
+      print('[ROUTING] ---');
 
       final response = await _dio.get(url);
 
@@ -108,12 +127,18 @@ class RoutingService {
         }
 
         final route = routes[0];
+        final rawDuration = route['duration']; // dalam detik
+        final rawDistance = route['distance']; // dalam meter
+        final durationMinutes = (rawDuration as num) / 60;
+        final distanceKm = (rawDistance as num) / 1000;
+
+        print('[ROUTING] ✅ Profile: $profile - Duration: ${rawDuration}s (${durationMinutes.toStringAsFixed(1)} min), Distance: ${rawDistance}m (${distanceKm.toStringAsFixed(1)} km)');
 
         return {
-          'distance': route['distance'], // dalam meter
-          'duration': route['duration'], // dalam detik
-          'distance_km': (route['distance'] as num) / 1000,
-          'duration_minutes': (route['duration'] as num) / 60,
+          'distance': rawDistance, // dalam meter
+          'duration': rawDuration, // dalam detik
+          'distance_km': distanceKm,
+          'duration_minutes': durationMinutes,
         };
       } else {
         throw Exception('Failed to get route info: ${response.statusCode}');
@@ -132,5 +157,226 @@ class RoutingService {
       print('[ROUTING] ❌ Error getting route info: $e');
       rethrow;
     }
+  }
+
+  /// Get comparison of foot vs car durations directly from OSRM
+  /// Tanpa fallback logic - hanya mengambil data langsung dari OSRM
+  Future<Map<String, dynamic>> getComparisonDurations({
+    required LatLng origin,
+    required LatLng destination,
+  }) async {
+    try {
+      final footInfo = await getRouteInfo(
+        origin: origin,
+        destination: destination,
+        profile: 'foot',
+      );
+      
+      final carInfo = await getRouteInfo(
+        origin: origin,
+        destination: destination,
+        profile: 'car',
+      );
+
+      // Calculate foot duration menggunakan metode Google Maps
+      // Kecepatan pedestrian rata-rata: 1.4 m/s (sama seperti Google Maps)
+      final distanceMeters = footInfo['distance'] as num;
+      const double pedestrianSpeedMs = 1.4; // meter per second
+      final footDuration = (distanceMeters / pedestrianSpeedMs).toInt(); // dalam detik
+      
+      final carDuration = carInfo['duration'] as num;
+
+      print('[ROUTING] ✅ Foot (Google Maps method): ${footDuration}s (${(footDuration / 60).toStringAsFixed(1)} min) - Distance: ${distanceMeters}m @ ${pedestrianSpeedMs}m/s');
+      print('[ROUTING] ✅ Car: ${carDuration}s (${(carDuration / 60).toStringAsFixed(1)} min)');
+
+      return {
+        'foot_duration': footDuration,
+        'foot_duration_minutes': (footDuration as num) / 60,
+        'car_duration': carDuration,
+        'car_duration_minutes': (carDuration as num) / 60,
+        'distance': footInfo['distance'],
+        'distance_km': footInfo['distance_km'],
+      };
+    } catch (e) {
+      print('[ROUTING] ❌ Error in getComparisonDurations: $e');
+      rethrow;
+    }
+  }
+
+  /// Test method untuk verify OSRM response untuk foot vs car
+  Future<void> testOsrmDifference() async {
+    try {
+      // Test dengan koordinat berbeda yang seharusnya memiliki perbedaan signifikan
+      // Dari Alun-alun Bandung ke Tangkuban Perahu (lebih jauh)
+      final origin = LatLng(-6.9147, 107.6098);
+      final destination = LatLng(-6.7727, 107.5778);
+      
+      print('[ROUTING] 🧪 Testing OSRM Difference for Foot vs Car');
+      print('[ROUTING] Origin: ${origin.latitude}, ${origin.longitude}');
+      print('[ROUTING] Destination: ${destination.latitude}, ${destination.longitude}');
+      
+      final footInfo = await getRouteInfo(
+        origin: origin,
+        destination: destination,
+        profile: 'foot',
+      );
+      
+      final carInfo = await getRouteInfo(
+        origin: origin,
+        destination: destination,
+        profile: 'car',
+      );
+      
+      print('[ROUTING] 🧪 TEST RESULTS:');
+      print('[ROUTING] Foot - Duration: ${footInfo['duration_minutes']} min, Distance: ${footInfo['distance_km']} km');
+      print('[ROUTING] Car - Duration: ${carInfo['duration_minutes']} min, Distance: ${carInfo['distance_km']} km');
+      print('[ROUTING] Difference - Time: ${(footInfo['duration_minutes'] as num) - (carInfo['duration_minutes'] as num)} min');
+    } catch (e) {
+      print('[ROUTING] ❌ Test error: $e');
+    }
+  }
+
+  /// Get turn-by-turn navigation instructions
+  /// Mengembalikan list NavigationInstruction yang berisi petunjuk belok dan nama jalan
+  Future<List<NavigationInstruction>> getNavigationInstructions({
+    required LatLng origin,
+    required LatLng destination,
+    String profile = 'foot',
+  }) async {
+    try {
+      print('[ROUTING] 📍 Getting navigation instructions for $profile mode');
+      final baseUrl = _getBaseUrl(profile);
+      
+      final coordinates =
+          '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
+      // Tambahkan parameter ?steps=true&annotations=distance,duration untuk mendapat detail steps
+      final url = '$baseUrl/$coordinates?overview=full&geometries=geojson&steps=true&annotations=distance,duration';
+
+      print('[ROUTING] 🌐 Navigation URL: $url');
+
+      final response = await _dio.get(url);
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        
+        if (data['code'] != 'Ok') {
+          throw Exception('OSRM Error: ${data['code']}');
+        }
+
+        final routes = data['routes'] as List;
+        if (routes.isEmpty) {
+          throw Exception('No route found');
+        }
+
+        final route = routes[0];
+        final legs = route['legs'] as List;
+        
+        List<NavigationInstruction> instructions = [];
+        int stepIndex = 0;
+
+        // Iterate through each leg (segment antara 2 waypoint)
+        for (var leg in legs) {
+          final steps = leg['steps'] as List;
+          
+          for (var step in steps) {
+            final maneuver = step['maneuver'] as Map;
+            final stepGeometry = step['geometry'];
+            final stepCoordinates = stepGeometry['coordinates'] as List;
+            
+            // Convert geometry to polyline points
+            final polylinePoints = stepCoordinates
+                .map((coord) => LatLng(
+                      (coord[1] as num).toDouble(),
+                      (coord[0] as num).toDouble(),
+                    ))
+                .toList();
+            
+            // Extract maneuver info
+            final maneuverType = maneuver['type'] as String?;
+            final maneuverModifier = maneuver['modifier'] as String?;
+            final bearing = (maneuver['bearing_after'] as num?)?.toDouble() ?? 0.0;
+            final location = LatLng(
+              (maneuver['location'][1] as num).toDouble(),
+              (maneuver['location'][0] as num).toDouble(),
+            );
+            
+            // Extract step info
+            final roadName = (step['name'] as String?) ?? 'Jalan';
+            final distance = ((step['distance'] as num?)?.toDouble()) ?? 0.0;
+            final duration = ((step['duration'] as num?)?.toDouble()) ?? 0.0;
+            
+            // Parse turn type
+            final turnType = ManeuverParser.parseTurnType(maneuverType, maneuverModifier);
+            
+            // Generate readable instruction
+            final instruction = ManeuverParser.getInstructionText(turnType, roadName);
+            
+            instructions.add(
+              NavigationInstruction(
+                instruction: instruction,
+                roadName: roadName,
+                distance: distance,
+                duration: duration,
+                turnType: turnType,
+                bearing: bearing,
+                location: location,
+                polylinePoints: polylinePoints,
+              ),
+            );
+            
+            stepIndex++;
+            print('[ROUTING] Step $stepIndex: $instruction (${distance.toStringAsFixed(0)}m, ${duration.toStringAsFixed(1)}s)');
+          }
+        }
+
+        print('[ROUTING] ✅ Got ${instructions.length} navigation instructions');
+        return instructions;
+      } else {
+        throw Exception('Failed to get navigation instructions: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (e is DioException) {
+        if (e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout) {
+          print('[ROUTING] ❌ Timeout: Server took too long to respond');
+          throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
+        } else if (e.type == DioExceptionType.connectionError) {
+          print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
+          throw Exception('Tidak ada koneksi internet. Silakan periksa jaringan Anda.');
+        }
+      }
+      print('[ROUTING] ❌ Error getting navigation instructions: $e');
+      rethrow;
+    }
+  }
+
+  /// Find next instruction based on current location
+  /// Mengembalikan index instruksi berikutnya atau -1 jika sudah sampai
+  /// distanceThreshold: jarak dalam meter untuk dianggap sudah mencapai instruksi
+  int findNextInstructionIndex({
+    required LatLng currentLocation,
+    required List<NavigationInstruction> instructions,
+    double distanceThreshold = 50.0, // 50 meter threshold
+  }) {
+    const Distance distance = Distance();
+    
+    for (int i = 0; i < instructions.length; i++) {
+      final instruction = instructions[i];
+      final distanceToInstruction = distance.as(
+        LengthUnit.Meter,
+        currentLocation,
+        instruction.location,
+      );
+      
+      print('[ROUTING] Distance to instruction $i: ${distanceToInstruction.toStringAsFixed(1)}m');
+      
+      if (distanceToInstruction <= distanceThreshold) {
+        // Sudah mencapai instruksi ini, return index berikutnya
+        return i + 1 < instructions.length ? i + 1 : -1;
+      }
+    }
+    
+    // Belum mencapai instruksi pertama
+    return 0;
   }
 }

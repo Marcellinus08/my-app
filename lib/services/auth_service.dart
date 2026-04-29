@@ -998,10 +998,10 @@ class AuthService {
       if (userDoc.exists) {
         final userType = userDoc.data()?['userType'] as String?;
         print('✅ [AUTH] User type found: $userType');
-        
-        if (userType == 'UserType.tunanetra') {
+
+        if (userType == 'tunanetra' || userType == 'UserType.tunanetra') {
           return UserType.tunanetra;
-        } else if (userType == 'UserType.family') {
+        } else if (userType == 'family' || userType == 'UserType.family') {
           return UserType.family;
         }
       }

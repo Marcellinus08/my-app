@@ -107,7 +107,13 @@ class _SplashScreenState extends State<SplashScreen>
             Navigator.pushReplacementNamed(context, AppRoutes.tunaNetraHome);
           } else if (userType == UserType.family) {
             print('[SPLASH] User is Family, navigating to family home...');
-            Navigator.pushReplacementNamed(context, AppRoutes.familyHome);
+            Navigator.pushReplacementNamed(
+              context,
+              AppRoutes.familyHome,
+              arguments: {
+                'familyId': authService.currentUserId ?? '',
+              },
+            );
           } else {
             print('[SPLASH] User type not found, going to login');
             Navigator.pushReplacementNamed(context, AppRoutes.login);

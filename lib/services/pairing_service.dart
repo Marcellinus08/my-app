@@ -38,7 +38,7 @@ class PairingService {
   Future<Map<String, dynamic>?> verifyPairingCode(String pairingCode) async {
     try {
       print('🔍 Verifying pairing code: $pairingCode');
-      
+
       final query = await _firestore
           .collection('users')
           .where('pairingCode', isEqualTo: pairingCode)
@@ -52,7 +52,7 @@ class PairingService {
 
       final userData = query.docs.first.data();
       print('✅ Pairing code verified for user: ${userData['name']}');
-      
+
       return {
         'uid': query.docs.first.id,
         'name': userData['name'],
@@ -72,11 +72,11 @@ class PairingService {
     String pairingCode,
   ) async {
     try {
-      // Update family document dengan pairedUserUid
-      await _firestore.collection('users').doc(familyUid).update({
+      // Ensure family document has pairing link fields (merge to avoid not-found error).
+      await _firestore.collection('users').doc(familyUid).set({
         'pairedUserUid': tunaNetraUid,
         'linkedAt': DateTime.now(),
-      });
+      }, SetOptions(merge: true));
 
       // Update tunanetra document dengan family uid (opsional, bisa di subcollection)
       await _firestore
@@ -85,10 +85,10 @@ class PairingService {
           .collection('family_members')
           .doc(familyUid)
           .set({
-        'uid': familyUid,
-        'name': '', // Will be updated when family data available
-        'linkedAt': DateTime.now(),
-      });
+            'uid': familyUid,
+            'name': '', // Will be updated when family data available
+            'linkedAt': DateTime.now(),
+          });
 
       print('✅ Family linked to user successfully');
     } catch (e) {
@@ -132,4 +132,86 @@ class PairingService {
       return null;
     }
   }
+
+  /// Add user to family's paired users list (untuk mendukung multiple users)
+  Future<void> addPairedUser(String familyUid, String tunaNetraUid) async {
+    try {
+      print('📌 Adding paired user $tunaNetraUid to family $familyUid');
+      
+      await _firestore
+          .collection('users')
+          .doc(familyUid)
+          .update({
+            'pairedUserUids': FieldValue.arrayUnion([tunaNetraUid]),
+          });
+      
+      print('✅ Paired user added successfully');
+    } catch (e) {
+      print('❌ Error adding paired user: $e');
+      throw Exception('Gagal menambah pengguna: $e');
+    }
+  }
+
+  /// Get all paired users for a family
+  Future<List<String>> getPairedUsers(String familyUid) async {
+    try {
+      final doc = await _firestore
+          .collection('users')
+          .doc(familyUid)
+          .get();
+
+      if (!doc.exists) {
+        return [];
+      }
+
+      final data = doc.data() as Map<String, dynamic>;
+      
+      // Support both pairedUserUid (single) and pairedUserUids (array)
+      final pairedUserUids = <String>[];
+      
+      if (data['pairedUserUids'] is List) {
+        pairedUserUids.addAll(
+          List<String>.from(data['pairedUserUids'] as List)
+        );
+      }
+      
+      if (data['pairedUserUid'] is String && 
+          !pairedUserUids.contains(data['pairedUserUid'])) {
+        pairedUserUids.add(data['pairedUserUid'] as String);
+      }
+      
+      return pairedUserUids;
+    } catch (e) {
+      print('❌ Error getting paired users: $e');
+      return [];
+    }
+  }
+
+  /// Remove user from family's paired users list
+  Future<void> removePairedUser(String familyUid, String tunaNetraUid) async {
+    try {
+      print('🗑️ Removing paired user $tunaNetraUid from family $familyUid');
+      
+      await _firestore
+          .collection('users')
+          .doc(familyUid)
+          .update({
+            'pairedUserUids': FieldValue.arrayRemove([tunaNetraUid]),
+          });
+      
+      // Also remove from family_members subcollection in tunanetra user's document
+      await _firestore
+          .collection('users')
+          .doc(tunaNetraUid)
+          .collection('family_members')
+          .doc(familyUid)
+          .delete();
+      
+      print('✅ Paired user removed successfully');
+    } catch (e) {
+      print('❌ Error removing paired user: $e');
+      throw Exception('Gagal menghapus pengguna: $e');
+    }
+  }
 }
+

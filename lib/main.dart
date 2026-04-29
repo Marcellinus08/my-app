@@ -14,17 +14,19 @@ import 'screens/tunanetra/ebook_screen.dart';
 import 'screens/tunanetra/smartcane_monitoring_screen.dart';
 import 'screens/tunanetra/settings_screen.dart';
 import 'screens/family/family_home_screen.dart';
+import 'screens/family/family_members_list_screen.dart';
+import 'screens/family/family_member_detail_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   try {
     print('\n🔥🔥🔥 [FIREBASE INITIALIZATION START] 🔥🔥🔥');
-    
+
     // Initialize Firebase
     print('📡 Calling Firebase.initializeApp()...');
     final startInit = DateTime.now();
-    
+
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     ).timeout(
@@ -34,10 +36,10 @@ void main() async {
         throw Exception('Firebase initialization timeout');
       },
     );
-    
+
     final initTime = DateTime.now().difference(startInit).inSeconds;
     print('✅ Firebase initialized successfully in ${initTime}s!');
-    
+
     print('\n🔥🔥🔥 [FIREBASE INITIALIZATION COMPLETE] 🔥🔥🔥\n');
   } catch (e) {
     print('\n❌ CRITICAL: Firebase initialization error:');
@@ -48,7 +50,7 @@ void main() async {
     print('   → Verify package name matches');
     print('   → Verify google-services.json is correct\n');
   }
-  
+
   runApp(const MyApp());
 }
 
@@ -72,58 +74,68 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: AppConstants.appName,
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: AppColors.primary,
-            primary: AppColors.primary,
-            secondary: AppColors.accent,
-          ),
-          useMaterial3: true,
-          scaffoldBackgroundColor: AppColors.background,
-          
-          // High contrast theme for accessibility
-          textTheme: const TextTheme(
-            headlineLarge: AppTextStyles.heading1,
-            headlineMedium: AppTextStyles.heading2,
-            headlineSmall: AppTextStyles.heading3,
-            bodyLarge: AppTextStyles.bodyLarge,
-            bodyMedium: AppTextStyles.bodyMedium,
-          ),
-          
-          // Button theme
-          elevatedButtonTheme: ElevatedButtonThemeData(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              textStyle: AppTextStyles.button,
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.primary,
+          primary: AppColors.primary,
+          secondary: AppColors.accent,
+        ),
+        useMaterial3: true,
+        scaffoldBackgroundColor: AppColors.background,
+
+        // High contrast theme for accessibility
+        textTheme: const TextTheme(
+          headlineLarge: AppTextStyles.heading1,
+          headlineMedium: AppTextStyles.heading2,
+          headlineSmall: AppTextStyles.heading3,
+          bodyLarge: AppTextStyles.bodyLarge,
+          bodyMedium: AppTextStyles.bodyMedium,
+        ),
+
+        // Button theme
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            textStyle: AppTextStyles.button,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
           ),
         ),
-        
-        // Routes
-        initialRoute: AppRoutes.splash,
-        routes: {
-          AppRoutes.splash: (context) => const SplashScreen(),
-          AppRoutes.login: (context) => const LoginScreen(),
-          AppRoutes.register: (context) => const RegisterScreen(),
-          
-          // Tunanetra routes
-          AppRoutes.tunaNetraHome: (context) => const TunaNetraHomeScreen(),
-          AppRoutes.tunaNetraNavigation: (context) => const NavigationScreen(),
-          AppRoutes.tunaNetraBluetooth: (context) => const BluetoothScreen(),
-          AppRoutes.tunaNetraEbook: (context) => const EbookScreen(),
-          AppRoutes.tunaNetraSmartcane: (context) => const SmartcaneMonitoringScreen(),
-          AppRoutes.tunaNetraSettings: (context) => const TunaNetraSettingsScreen(),
-          
-          // Family routes
-          AppRoutes.familyHome: (context) => const FamilyHomeScreen(),
-          // TODO: Add familyMonitoring and familySettings
+      ),
+
+      // Routes
+      initialRoute: AppRoutes.splash,
+      routes: {
+        AppRoutes.splash: (context) => const SplashScreen(),
+        AppRoutes.login: (context) => const LoginScreen(),
+        AppRoutes.register: (context) => const RegisterScreen(),
+
+        // Tunanetra routes
+        AppRoutes.tunaNetraHome: (context) => const TunaNetraHomeScreen(),
+        AppRoutes.tunaNetraNavigation: (context) => const NavigationScreen(),
+        AppRoutes.tunaNetraBluetooth: (context) => const BluetoothScreen(),
+        AppRoutes.tunaNetraEbook: (context) => const EbookScreen(),
+        AppRoutes.tunaNetraSmartcane: (context) =>
+            const SmartcaneMonitoringScreen(),
+        AppRoutes.tunaNetraSettings: (context) =>
+            const TunaNetraSettingsScreen(),
+
+        // Family routes
+        AppRoutes.familyHome: (context) {
+          final args =
+              ModalRoute.of(context)?.settings.arguments
+                  as Map<String, String>?;
+          return FamilyHomeScreen(
+            targetUid: args?['targetUid'] ?? '',
+            familyId: args?['familyId'] ?? '',
+          );
         },
+        // TODO: Add familyMonitoring and familySettings
+      },
     );
   }
 }
