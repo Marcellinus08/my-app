@@ -11,6 +11,7 @@ import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
 import '../../utils/constants.dart';
 import 'family_history_screen.dart';
+import 'family_settings_screen.dart';
 
 class FamilyHomeScreen extends StatefulWidget {
   final String? targetUid; // uid of the tunaNetra user to monitor (optional for backward compatibility)
@@ -313,42 +314,55 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                   mainAxisAlignment: MainAxisAlignment.start,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: _monitoredUsers.isEmpty 
-                                  ? Colors.orange 
-                                  : Colors.green,
-                              shape: BoxShape.circle,
-                            ),
+                    if (_monitoredUsers.isEmpty ||
+                        _monitoredUsers.where((u) => _isUserOnline(u['uid'])).isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _monitoredUsers.isEmpty ? 'Belum ada' : 'Online',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            _monitoredUsers.isEmpty
-                                ? 'Belum ada'
-                                : _monitoredUsers.where((u) => _isUserOnline(u['uid'])).length > 0
-                                    ? 'Online'
-                                    : 'Offline',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
                   ],
+                ),
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const FamilySettingsScreen(),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withOpacity(0.25),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.settings_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -687,7 +701,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    isOnline ? 'Online Sekarang' : 'Offline',
+                                    isOnline ? 'Online Sekarang' : 'Tidak aktif',
                                     style: AppTextStyles.bodySmall.copyWith(
                                       color: isOnline ? Colors.green : Colors.orange,
                                       fontWeight: FontWeight.w700,
@@ -905,37 +919,54 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                   // Action Button
                   Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient: AppColors.primaryGradient,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
                         borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withOpacity(0.2),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.map_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Lihat Detail Lokasi',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700,
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (ctx) => FamilyHistoryScreen(
+                                targetUid: user['uid'],
+                                familyId: _resolvedFamilyId,
+                              ),
                             ),
+                          );
+                        },
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          decoration: BoxDecoration(
+                            gradient: AppColors.primaryGradient,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(0.2),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                        ],
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.map_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Lihat Detail Lokasi',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
