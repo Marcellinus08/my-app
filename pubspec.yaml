@@ -36,7 +36,6 @@ dependencies:
   
   # Bluetooth
   flutter_blue_plus: ^1.32.12
-  permission_handler: ^11.3.1
   
   # Maps & Location (OpenStreetMap)
   flutter_map: ^8.2.2
@@ -56,9 +55,6 @@ dependencies:
   http: ^1.2.2
   dio: ^5.7.0
   
-  # Storage
-  shared_preferences: ^2.3.3
-  
   # Firebase (untuk auth & monitoring)
   firebase_core: ^3.10.0
   firebase_auth: ^5.3.5
@@ -68,7 +64,6 @@ dependencies:
   
   # Utils
   intl: ^0.19.0
-  uuid: ^4.5.1
 
 dev_dependencies:
   flutter_test:
