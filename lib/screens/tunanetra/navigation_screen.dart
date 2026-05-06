@@ -50,7 +50,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   bool _isUsingPredictedPosition = false;
   static const Duration _gpsStaleThreshold = Duration(milliseconds: 1200);
   static const Duration _predictionTickInterval = Duration(milliseconds: 250);
-  static const double _maxPredictionDistanceMeters = 18.0;
+  static const double _maxPredictionDistanceMeters = 15.0;
   static const double _maxWalkingSpeedMs = 2.4;
   static const double _routeTrimThresholdMeters = 12.0;
   static const double _routeSnapThresholdMeters = 20.0;
