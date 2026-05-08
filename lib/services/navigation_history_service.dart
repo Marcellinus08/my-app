@@ -84,6 +84,148 @@ class NavigationHistoryService {
     );
   }
 
+  Future<void> addRoutePoint({
+    required String tripId,
+    required double lat,
+    required double lng,
+    required double heading,
+    required double speed,
+    required double accuracy,
+    required bool isPredicted,
+  }) async {
+    if (tripId.isEmpty) {
+      debugPrint('[NAV_HISTORY] Cannot add route point: tripId is empty');
+      return;
+    }
+
+    try {
+      final tripRef = _collection.doc(tripId);
+      final pointRef = tripRef.collection('route_points').doc();
+      final serverTimestamp = FieldValue.serverTimestamp();
+
+      final batch = _firestore.batch();
+      batch.set(pointRef, {
+        'lat': lat,
+        'lng': lng,
+        'heading': heading,
+        'speed': speed,
+        'accuracy': accuracy,
+        'isPredicted': isPredicted,
+        'gpsStatus': isPredicted ? 'predicted' : 'gps_live',
+        'timestamp': serverTimestamp,
+        'createdAt': serverTimestamp,
+      });
+      batch.update(tripRef, {
+        'updatedAt': serverTimestamp,
+      });
+
+      await batch.commit();
+    } catch (e, st) {
+      debugPrint('[NAV_HISTORY] Failed to add route point for $tripId: $e');
+      debugPrintStack(stackTrace: st);
+    }
+  }
+
+  Future<void> addTripEvent({
+    required String? tripId,
+    required String type,
+    String? title,
+    String? description,
+    double? lat,
+    double? lng,
+  }) async {
+    if (tripId == null || tripId.isEmpty) {
+      debugPrint('[NAV_HISTORY] Cannot add trip event: tripId is empty');
+      return;
+    }
+
+    try {
+      final tripRef = _collection.doc(tripId);
+      final eventRef = tripRef.collection('events').doc();
+      final serverTimestamp = FieldValue.serverTimestamp();
+
+      final eventData = <String, dynamic>{
+        'type': type,
+        'title': title ?? getEventTitle(type),
+        'description': description ?? getEventDescription(type),
+        'lat': lat,
+        'lng': lng,
+        'timestamp': serverTimestamp,
+        'createdAt': serverTimestamp,
+      };
+
+      final batch = _firestore.batch();
+      batch.set(eventRef, eventData);
+      batch.update(tripRef, {
+        'eventCount': FieldValue.increment(1),
+        'updatedAt': serverTimestamp,
+      });
+
+      await batch.commit();
+    } catch (e, st) {
+      debugPrint('[NAV_HISTORY] Failed to add trip event $type: $e');
+      debugPrintStack(stackTrace: st);
+    }
+  }
+
+  String getEventTitle(String type) {
+    switch (type) {
+      case 'navigation_started':
+        return 'Navigasi dimulai';
+      case 'navigation_completed':
+        return 'Navigasi selesai';
+      case 'navigation_cancelled':
+        return 'Navigasi dibatalkan';
+      case 'off_route':
+        return 'Keluar rute';
+      case 'back_to_route':
+        return 'Kembali ke rute';
+      case 'gps_lost':
+        return 'GPS lemah';
+      case 'gps_recovered':
+        return 'GPS kembali aktif';
+      case 'prediction_started':
+        return 'Mode prediksi aktif';
+      case 'prediction_stopped':
+        return 'Mode prediksi berhenti';
+      case 'sos_pressed':
+        return 'SOS ditekan';
+      case 'arrived':
+        return 'Sampai tujuan';
+      default:
+        return 'Event perjalanan';
+    }
+  }
+
+  String getEventDescription(String type) {
+    switch (type) {
+      case 'navigation_started':
+        return 'Pengguna mulai melakukan navigasi';
+      case 'navigation_completed':
+        return 'Pengguna sampai di tujuan';
+      case 'navigation_cancelled':
+        return 'Pengguna menghentikan navigasi sebelum sampai tujuan';
+      case 'off_route':
+        return 'Pengguna terdeteksi keluar dari jalur navigasi';
+      case 'back_to_route':
+        return 'Pengguna kembali ke jalur navigasi';
+      case 'gps_lost':
+        return 'Sinyal GPS tidak diperbarui atau melemah';
+      case 'gps_recovered':
+        return 'Sinyal GPS kembali tersedia';
+      case 'prediction_started':
+        return 'Sistem menggunakan prediksi posisi sementara';
+      case 'prediction_stopped':
+        return 'Sistem kembali menggunakan GPS live';
+      case 'sos_pressed':
+        return 'Pengguna menekan tombol darurat';
+      case 'arrived':
+        return 'Pengguna telah tiba di lokasi tujuan';
+      default:
+        return 'Terjadi event selama perjalanan';
+    }
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> getUserTripHistoryStream(
     String userId,
   ) {

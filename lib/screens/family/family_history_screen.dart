@@ -1934,7 +1934,7 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
   }
 }
 
-class NavigationHistoryDetailScreen extends StatelessWidget {
+class NavigationHistoryDetailScreen extends StatefulWidget {
   final String tripId;
 
   const NavigationHistoryDetailScreen({
@@ -1942,10 +1942,43 @@ class NavigationHistoryDetailScreen extends StatelessWidget {
     required this.tripId,
   });
 
+  @override
+  State<NavigationHistoryDetailScreen> createState() =>
+      _NavigationHistoryDetailScreenState();
+}
+
+class _NavigationHistoryDetailScreenState
+    extends State<NavigationHistoryDetailScreen> {
+  final MapController _historyMapController = MapController();
+
+  @override
+  void dispose() {
+    _historyMapController.dispose();
+    super.dispose();
+  }
+
   Stream<DocumentSnapshot<Map<String, dynamic>>> get _tripStream {
     return FirebaseFirestore.instance
         .collection('navigation_history')
-        .doc(tripId)
+        .doc(widget.tripId)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> get _routePointsStream {
+    return FirebaseFirestore.instance
+        .collection('navigation_history')
+        .doc(widget.tripId)
+        .collection('route_points')
+        .orderBy('timestamp', descending: false)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> get _eventsStream {
+    return FirebaseFirestore.instance
+        .collection('navigation_history')
+        .doc(widget.tripId)
+        .collection('events')
+        .orderBy('timestamp', descending: false)
         .snapshots();
   }
 
@@ -2003,6 +2036,173 @@ class NavigationHistoryDetailScreen extends StatelessWidget {
   String formatEventCount(dynamic eventCount) {
     final count = _toInt(eventCount) ?? 0;
     return '$count event';
+  }
+
+  String formatEventTime(Timestamp? timestamp) {
+    if (timestamp == null) return '-';
+    return DateFormat('HH:mm').format(timestamp.toDate());
+  }
+
+  IconData getEventIcon(String type) {
+    switch (type) {
+      case 'navigation_started':
+        return Icons.play_arrow_rounded;
+      case 'navigation_completed':
+        return Icons.check_circle_rounded;
+      case 'navigation_cancelled':
+        return Icons.cancel_rounded;
+      case 'arrived':
+        return Icons.flag_rounded;
+      case 'off_route':
+        return Icons.warning_rounded;
+      case 'back_to_route':
+        return Icons.check_circle_outline_rounded;
+      case 'gps_lost':
+        return Icons.gps_off_rounded;
+      case 'gps_recovered':
+        return Icons.gps_fixed_rounded;
+      case 'prediction_started':
+        return Icons.timeline_rounded;
+      case 'prediction_stopped':
+        return Icons.gps_fixed_rounded;
+      case 'sos_pressed':
+        return Icons.warning_rounded;
+      default:
+        return Icons.info_outline_rounded;
+    }
+  }
+
+  Color getEventColor(String type) {
+    switch (type) {
+      case 'navigation_started':
+        return AppColors.primary;
+      case 'navigation_completed':
+      case 'arrived':
+      case 'back_to_route':
+      case 'gps_recovered':
+        return Colors.green;
+      case 'navigation_cancelled':
+      case 'gps_lost':
+      case 'sos_pressed':
+        return Colors.red;
+      case 'off_route':
+      case 'prediction_started':
+        return Colors.orange;
+      case 'prediction_stopped':
+        return Colors.blue;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  LatLng? parseLatLng(dynamic lat, dynamic lng) {
+    final latitude = _toDouble(lat);
+    final longitude = _toDouble(lng);
+    if (latitude == null || longitude == null) return null;
+    return LatLng(latitude, longitude);
+  }
+
+  List<LatLng> buildRoutePolyline(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    return docs
+        .map((doc) {
+          final data = doc.data();
+          return parseLatLng(data['lat'], data['lng']);
+        })
+        .whereType<LatLng>()
+        .toList();
+  }
+
+  LatLngBounds boundsFromLatLngList(List<LatLng> points) {
+    if (points.isEmpty) {
+      const defaultPoint = LatLng(-6.9175, 107.6191);
+      return LatLngBounds(defaultPoint, defaultPoint);
+    }
+
+    var minLat = points.first.latitude;
+    var maxLat = points.first.latitude;
+    var minLng = points.first.longitude;
+    var maxLng = points.first.longitude;
+
+    for (final point in points.skip(1)) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    final southWest = LatLng(minLat, minLng);
+    final northEast = LatLng(maxLat, maxLng);
+    return LatLngBounds(southWest, northEast);
+  }
+
+  Set<Marker> buildHistoryMarkers({
+    required List<LatLng> routePoints,
+    required Map<String, dynamic> tripData,
+    required String status,
+  }) {
+    final markers = <Marker>{};
+    final destination = parseLatLng(
+      tripData['destinationLat'],
+      tripData['destinationLng'],
+    );
+
+    if (routePoints.length == 1) {
+      markers.add(
+        _buildHistoryMarker(
+          point: routePoints.first,
+          icon: Icons.location_on,
+          color: status == 'ongoing' ? AppColors.primary : Colors.green,
+          label: status == 'ongoing' ? 'Posisi terakhir' : 'Titik rute',
+        ),
+      );
+    } else if (routePoints.length >= 2) {
+      markers.add(
+        _buildHistoryMarker(
+          point: routePoints.first,
+          icon: Icons.radio_button_checked,
+          color: Colors.green,
+          label: 'Awal',
+        ),
+      );
+
+      markers.add(
+        _buildHistoryMarker(
+          point: routePoints.last,
+          icon: Icons.location_on,
+          color: status == 'ongoing' ? AppColors.primary : Colors.red,
+          label: status == 'ongoing' ? 'Posisi terakhir' : 'Akhir',
+        ),
+      );
+    }
+
+    if (destination != null) {
+      markers.add(
+        _buildHistoryMarker(
+          point: destination,
+          icon: Icons.flag_rounded,
+          color: Colors.deepPurple,
+          label: 'Tujuan',
+        ),
+      );
+    }
+
+    return markers;
+  }
+
+  Set<Polyline> buildHistoryPolylines(List<LatLng> routePoints) {
+    if (routePoints.length < 2) return <Polyline>{};
+
+    return {
+      Polyline(
+        points: routePoints,
+        color: AppColors.primary,
+        strokeWidth: 5.0,
+        borderColor: Colors.white,
+        borderStrokeWidth: 2.0,
+      ),
+    };
   }
 
   Color getStatusColor(String? status) {
@@ -2308,6 +2508,384 @@ class NavigationHistoryDetailScreen extends StatelessWidget {
     );
   }
 
+  Marker _buildHistoryMarker({
+    required LatLng point,
+    required IconData icon,
+    required Color color,
+    required String label,
+  }) {
+    return Marker(
+      point: point,
+      width: 92,
+      height: 70,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Icon(icon, color: Colors.white, size: 18),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  LatLng _initialMapCenter({
+    required List<LatLng> routePoints,
+    required Map<String, dynamic> tripData,
+  }) {
+    if (routePoints.isNotEmpty) return routePoints.first;
+
+    final origin = parseLatLng(tripData['originLat'], tripData['originLng']);
+    if (origin != null) return origin;
+
+    return const LatLng(-6.9175, 107.6191);
+  }
+
+  void _focusRoute({
+    required List<LatLng> routePoints,
+    required Map<String, dynamic> tripData,
+  }) {
+    final origin = parseLatLng(tripData['originLat'], tripData['originLng']);
+    final destination = parseLatLng(
+      tripData['destinationLat'],
+      tripData['destinationLng'],
+    );
+    final focusPoints = <LatLng>[
+      ...routePoints,
+      if (origin != null) origin,
+      if (destination != null) destination,
+    ];
+
+    if (focusPoints.isEmpty) return;
+
+    try {
+      if (focusPoints.length == 1) {
+        _historyMapController.move(focusPoints.first, 16);
+        return;
+      }
+
+      _historyMapController.fitCamera(
+        CameraFit.bounds(
+          bounds: boundsFromLatLngList(focusPoints),
+          padding: const EdgeInsets.all(36),
+          maxZoom: 17,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[NAV_HISTORY_DETAIL] Failed to focus route: $e');
+    }
+  }
+
+  Widget _buildRouteMapSection(Map<String, dynamic> tripData) {
+    final status =
+        tripData['status'] is String ? tripData['status'] as String : 'ongoing';
+
+    return _buildSection(
+      title: 'Rute Perjalanan',
+      icon: Icons.map_rounded,
+      children: [
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _routePointsStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Container(
+                height: 280,
+                alignment: Alignment.center,
+                child: const CircularProgressIndicator(),
+              );
+            }
+
+            if (snapshot.hasError) {
+              debugPrint(
+                '[NAV_HISTORY_DETAIL] Route points stream error: ${snapshot.error}',
+              );
+            }
+
+            final docs = snapshot.data?.docs ?? [];
+            final routePoints = buildRoutePolyline(docs);
+            final initialCenter = _initialMapCenter(
+              routePoints: routePoints,
+              tripData: tripData,
+            );
+
+            if (routePoints.isEmpty) {
+              return Container(
+                height: 280,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.1)),
+                ),
+                child: Center(
+                  child: Text(
+                    'Belum ada data rute perjalanan',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+
+            final markers = buildHistoryMarkers(
+              routePoints: routePoints,
+              tripData: tripData,
+              status: status,
+            ).toList();
+            final polylines = buildHistoryPolylines(routePoints).toList();
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _focusRoute(routePoints: routePoints, tripData: tripData);
+            });
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: SizedBox(
+                    height: 280,
+                    child: FlutterMap(
+                      mapController: _historyMapController,
+                      options: MapOptions(
+                        initialCenter: initialCenter,
+                        initialZoom: routePoints.length >= 2 ? 15 : 16,
+                        minZoom: 5,
+                        maxZoom: 18,
+                        interactionOptions: const InteractionOptions(
+                          flags: InteractiveFlag.all,
+                        ),
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.example.my_app',
+                        ),
+                        if (polylines.isNotEmpty)
+                          PolylineLayer(polylines: polylines),
+                        MarkerLayer(markers: markers),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _focusRoute(
+                      routePoints: routePoints,
+                      tripData: tripData,
+                    ),
+                    icon: const Icon(Icons.center_focus_strong_rounded),
+                    label: const Text('Fokus Rute'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTimelineSection() {
+    return _buildSection(
+      title: 'Timeline Kejadian',
+      icon: Icons.timeline_rounded,
+      children: [
+        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _eventsStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Container(
+                height: 96,
+                alignment: Alignment.center,
+                child: const CircularProgressIndicator(),
+              );
+            }
+
+            if (snapshot.hasError) {
+              debugPrint(
+                '[NAV_HISTORY_DETAIL] Events stream error: ${snapshot.error}',
+              );
+            }
+
+            final docs = snapshot.data?.docs ?? [];
+            if (docs.isEmpty) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.1)),
+                ),
+                child: Text(
+                  'Tidak ada event selama perjalanan',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            }
+
+            return Column(
+              children: [
+                for (var i = 0; i < docs.length; i++)
+                  _buildEventTimelineItem(
+                    docs[i].data(),
+                    isLast: i == docs.length - 1,
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEventTimelineItem(
+    Map<String, dynamic> data, {
+    required bool isLast,
+  }) {
+    final type = data['type'] is String ? data['type'] as String : 'unknown';
+    final color = getEventColor(type);
+    final timestamp = _toTimestamp(data['timestamp']);
+    final title = _safeText(data['title'], 'Event perjalanan');
+    final description = _safeText(data['description'], '-');
+
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Column(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.14),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color.withOpacity(0.24)),
+                ),
+                child: Icon(getEventIcon(type), color: color, size: 20),
+              ),
+              if (!isLast)
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    color: color.withOpacity(0.22),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: isLast ? 0 : 16),
+              child: Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: color.withOpacity(0.16)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          formatEventTime(timestamp),
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: color,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      description,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDetailContent(Map<String, dynamic> data) {
     final startTime = _toTimestamp(data['startTime']);
     final endTime = _toTimestamp(data['endTime']);
@@ -2339,7 +2917,10 @@ class NavigationHistoryDetailScreen extends StatelessWidget {
           children: [
             _buildDetailRow('Lokasi awal', originName),
             _buildDetailRow('Tujuan', destinationName),
-            _buildDetailRow('Jarak total', formatDistance(data['totalDistanceMeters'])),
+            _buildDetailRow(
+              'Jarak total',
+              formatDistance(data['totalDistanceMeters']),
+            ),
             _buildDetailRow(
               'Koordinat awal',
               formatCoordinate(data['originLat'], data['originLng']),
@@ -2351,11 +2932,18 @@ class NavigationHistoryDetailScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
+        _buildRouteMapSection(data),
+        const SizedBox(height: 16),
+        _buildTimelineSection(),
+        const SizedBox(height: 16),
         _buildSection(
           title: 'Keamanan',
           icon: Icons.health_and_safety_rounded,
           children: [
-            _buildDetailRow('Jumlah event', formatEventCount(data['eventCount'])),
+            _buildDetailRow(
+              'Jumlah event',
+              formatEventCount(data['eventCount']),
+            ),
           ],
         ),
       ],
@@ -2390,7 +2978,7 @@ class NavigationHistoryDetailScreen extends StatelessWidget {
 
                     if (snapshot.hasError) {
                       debugPrint(
-                        '[NAV_HISTORY_DETAIL] Failed to load trip $tripId: ${snapshot.error}',
+                        '[NAV_HISTORY_DETAIL] Failed to load trip ${widget.tripId}: ${snapshot.error}',
                       );
                       return _buildNotFoundState();
                     }
