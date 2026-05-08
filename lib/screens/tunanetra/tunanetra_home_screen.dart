@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:math' as math;
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
+import '../../services/live_tracking_service.dart';
 import '../../services/user_service.dart';
 import '../../services/weather_service.dart';
 
@@ -14,12 +15,13 @@ class TunaNetraHomeScreen extends StatefulWidget {
 }
 
 class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> 
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _isSmartcaneConnected = true;
   double _smartcaneBattery = 85;
   String _userName = 'Pengguna';
   WeatherData? _weatherData;
   bool _isLoadingWeather = true;
+  final LiveTrackingService _liveTrackingService = LiveTrackingService();
   
   late AnimationController _fadeController;
   late AnimationController _rotationController;
@@ -30,10 +32,21 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeAnimations();
     _firestore = FirebaseFirestore.instance;
     _setupUserNameStream();
     _loadWeather();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _liveTrackingService.startHomeLocationTracking();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _liveTrackingService.startHomeLocationTracking();
+    }
   }
 
   void _setupUserNameStream() {
@@ -123,6 +136,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   }
 
   void _navigateToNavigation() {
+    _liveTrackingService.stopHomeLocationTracking();
     Navigator.pushNamed(context, AppRoutes.tunaNetraNavigation);
   }
 
@@ -579,6 +593,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _liveTrackingService.stopHomeLocationTracking();
     _fadeController.dispose();
     _rotationController.dispose();
     super.dispose();

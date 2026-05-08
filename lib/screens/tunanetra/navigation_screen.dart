@@ -12,6 +12,7 @@ import '../../models/navigation_instruction_model.dart';
 import '../../services/places_service.dart';
 import '../../services/routing_service.dart';
 import '../../services/analytics_service.dart';
+import '../../services/live_tracking_service.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -26,6 +27,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   final PlacesService _placesService = PlacesService();
   final RoutingService _routingService = RoutingService();
   final AnalyticsService _analyticsService = AnalyticsService();
+  final LiveTrackingService _liveTrackingService = LiveTrackingService();
   static const double _pedestrianSpeedMs = 1.4;
   static const double _arrivalThresholdMeters = 5.0;
 
@@ -59,8 +61,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const Duration _rerouteCooldown = Duration(seconds: 20);
   bool _isLocationReady =
       false; // Track if real user location has been obtained
-  StreamSubscription<Position>?
-  _positionStreamSubscription; // For continuous location updates
 
   // Places from Firestore
   List<PlaceModel> _places = [];
@@ -98,6 +98,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   bool _isLoadingInstructions = false;
   String _instructionLoadError = '';
   bool _hasArrivedAtDestination = false;
+  String _destinationName = '';
 
   @override
   void initState() {
@@ -303,6 +304,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         snapped: snapResult.snapped,
       ),
     );
+
   }
 
   void _applyPredictedMotionStep() {
@@ -362,6 +364,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         snapped: snapResult.snapped,
       ),
     );
+
   }
 
   int _findClosestRoutePointIndex(
@@ -720,23 +723,15 @@ class _NavigationScreenState extends State<NavigationScreen>
       '[NAVIGATION] Starting continuous location streaming for navigation...',
     );
 
-    // Cancel previous subscription if exists
-    _positionStreamSubscription?.cancel();
     _startSensorFusion();
 
     bool hasLoadedRouteOnceFromStreaming =
         false; // Track if route loaded from streaming
 
-    // Start listening to location updates with high accuracy
-    // Only update for small movement so navigation feels close to real-time.
-    _positionStreamSubscription =
-        Geolocator.getPositionStream(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 1,
-          ),
-        ).listen(
-          (Position position) {
+    unawaited(
+      _liveTrackingService.startNavigationTracking(
+        destinationName: _selectedPlace?.name,
+        onPosition: (Position position) {
             print(
               '[NAVIGATION] 📍 Navigation position: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy.toStringAsFixed(1)}m)',
             );
@@ -754,17 +749,17 @@ class _NavigationScreenState extends State<NavigationScreen>
               }
             }
           },
-          onError: (e) {
+        onError: (e) {
             print('[NAVIGATION] ❌ Location stream error during navigation: $e');
-          },
-        );
+        },
+      ),
+    );
   }
 
   /// Stop continuous location streaming to save battery
   void _stopLocationStreaming() {
     print('[NAVIGATION] Stopping location streaming (battery save mode)...');
-    _positionStreamSubscription?.cancel();
-    _positionStreamSubscription = null;
+    unawaited(_liveTrackingService.stopNavigationTracking());
     _stopSensorFusion();
   }
 
@@ -834,12 +829,12 @@ class _NavigationScreenState extends State<NavigationScreen>
   @override
   void dispose() {
     _mapController.dispose();
-    _positionStreamSubscription?.cancel(); // Cancel location subscription
     _stopSensorFusion();
     _durationUpdateTimer?.cancel(); // Cancel duration update timer
     _locationAnimationController
       ..removeListener(_onLocationAnimationTick)
       ..dispose();
+    unawaited(_liveTrackingService.stopNavigationTracking());
     super.dispose();
   }
 
@@ -1217,6 +1212,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           _isNavigating = true;
           _navigationStartTime = DateTime.now();
           _lastDurationUpdateTime = DateTime.now();
+          _destinationName = _selectedPlace?.name ?? 'unknown';
         });
 
         // Start timer to update duration every 5 seconds

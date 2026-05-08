@@ -36,6 +36,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   List<Map<String, dynamic>> _monitoredUsers = [];
   Map<String, FamilyLocation?> _latestLocations = {};
   Map<String, StreamSubscription<FamilyLocation>?> _subscriptions = {};
+  Map<String, Map<String, dynamic>?> _liveTrackingData = {};
+  Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?>
+      _liveTrackingSubscriptions = {};
   
   String _familyName = 'Keluarga';
   bool _isLoadingUsers = true;
@@ -44,6 +47,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   // Debug info
   String? _debugPairingCode;
   String? _debugErrorMessage;
+  Timer? _liveTrackingFreshnessTimer;
+  DateTime _liveTrackingNow = DateTime.now();
   late AnimationController _rotationController;
   late Animation<double> _fadeAnimation;
   late AnimationController _fadeController;
@@ -54,6 +59,14 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     _initializeAnimations();
     AnalyticsService().logScreenView(screenName: 'FamilyHome');
     _loadMonitoredUsers();
+    _liveTrackingFreshnessTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          _liveTrackingNow = DateTime.now();
+          // Rebuild status and battery when live_tracking updatedAt becomes stale.
+        });
+      }
+    });
   }
 
   void _initializeAnimations() {
@@ -111,7 +124,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
 
       // Start listening to each user's location
       for (var user in users) {
-        _subscribeToUserLocation(user['uid']);
+        final uid = user['uid'] as String?;
+        if (uid != null && uid.isNotEmpty) {
+          _subscribeToUserLocation(uid);
+          _subscribeToLiveTracking(uid);
+        }
       }
 
       print('✅ Monitoring users loaded: ${users.length}');
@@ -143,14 +160,44 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     _subscriptions[uid] = sub;
   }
 
+  void _subscribeToLiveTracking(String uid) {
+    if (_liveTrackingSubscriptions[uid] != null) {
+      _liveTrackingSubscriptions[uid]?.cancel();
+    }
+
+    final sub = _firestore
+        .collection('live_tracking')
+        .doc(uid)
+        .snapshots()
+        .listen((snapshot) {
+      if (mounted) {
+        setState(() {
+          _liveTrackingData[uid] = snapshot.data();
+        });
+      }
+    });
+
+    _liveTrackingSubscriptions[uid] = sub;
+  }
+
   bool _isUserOnline(String uid) {
-    final location = _latestLocations[uid];
-    if (location == null) return false;
-    
-    // Consider user online if we have location data from the last 5 minutes
-    final now = DateTime.now();
-    final timeDiff = now.difference(location.timestamp).inMinutes;
-    return timeDiff < 5;
+    final liveData = _liveTrackingData[uid];
+    if (liveData == null) return false;
+
+    final connectionStatus = liveData['connectionStatus'];
+    final lat = _parseDouble(liveData['lat']);
+    final lng = _parseDouble(liveData['lng']);
+    final updatedAt = _parseTimestamp(liveData['updatedAt']);
+
+    return connectionStatus == 'online' &&
+        lat != null &&
+        lng != null &&
+        _isLiveTrackingFresh(updatedAt);
+  }
+
+  double? _getLiveBatteryLevel(String uid) {
+    if (!_isUserOnline(uid)) return null;
+    return _parseBatteryLevel(_liveTrackingData[uid]?['batteryLevel']);
   }
 
   Color _getBatteryColor(double battery) {
@@ -177,6 +224,10 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     for (var sub in _subscriptions.values) {
       sub?.cancel();
     }
+    for (var sub in _liveTrackingSubscriptions.values) {
+      sub?.cancel();
+    }
+    _liveTrackingFreshnessTimer?.cancel();
     _rotationController.dispose();
     _fadeController.dispose();
     _locationService.dispose();
@@ -307,31 +358,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                // Right: Stats
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (_monitoredUsers.isEmpty ||
-                        _monitoredUsers.where((u) => _isUserOnline(u['uid'])).isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          _monitoredUsers.isEmpty ? 'Belum ada' : 'Online',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                  ],
                 ),
                 const SizedBox(width: 12),
                 GestureDetector(
@@ -568,8 +594,10 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       child: Column(
         children: List.generate(_monitoredUsers.length, (index) {
           final user = _monitoredUsers[index];
-          final location = _latestLocations[user['uid']];
-          final isOnline = _isUserOnline(user['uid']);
+          final uid = user['uid'] as String? ?? '';
+          final location = _latestLocations[uid];
+          final isOnline = _isUserOnline(uid);
+          final batteryLevel = _getLiveBatteryLevel(uid);
           
           return GestureDetector(
             onTap: () {
@@ -701,7 +729,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    isOnline ? 'Online Sekarang' : 'Tidak aktif',
+                                    isOnline ? 'Aktif' : 'Tidak aktif',
                                     style: AppTextStyles.bodySmall.copyWith(
                                       color: isOnline ? Colors.green : Colors.orange,
                                       fontWeight: FontWeight.w700,
@@ -716,8 +744,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                         const SizedBox(width: 10),
 
                         // Battery Indicator
-                        if (location != null)
-                          _buildBatteryIndicator(location.battery)
+                        if (batteryLevel != null)
+                          _buildBatteryIndicator(batteryLevel)
                         else
                           Container(
                             width: 48,
@@ -1064,24 +1092,38 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ],
           ),
         ),
-        const SizedBox(height: 4),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: _getBatteryColor(battery).withOpacity(0.1),
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Text(
-            battery >= 50 ? 'Baik' : battery >= 20 ? 'Rendah' : 'Kritis',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: _getBatteryColor(battery),
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
       ],
     );
+  }
+
+  double? _parseBatteryLevel(dynamic value) {
+    if (value is num) {
+      return value.toDouble().clamp(0.0, 100.0);
+    }
+    if (value is String) {
+      final parsed = double.tryParse(value);
+      return parsed?.clamp(0.0, 100.0);
+    }
+    return null;
+  }
+
+  double? _parseDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      return double.tryParse(value);
+    }
+    return null;
+  }
+
+  Timestamp? _parseTimestamp(dynamic value) {
+    return value is Timestamp ? value : null;
+  }
+
+  bool _isLiveTrackingFresh(Timestamp? updatedAt) {
+    if (updatedAt == null) return false;
+    return _liveTrackingNow.difference(updatedAt.toDate()).inSeconds <= 30;
   }
 
   Widget _buildDeviceStatusInfo({

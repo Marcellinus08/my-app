@@ -1,0 +1,216 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+
+class LiveTrackingScreen extends StatefulWidget {
+  final String pairedUserUid; // UID of the visually impaired user being tracked
+
+  const LiveTrackingScreen({super.key, required this.pairedUserUid});
+
+  @override
+  State<LiveTrackingScreen> createState() => _LiveTrackingScreenState();
+}
+
+class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
+  Timer? _realtimeUpdateTimer;
+
+  static const LatLng _fallbackCenter = LatLng(-6.9147, 107.6098);
+
+  @override
+  void initState() {
+    super.initState();
+    _realtimeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          // Trigger rebuild untuk update status offline dan last update.
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _realtimeUpdateTimer?.cancel();
+    super.dispose();
+  }
+
+  bool isTrackingFresh(Timestamp? updatedAt) {
+    if (updatedAt == null) return false;
+    final age = DateTime.now().difference(updatedAt.toDate());
+    return age.inSeconds <= 30;
+  }
+
+  bool isGpsActiveTracking(Map<String, dynamic>? liveData) {
+    if (liveData == null) return false;
+    final lat = _parseDouble(liveData['lat']);
+    final lng = _parseDouble(liveData['lng']);
+    final updatedAt = _parseTimestamp(liveData['updatedAt']);
+    return lat != null && lng != null && isTrackingFresh(updatedAt);
+  }
+
+  String formatLastUpdate(Timestamp? updatedAt) {
+    if (updatedAt == null) return '-';
+    final duration = DateTime.now().difference(updatedAt.toDate());
+    if (duration.inSeconds < 60) {
+      return '${duration.inSeconds} detik lalu';
+    }
+    if (duration.inMinutes < 60) {
+      return '${duration.inMinutes} menit lalu';
+    }
+    if (duration.inHours < 24) {
+      return '${duration.inHours} jam lalu';
+    }
+    return '${duration.inDays} hari lalu';
+  }
+
+  String buildGpsStatusText(bool isGpsActive) {
+    return isGpsActive ? 'Aktif' : 'Tidak aktif';
+  }
+
+  String buildNavigationText(bool isGpsActive, bool isNavigating) {
+    if (!isGpsActive) {
+      return '-';
+    }
+    return isNavigating ? 'Aktif' : 'Tidak aktif';
+  }
+
+  double? _parseDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  Timestamp? _parseTimestamp(dynamic value) {
+    return value is Timestamp ? value : null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Live Tracking'),
+      ),
+      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('live_tracking')
+            .doc(widget.pairedUserUid)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(child: Text('Error: ${snapshot.error}'));
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final hasLiveData = snapshot.hasData && snapshot.data?.exists == true;
+          final data = hasLiveData ? snapshot.data!.data() : null;
+
+          final lat = _parseDouble(data?['lat']);
+          final lng = _parseDouble(data?['lng']);
+          final heading = _parseDouble(data?['heading']) ?? 0.0;
+          final speed = _parseDouble(data?['speed']);
+          final accuracy = _parseDouble(data?['accuracy']);
+          final isNavigating = data?['isNavigating'] as bool? ?? false;
+          final gpsStatus = data?['gpsStatus'] as String? ?? '-';
+          final destinationName =
+              (data?['destinationName'] as String?)?.isNotEmpty == true
+                  ? data!['destinationName'] as String
+                  : '-';
+          final batteryLevel = data?['batteryLevel'];
+          final updatedAt = _parseTimestamp(data?['updatedAt']);
+          final isGpsActive = isGpsActiveTracking(data);
+          final isNavigationActive = isGpsActive && isNavigating;
+          final hasLocation = isGpsActive && lat != null && lng != null;
+          final userLocation = hasLocation ? LatLng(lat, lng) : _fallbackCenter;
+
+          final displayDestination =
+              isNavigationActive ? destinationName : '-';
+          final navigationText = buildNavigationText(isGpsActive, isNavigating);
+          final displaySpeed = isNavigationActive && speed != null
+              ? '${speed.toStringAsFixed(1)} m/s'
+              : '-';
+          final displayHeading =
+              isNavigationActive ? '${heading.toStringAsFixed(0)} deg' : '-';
+          final displayAccuracy = isNavigationActive && accuracy != null
+              ? '${accuracy.toStringAsFixed(1)} m'
+              : '-';
+          final displayBattery =
+              isGpsActive && batteryLevel != null ? '$batteryLevel%' : '-';
+          final displayLastUpdate =
+              isNavigationActive ? formatLastUpdate(updatedAt) : '-';
+          final gpsStatusText = buildGpsStatusText(isGpsActive);
+
+          return Column(
+            children: [
+              // Status info
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.blue.shade50,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'GPS: $gpsStatusText',
+                    ),
+                    Text('Destination: $displayDestination'),
+                    Text('Navigasi: $navigationText'),
+                    Text('Speed: $displaySpeed'),
+                    Text('Heading: $displayHeading'),
+                    Text('Accuracy: $displayAccuracy'),
+                    Text('Battery: $displayBattery'),
+                    Text('Last Update: $displayLastUpdate'),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: userLocation,
+                    initialZoom: 16.0,
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.app',
+                    ),
+                    if (hasLocation)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: userLocation,
+                            child: Transform.rotate(
+                              angle: heading * (math.pi / 180),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: gpsStatus == 'gps_live'
+                                      ? Colors.blue
+                                      : Colors.orange,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.location_on,
+                                  color: Colors.white,
+                                  size: 30,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}

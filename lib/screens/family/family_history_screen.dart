@@ -1,10 +1,13 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
-import '../../models/family_location_model.dart';
-import '../../services/family_location_service.dart';
 import '../../services/analytics_service.dart';
 import '../../utils/constants.dart';
 
@@ -23,14 +26,16 @@ class FamilyHistoryScreen extends StatefulWidget {
 }
 
 class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
-  final FamilyLocationService _service = FamilyLocationService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final MapController _mapController = MapController();
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
-  late final Stream<FamilyLocation> _liveStream;
-  FamilyLocation? _latestLocation;
-  LatLng? _lastLiveCenter;
+  StateSetter? _modalSetState;
+  late final Future<String?> _pairedUserUidFuture;
+  bool _hasCenteredMap = false;
   bool _isSheetExpanded = false;
+  Timer? _realtimeUpdateTimer;
   static const double _liveZoom = 16.5;
   static const LatLng _fallbackCenter = LatLng(-6.9147, 107.6098);
   static const double _sheetMin = 0.40;
@@ -42,16 +47,26 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     super.initState();
     AnalyticsService().logScreenView(screenName: 'FamilyHistory');
     _sheetController.addListener(_handleSheetSize);
-    _liveStream = _service.listenToRealtime(
-      widget.targetUid,
-      storeHistory: false,
-    );
+    _pairedUserUidFuture = getPairedUserUid();
+    
+    // Timer untuk update status offline/online dan last update setiap 1 detik
+    _realtimeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          // Trigger rebuild untuk update status dan time-based UI
+        });
+        _modalSetState?.call(() {
+          // Trigger rebuild bottom sheet untuk status offline dan last update
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
-    _service.dispose();
     _sheetController.dispose();
+    _realtimeUpdateTimer?.cancel();
+    _modalSetState = null;
     super.dispose();
   }
 
@@ -90,7 +105,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     );
   }
 
-  Widget _buildCollapsedSheetCard(FamilyLocation? location) {
+  Widget _buildCollapsedSheetCard(Map<String, dynamic>? liveData) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
@@ -172,54 +187,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         ),
       ),
     );
-  }
-
-  String _activityLabel(FamilyLocation location) {
-    if (location.navigationStatus == 'navigating') {
-      return 'Navigasi aktif';
-    }
-    if (location.speed >= 0.8) {
-      return 'Sedang berjalan';
-    }
-    return 'Diam';
-  }
-
-  String _formatTimeAgo(DateTime timestamp) {
-    final duration = DateTime.now().difference(timestamp);
-    if (duration.inSeconds < 60) {
-      return '${duration.inSeconds} detik lalu';
-    }
-    if (duration.inMinutes < 60) {
-      return '${duration.inMinutes} menit lalu';
-    }
-    if (duration.inHours < 24) {
-      return '${duration.inHours} jam lalu';
-    }
-    return '${duration.inDays} hari lalu';
-  }
-
-  Color _activityColor(FamilyLocation location) {
-    if (location.navigationStatus == 'navigating') {
-      return Colors.blue;
-    }
-    if (location.speed >= 0.8) {
-      return Colors.green;
-    }
-    return Colors.orange;
-  }
-
-  String _navigationLabel(FamilyLocation location) {
-    if (location.navigationStatus == 'navigating') {
-      return 'Menuju: ${location.destination ?? '-'}';
-    }
-    return 'Tidak sedang navigasi';
-  }
-
-  String _etaLabel(FamilyLocation location) {
-    if (location.navigationStatus == 'navigating') {
-      return 'Estimasi: sedang dihitung';
-    }
-    return 'Estimasi: -';
   }
 
   Widget _buildMapPlaceholder(String label) {
@@ -462,9 +429,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     );
   }
 
-  Widget _buildTunaNetraInfoCard() {
+  Widget _buildTunaNetraInfoCard(String pairedUid, Map<String, dynamic>? liveData) {
     return GestureDetector(
-      onTap: _showTunaNetraInfo,
+      onTap: () => _showTunaNetraInfo(pairedUid),
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.all(16),
@@ -508,7 +475,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Ketuk untuk melihat detail pengguna (dummy data)',
+                    liveData != null
+                        ? 'Ketuk untuk melihat detail lokasi terbaru'
+                        : 'Belum ada data lokasi terbaru',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -526,89 +495,161 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     );
   }
 
-  void _showTunaNetraInfo() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      isScrollControlled: true,
-      builder: (context) {
-        return Padding(
-          padding: MediaQuery.of(context).viewInsets,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 48,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: AppColors.textTertiary.withOpacity(0.3),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Detail Tuna Netra',
-                  style: AppTextStyles.heading2.copyWith(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  'Informasi ini masih menggunakan data dummy. Nantinya akan diambil dari profil tuna netra yang dipantau.',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                _buildDetailRow('Nama', 'Adi Saputra'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Usia', '28 tahun'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Lokasi', 'Bandung, Jawa Barat'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Kondisi', 'Stabil'),
-                const SizedBox(height: 12),
-                _buildDetailRow('Status navigasi', 'Sedang berjalan'),
-                const SizedBox(height: 12),
-                _buildDetailRow(
-                  'Last update',
-                  _latestLocation != null
-                      ? _formatTimeAgo(_latestLocation!.timestamp)
-                      : '3 detik lalu',
-                ),
-                const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+  void _showTunaNetraInfo(String pairedUid) {
+    // Fetch user name from Firestore
+    _firestore.collection('users').doc(pairedUid).get().then((doc) {
+      if (!mounted) return;
+      final userName = doc.data()?['name'] as String? ?? '-';
+      
+      showModalBottomSheet(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        isScrollControlled: true,
+        builder: (context) {
+          // Use StatefulBuilder to allow realtime updates in modal
+          return StatefulBuilder(
+            builder: (context, setModalState) {
+              _modalSetState = setModalState;
+              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                stream: getLiveTrackingStream(pairedUid),
+                builder: (context, snapshot) {
+                  final hasLiveData = snapshot.hasData && snapshot.data?.exists == true;
+                  final liveData = hasLiveData ? snapshot.data!.data() : null;
+                  
+                  final isNavigating = liveData?['isNavigating'] as bool? ?? false;
+                  final batteryLevel = liveData?['batteryLevel']?.toString() ?? '-';
+                  final speed = liveData?['speed']?.toString() ?? '-';
+                  final accuracy = liveData?['accuracy']?.toString() ?? '-';
+                  final destinationName = (liveData?['destinationName'] as String?)?.isNotEmpty == true
+                      ? liveData!['destinationName'] as String
+                      : '-';
+                  final lat = _parseDouble(liveData?['lat']);
+                  final lng = _parseDouble(liveData?['lng']);
+                  final locationText = lat != null && lng != null
+                      ? '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}'
+                      : '-';
+                  final updatedAt = _parseTimestamp(liveData?['updatedAt']);
+                  final isGpsActive = isGpsActiveTracking(liveData);
+                  final isNavigationActive = isGpsActive && isNavigating;
+                  final gpsStatusText = buildGpsStatusText(isGpsActive);
+                  final navigationText =
+                      buildNavigationText(isGpsActive, isNavigating);
+                  
+                  return Padding(
+                    padding: MediaQuery.of(context).viewInsets,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 48,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: AppColors.textTertiary.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Detail Tuna Netra',
+                            style: AppTextStyles.heading2.copyWith(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Data diambil langsung dari live_tracking.',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          _buildDetailRow('Nama', userName),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'GPS',
+                            gpsStatusText,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'Lokasi',
+                            isGpsActive ? locationText : '-',
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'Baterai',
+                            isGpsActive
+                                ? (batteryLevel != '-' ? '$batteryLevel%' : '-')
+                                : '-',
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'Navigasi',
+                            navigationText,
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'Tujuan',
+                            isNavigationActive ? destinationName : '-',
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'Akurasi',
+                            isNavigationActive
+                                ? (accuracy != '-' ? '$accuracy meter' : '-')
+                                : '-',
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'Kecepatan',
+                            isNavigationActive
+                                ? (speed != '-' ? '$speed m/s' : '-')
+                                : '-',
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'Last update',
+                            isNavigationActive ? formatLastUpdate(updatedAt) : '-',
+                          ),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: ElevatedButton.styleFrom(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                              ),
+                              child: const Text('Tutup'),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: const Text('Tutup'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
+                  );
+                },
+              );
+            },
+          );
+        },
+      ).whenComplete(() {
+        _modalSetState = null;
+      });
+    });
   }
 
   Widget _buildDetailRow(String title, String value) {
@@ -638,16 +679,92 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     );
   }
 
-  Widget _buildMainMap(FamilyLocation? location) {
-    final hasLocation = location != null;
-    final center = hasLocation
-        ? LatLng(location.latitude, location.longitude)
-        : _fallbackCenter;
+  double? _parseDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+    if (value is String) {
+      return double.tryParse(value);
+    }
+    return null;
+  }
 
-    if (_lastLiveCenter == null ||
-        _lastLiveCenter!.latitude != center.latitude ||
-        _lastLiveCenter!.longitude != center.longitude) {
-      _lastLiveCenter = center;
+  Timestamp? _parseTimestamp(dynamic value) {
+    return value is Timestamp ? value : null;
+  }
+
+  Future<String?> getPairedUserUid() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return null;
+
+    final doc = await _firestore.collection('users').doc(currentUser.uid).get();
+    if (!doc.exists) return null;
+
+    final data = doc.data();
+    if (data == null) return null;
+
+    final pairedUid = data['pairedUserUid'];
+    if (pairedUid is String && pairedUid.isNotEmpty) {
+      return pairedUid;
+    }
+    return null;
+  }
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> getLiveTrackingStream(
+      String tunaNetraUid) {
+    return _firestore.collection('live_tracking').doc(tunaNetraUid).snapshots();
+  }
+
+  bool isTrackingFresh(Timestamp? updatedAt) {
+    if (updatedAt == null) return false;
+    final age = DateTime.now().difference(updatedAt.toDate());
+    return age.inSeconds <= 30;
+  }
+
+  bool isGpsActiveTracking(Map<String, dynamic>? liveData) {
+    if (liveData == null) return false;
+    final lat = _parseDouble(liveData['lat']);
+    final lng = _parseDouble(liveData['lng']);
+    final updatedAt = _parseTimestamp(liveData['updatedAt']);
+    return lat != null && lng != null && isTrackingFresh(updatedAt);
+  }
+
+  String formatLastUpdate(Timestamp? updatedAt) {
+    if (updatedAt == null) return '-';
+    final duration = DateTime.now().difference(updatedAt.toDate());
+    if (duration.inSeconds < 60) {
+      return '${duration.inSeconds} detik lalu';
+    }
+    if (duration.inMinutes < 60) {
+      return '${duration.inMinutes} menit lalu';
+    }
+    if (duration.inHours < 24) {
+      return '${duration.inHours} jam lalu';
+    }
+    return '${duration.inDays} hari lalu';
+  }
+
+  String buildGpsStatusText(bool isGpsActive) {
+    return isGpsActive ? 'Aktif' : 'Tidak aktif';
+  }
+
+  String buildNavigationText(bool isGpsActive, bool isNavigating) {
+    if (!isGpsActive) {
+      return '-';
+    }
+    return isNavigating ? 'Aktif' : 'Tidak aktif';
+  }
+
+  Widget _buildMainMap(Map<String, dynamic>? liveData) {
+    final lat = _parseDouble(liveData?['lat']);
+    final lng = _parseDouble(liveData?['lng']);
+    final heading = _parseDouble(liveData?['heading']) ?? 0.0;
+    final isGpsActive = isGpsActiveTracking(liveData);
+    final hasLocation = lat != null && lng != null && isGpsActive;
+    final center = hasLocation ? LatLng(lat, lng) : _fallbackCenter;
+
+    if (!_hasCenteredMap && hasLocation) {
+      _hasCenteredMap = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _mapController.move(center, _liveZoom);
@@ -679,24 +796,27 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                 markers: [
                   Marker(
                     point: center,
-                    width: 48,
-                    height: 48,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.green.withOpacity(0.9),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.green.withOpacity(0.4),
-                            blurRadius: 10,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.person_pin_circle,
-                        color: Colors.white,
-                        size: 28,
+                    width: 56,
+                    height: 56,
+                    child: Transform.rotate(
+                      angle: heading * (math.pi / 180),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.blue.withOpacity(0.9),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.blue.withOpacity(0.35),
+                              blurRadius: 10,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.navigation_rounded,
+                          color: Colors.white,
+                          size: 28,
+                        ),
                       ),
                     ),
                   ),
@@ -704,32 +824,76 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
               ),
           ],
         ),
+        if (!hasLocation)
+          Positioned.fill(
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.92),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.textTertiary.withOpacity(0.2)),
+                ),
+                child: Text(
+                  isGpsActive ? 'Belum ada data lokasi' : 'User sedang offline',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  List<Widget> _buildLivePanelContent(FamilyLocation? location) {
-    final destination = location?.destination ?? 'Kampus';
-    final speed = location != null ? '${location.speed.toStringAsFixed(1)} m/s' : '1.2 m/s';
-    final battery = location != null ? '${location.battery.round()}%' : '45%';
-    final gpsAccuracy = '5 m';
-    final address = 'Jl. Merdeka No. 1, Bandung';
-    final isNavigating = location?.navigationStatus == 'navigating';
-    final navigationStatus = isNavigating ? 'Navigasi aktif' : 'Tidak sedang navigasi';
-    final statusMovement = location != null && location.speed >= 0.8 ? 'Berjalan' : 'Diam';
-    final lastUpdate = location != null ? _formatTimeAgo(location.timestamp) : '3 detik lalu';
-    final heading = 'Timur';
-    final distance = '1.2 km';
-    final confidence = 'High';
-    final alert = 'Tidak ada masalah';
-    final connectionStatus = location?.internetAvailable == true ? 'Online' : 'Offline';
-    final gpsStatus = location?.gpsEnabled == true ? 'Aktif' : 'Tidak aktif';
+  List<Widget> _buildLivePanelContent(Map<String, dynamic>? liveData) {
+    final destinationName = (liveData?['destinationName'] as String?)?.isNotEmpty == true
+        ? liveData!['destinationName'] as String
+        : '-';
+    final speedValue = _parseDouble(liveData?['speed']);
+    final speed = speedValue != null ? '${speedValue.toStringAsFixed(1)} m/s' : '-';
+    final battery = liveData?['batteryLevel'] != null
+        ? '${liveData!['batteryLevel']}%'
+        : '-';
+    final accuracyValue = _parseDouble(liveData?['accuracy']);
+    final accuracy = accuracyValue != null ? '${accuracyValue.toStringAsFixed(1)} m' : '-';
+    final lat = _parseDouble(liveData?['lat']);
+    final lng = _parseDouble(liveData?['lng']);
+    final locationText = lat != null && lng != null
+        ? '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}'
+        : '-';
+    final headingValue = _parseDouble(liveData?['heading']) ?? 0.0;
+    final isNavigating = liveData?['isNavigating'] as bool? ?? false;
+    final updatedAt = _parseTimestamp(liveData?['updatedAt']);
+    final isGpsActive = isGpsActiveTracking(liveData);
+    final isNavigationActive = isGpsActive && isNavigating;
+
+    // Prepare display values based on online status
+    final displayLocation = isGpsActive ? locationText : '-';
+    final displayLat =
+        isGpsActive && lat != null ? lat.toStringAsFixed(6) : '-';
+    final displayLng =
+        isGpsActive && lng != null ? lng.toStringAsFixed(6) : '-';
+    final displayAccuracy = isNavigationActive ? accuracy : '-';
+    final displayDestination = isNavigationActive ? destinationName : '-';
+    final navigationText = buildNavigationText(isGpsActive, isNavigating);
+    final gpsStatusText = buildGpsStatusText(isGpsActive);
+    final displaySpeed = isNavigationActive ? speed : '-';
+    final displayHeading =
+        isNavigationActive ? headingValue.toStringAsFixed(0) : '-';
+    final displayBattery = isGpsActive ? battery : '-';
+    final displayLastUpdate =
+        isNavigationActive ? formatLastUpdate(updatedAt) : '-';
 
     return [
       _buildSectionTitle('🎯 Tujuan realtime monitoring'),
       const SizedBox(height: 10),
       Text(
-        'Tahu posisi sekarang • Tahu kondisi user • Bisa respon cepat kalau ada masalah',
+        isGpsActive
+            ? 'Tahu posisi sekarang • Tahu kondisi user • Bisa respon cepat kalau ada masalah'
+            : 'User sedang offline. Data tidak tersedia.',
         style: AppTextStyles.bodySmall.copyWith(
           color: AppColors.textSecondary,
           height: 1.6,
@@ -739,421 +903,423 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       _buildDetailCard(
         title: 'Data realtime yang WAJIB ada',
         items: [
-          'Lokasi realtime: $address',
-          'Latitude: ${location?.latitude.toStringAsFixed(6) ?? '-6.914700'}',
-          'Longitude: ${location?.longitude.toStringAsFixed(6) ?? '107.609800'}',
-          'Akurasi GPS: $gpsAccuracy',
+          'Lokasi realtime: $displayLocation',
+          'Latitude: $displayLat',
+          'Longitude: $displayLng',
+          'Akurasi GPS: $displayAccuracy',
         ],
       ),
       const SizedBox(height: 18),
       _buildDetailCard(
-        title: 'Status navigasi',
+        title: 'Navigasi',
         items: [
-          'Menuju: $destination',
-          'ETA: 10 menit',
-          'Status: $navigationStatus',
+          'Menuju: $displayDestination',
+          'Navigasi: $navigationText',
+          'GPS: $gpsStatusText',
         ],
       ),
       const SizedBox(height: 18),
       _buildDetailCard(
         title: 'Status pergerakan',
         items: [
-          'Status: $statusMovement',
-          'Kecepatan: $speed',
-          'Arah: $heading',
+          'Kecepatan: $displaySpeed',
+          'Arah: $displayHeading°',
         ],
       ),
       const SizedBox(height: 18),
-      Row(
-        children: [
-          Expanded(
-            child: _buildMiniTag('GPS Live 🟢', icon: Icons.gps_fixed, color: Colors.green),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _buildMiniTag('Predicted ⚠️', icon: Icons.verified_user, color: Colors.amber),
-          ),
-        ],
-      ),
-      const SizedBox(height: 18),
-      _buildDetailCard(
-        title: 'Status keamanan',
-        items: [
-          '⚠️ $alert',
-          'Keluar rute: tidak',
-          'SOS: tidak aktif',
-          'GPS: $gpsStatus',
-          'Internet: $connectionStatus',
-        ],
-      ),
-      const SizedBox(height: 18),
-      Row(
-        children: [
-          Expanded(
-            child: _buildInfoTile('Baterai', battery, color: battery.endsWith('%') && int.tryParse(battery.replaceAll('%', ''))! < 20 ? Colors.red : Colors.orange),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _buildInfoTile('Jarak ke tujuan', distance),
-          ),
-        ],
-      ),
-      const SizedBox(height: 16),
-      Row(
-        children: [
-          Expanded(child: _buildInfoTile('Koneksi', connectionStatus)),
-          const SizedBox(width: 10),
-          Expanded(child: _buildInfoTile('Confidence', confidence)),
-        ],
-      ),
-      const SizedBox(height: 18),
-      _buildDetailRow('Last update', lastUpdate),
-      const SizedBox(height: 10),
-      Text(
-        'Update tiap 1–3 detik atau saat perubahan signifikan menjaga keluarga tetap yakin tanpa boros.',
-        style: AppTextStyles.bodySmall.copyWith(
-          color: AppColors.textSecondary,
-          height: 1.6,
+      if (isGpsActive)
+        Row(
+          children: [
+            Expanded(
+              child: _buildMiniTag('GPS Live 🟢', icon: Icons.gps_fixed, color: Colors.green),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildMiniTag('Predicted ⚠️', icon: Icons.verified_user, color: Colors.amber),
+            ),
+          ],
         ),
+      if (isGpsActive) const SizedBox(height: 18),
+      _buildDetailCard(
+        title: 'Info tambahan',
+        items: [
+          'Baterai: $displayBattery',
+          'Tujuan: $displayDestination',
+          'Last update: $displayLastUpdate',
+        ],
       ),
     ];
   }
 
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: StreamBuilder<FamilyLocation>(
-        stream: _liveStream,
-        builder: (context, snapshot) {
-          if (snapshot.hasData) {
-            _latestLocation = snapshot.data;
+      body: FutureBuilder<String?>(
+        future: _pairedUserUidFuture,
+        builder: (context, pairedSnapshot) {
+          final pairedUid = pairedSnapshot.data;
+          if (pairedSnapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
           }
-          final location = snapshot.data ?? _latestLocation;
 
-          return Stack(
-            children: [
-              Positioned.fill(
-                child: _buildMainMap(location),
-              ),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: Container(
-                    margin: const EdgeInsets.all(16),
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.white,
-                          Colors.white.withOpacity(0.95),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
+          if (pairedSnapshot.hasError || pairedUid == null || pairedUid.isEmpty) {
+            return Stack(
+              children: [
+                Positioned.fill(child: _buildMainMap(null)),
+                Positioned.fill(
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.92),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.textTertiary.withOpacity(0.2)),
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withOpacity(0.15),
-                          blurRadius: 25,
-                          offset: const Offset(0, 10),
+                      child: Text(
+                        'Belum ada data lokasi',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textSecondary,
+                          fontWeight: FontWeight.w700,
                         ),
-                      ],
-                      border: Border.all(
-                        color: AppColors.primary.withOpacity(0.1),
-                        width: 1,
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              gradient: AppColors.primaryGradient,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.arrow_back_rounded,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ShaderMask(
-                                shaderCallback: (bounds) =>
-                                    AppColors.primaryGradient.createShader(bounds),
-                                child: Text(
-                                  'Lihat Detail & Lokasi',
-                                  style: AppTextStyles.heading2.copyWith(
-                                    color: Colors.white,
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Pantau realtime & riwayat perjalanan',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: AppColors.textSecondary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                     ),
                   ),
                 ),
-              ),
-              DraggableScrollableSheet(
-                controller: _sheetController,
-                minChildSize: _sheetMin,
-                maxChildSize: _sheetMax,
-                initialChildSize: _sheetMin,
-                builder: (context, controller) {
-                  final isExpanded = _isSheetExpanded;
-                  return Container(
-                    decoration: BoxDecoration(
-                      color: isExpanded ? AppColors.background : Colors.transparent,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(24),
-                      ),
-                      boxShadow: isExpanded
-                          ? [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.18),
-                                blurRadius: 24,
-                                offset: const Offset(0, -6),
-                              ),
-                            ]
-                          : [],
-                    ),
-                    child: isExpanded
-                      ? Stack(
+              ],
+            );
+          }
+
+          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            stream: getLiveTrackingStream(pairedUid),
+            builder: (context, snapshot) {
+              final hasLiveData = snapshot.hasData && snapshot.data?.exists == true;
+              final liveData = hasLiveData ? snapshot.data!.data() : null;
+
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: _buildMainMap(liveData),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: SafeArea(
+                      bottom: false,
+                      child: Container(
+                        margin: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Colors.white,
+                              Colors.white.withOpacity(0.95),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withOpacity(0.15),
+                              blurRadius: 25,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                          border: Border.all(
+                            color: AppColors.primary.withOpacity(0.1),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
                           children: [
-                            Positioned(
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: 130,
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                                child: ListView(
-                                  controller: controller,
-                                  padding: const EdgeInsets.only(bottom: 24),
-                                  children: [
-                                    GestureDetector(
-                                      onTap: _toggleSheet,
-                                      child: Center(
-                                        child: Container(
-                                          width: 48,
-                                          height: 5,
-                                          decoration: BoxDecoration(
-                                            color: AppColors.textTertiary
-                                                .withOpacity(0.4),
-                                            borderRadius:
-                                                BorderRadius.circular(999),
-                                          ),
-                                        ),
+                            GestureDetector(
+                              onTap: () => Navigator.pop(context),
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  gradient: AppColors.primaryGradient,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Icon(
+                                  Icons.arrow_back_rounded,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ShaderMask(
+                                    shaderCallback: (bounds) =>
+                                        AppColors.primaryGradient.createShader(bounds),
+                                    child: Text(
+                                      'Lihat Detail & Lokasi',
+                                      style: AppTextStyles.heading2.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w800,
                                       ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    const SizedBox(height: 14),
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            'Riwayat Perjalanan',
-                                            style: AppTextStyles.bodyLarge.copyWith(
-                                              fontWeight: FontWeight.w800,
-                                              color: AppColors.textPrimary,
-                                            ),
-                                          ),
-                                        ),
-                                        GestureDetector(
-                                          onTap: _openHistoryScreen,
-                                          child: Container(
-                                            width: 42,
-                                            height: 42,
-                                            decoration: BoxDecoration(
-                                              gradient: AppColors.primaryGradient,
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: AppColors.primary
-                                                      .withOpacity(0.25),
-                                                  blurRadius: 12,
-                                                  offset: const Offset(0, 6),
-                                                ),
-                                              ],
-                                            ),
-                                            child: const Icon(
-                                              Icons.route_rounded,
-                                              color: Colors.white,
-                                              size: 22,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Pantau realtime & riwayat perjalanan',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: AppColors.textSecondary,
                                     ),
-                                    const SizedBox(height: 14),
-                                    Row(
-                                      children: [
-                                        Container(
-                                          width: 36,
-                                          height: 36,
-                                          decoration: BoxDecoration(
-                                            color: AppColors.primary
-                                                .withOpacity(0.12),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(
-                                            Icons.radar_rounded,
-                                            color: AppColors.primary,
-                                            size: 20,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Info Realtime',
-                                                style: AppTextStyles.bodyMedium
-                                                    .copyWith(
-                                                  fontWeight: FontWeight.w800,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  DraggableScrollableSheet(
+                    controller: _sheetController,
+                    minChildSize: _sheetMin,
+                    maxChildSize: _sheetMax,
+                    initialChildSize: _sheetMin,
+                    builder: (context, controller) {
+                      final isExpanded = _isSheetExpanded;
+                      return Container(
+                        decoration: BoxDecoration(
+                          color: isExpanded ? AppColors.background : Colors.transparent,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(24),
+                          ),
+                          boxShadow: isExpanded
+                              ? [
+                                  BoxShadow(
+                                    color: AppColors.primary.withOpacity(0.18),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, -6),
+                                  ),
+                                ]
+                              : [],
+                        ),
+                        child: isExpanded
+                            ? Stack(
+                                children: [
+                                  Positioned(
+                                    top: 0,
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 130,
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                                      child: ListView(
+                                        controller: controller,
+                                        padding: const EdgeInsets.only(bottom: 24),
+                                        children: [
+                                          GestureDetector(
+                                            onTap: _toggleSheet,
+                                            child: Center(
+                                              child: Container(
+                                                width: 48,
+                                                height: 5,
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.textTertiary
+                                                      .withOpacity(0.4),
+                                                  borderRadius:
+                                                      BorderRadius.circular(999),
                                                 ),
                                               ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                'Status aktivitas dan koneksi pengguna',
-                                                style: AppTextStyles.bodySmall
-                                                    .copyWith(
-                                                  color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 14),
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  'Riwayat Perjalanan',
+                                                  style: AppTextStyles.bodyLarge.copyWith(
+                                                    fontWeight: FontWeight.w800,
+                                                    color: AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                              ),
+                                              GestureDetector(
+                                                onTap: _openHistoryScreen,
+                                                child: Container(
+                                                  width: 42,
+                                                  height: 42,
+                                                  decoration: BoxDecoration(
+                                                    gradient: AppColors.primaryGradient,
+                                                    borderRadius:
+                                                        BorderRadius.circular(14),
+                                                    boxShadow: [
+                                                      BoxShadow(
+                                                        color: AppColors.primary
+                                                            .withOpacity(0.25),
+                                                        blurRadius: 12,
+                                                        offset: const Offset(0, 6),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.route_rounded,
+                                                    color: Colors.white,
+                                                    size: 22,
+                                                  ),
                                                 ),
                                               ),
                                             ],
                                           ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 12),
-                                    _buildTunaNetraInfoCard(),
-                                    const SizedBox(height: 16),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius:
-                                            BorderRadius.circular(18),
-                                        border: Border.all(
-                                          color: AppColors.primary
-                                              .withOpacity(0.12),
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: AppColors.primary
-                                                .withOpacity(0.08),
-                                            blurRadius: 16,
-                                            offset: const Offset(0, 8),
+                                          const SizedBox(height: 14),
+                                          Row(
+                                            children: [
+                                              Container(
+                                                width: 36,
+                                                height: 36,
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.primary
+                                                      .withOpacity(0.12),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: const Icon(
+                                                  Icons.radar_rounded,
+                                                  color: AppColors.primary,
+                                                  size: 20,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 10),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      'Info Realtime',
+                                                      style: AppTextStyles.bodyMedium
+                                                          .copyWith(
+                                                        fontWeight: FontWeight.w800,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      'Status aktivitas dan koneksi pengguna',
+                                                      style: AppTextStyles.bodySmall
+                                                          .copyWith(
+                                                        color: AppColors.textSecondary,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          const SizedBox(height: 12),
+                                          _buildTunaNetraInfoCard(pairedUid, liveData),
+                                          const SizedBox(height: 16),
+                                          Container(
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(18),
+                                              border: Border.all(
+                                                color: AppColors.primary
+                                                    .withOpacity(0.12),
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: AppColors.primary
+                                                      .withOpacity(0.08),
+                                                  blurRadius: 16,
+                                                  offset: const Offset(0, 8),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Column(
+                                              children: _buildLivePanelContent(liveData),
+                                            ),
                                           ),
                                         ],
                                       ),
-                                      child: Column(
-                                        children: _buildLivePanelContent(location),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    left: 16,
+                                    right: 16,
+                                    bottom: 12,
+                                    child: _buildCollapsedSheetCard(liveData),
+                                  ),
+                                ],
+                              )
+                            : Material(
+                                color: Colors.transparent,
+                                child: Stack(
+                                  children: [
+                                    Positioned.fill(
+                                      child: GestureDetector(
+                                        behavior: HitTestBehavior.translucent,
+                                        onTap: () => _showTunaNetraInfo(pairedUid),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      right: 24,
+                                      bottom: 118,
+                                      child: GestureDetector(
+                                        onTap: _openHistoryScreen,
+                                        child: Container(
+                                          width: 46,
+                                          height: 46,
+                                          decoration: BoxDecoration(
+                                            gradient: AppColors.primaryGradient,
+                                            borderRadius:
+                                                BorderRadius.circular(14),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: AppColors.primary
+                                                    .withOpacity(0.25),
+                                                blurRadius: 14,
+                                                offset: const Offset(0, 6),
+                                              ),
+                                            ],
+                                          ),
+                                          child: const Icon(
+                                            Icons.route_rounded,
+                                            color: Colors.white,
+                                            size: 22,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    Align(
+                                      alignment: Alignment.bottomCenter,
+                                      child: GestureDetector(
+                                        onTap: () => _showTunaNetraInfo(pairedUid),
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            16,
+                                            0,
+                                            16,
+                                            16,
+                                          ),
+                                          child: _buildCollapsedSheetCard(liveData),
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
-                            ),
-                            Positioned(
-                              left: 16,
-                              right: 16,
-                              bottom: 12,
-                              child: _buildCollapsedSheetCard(location),
-                            ),
-                          ],
-                        )
-                      : Material(
-                            color: Colors.transparent,
-                            child: Stack(
-                              children: [
-                                Positioned.fill(
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.translucent,
-                                    onTap: _showTunaNetraInfo,
-                                  ),
-                                ),
-                                Positioned(
-                                  right: 24,
-                                  bottom: 118,
-                                  child: GestureDetector(
-                                    onTap: _openHistoryScreen,
-                                    child: Container(
-                                      width: 46,
-                                      height: 46,
-                                      decoration: BoxDecoration(
-                                        gradient: AppColors.primaryGradient,
-                                        borderRadius:
-                                            BorderRadius.circular(14),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: AppColors.primary
-                                                .withOpacity(0.25),
-                                            blurRadius: 14,
-                                            offset: const Offset(0, 6),
-                                          ),
-                                        ],
-                                      ),
-                                      child: const Icon(
-                                        Icons.route_rounded,
-                                        color: Colors.white,
-                                        size: 22,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: GestureDetector(
-                                    onTap: _showTunaNetraInfo,
-                                    child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        0,
-                                        16,
-                                        16,
-                                      ),
-                                      child: _buildCollapsedSheetCard(location),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                  );
-                },
-              ),
-            ],
+                      );
+                    },
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
