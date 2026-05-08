@@ -1327,44 +1327,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   }
 }
 
-class Trip {
-  final String id;
-  final DateTime startTime;
-  final DateTime endTime;
-  final int duration; // in seconds
-  final double distance; // in meters
-  final String origin;
-  final String destination;
-  final String status; // 'completed', 'cancelled', 'off_route'
-  final List<LatLng> routePoints;
-  final List<TripEvent> events;
-
-  Trip({
-    required this.id,
-    required this.startTime,
-    required this.endTime,
-    required this.duration,
-    required this.distance,
-    required this.origin,
-    required this.destination,
-    required this.status,
-    required this.routePoints,
-    required this.events,
-  });
-}
-
-class TripEvent {
-  final String type; // 'off_route', 'sos', 'stop_long', 'gps_lost'
-  final DateTime timestamp;
-  final String description;
-
-  TripEvent({
-    required this.type,
-    required this.timestamp,
-    required this.description,
-  });
-}
-
 class FamilyHistoryDetailScreen extends StatefulWidget {
   final String targetUid;
   final String familyId;
@@ -1381,143 +1343,472 @@ class FamilyHistoryDetailScreen extends StatefulWidget {
 }
 
 class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
-  List<Trip> _trips = [];
-  Trip? _selectedTrip;
-  bool _isLoading = false;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  late final Future<String?> _pairedUserUidFuture;
 
   @override
   void initState() {
     super.initState();
     AnalyticsService().logScreenView(screenName: 'FamilyHistoryDetail');
-    _loadDummyTrips();
+    _pairedUserUidFuture = getPairedUserUid();
   }
 
-  void _loadDummyTrips() {
-    setState(() => _isLoading = true);
+  Future<String?> getPairedUserUid() async {
+    try {
+      if (widget.targetUid.trim().isNotEmpty) {
+        debugPrint(
+          '[FAMILY_HISTORY] Using targetUid for navigation history: ${widget.targetUid}',
+        );
+        return widget.targetUid.trim();
+      }
 
-    // Dummy data
-    _trips = [
-      Trip(
-        id: '1',
-        startTime: DateTime.now().subtract(const Duration(hours: 2)),
-        endTime: DateTime.now().subtract(const Duration(hours: 1, minutes: 45)),
-        duration: 900, // 15 minutes
-        distance: 3200, // 3.2 km
-        origin: 'Rumah',
-        destination: 'Kampus',
-        status: 'completed',
-        routePoints: [
-          const LatLng(-6.9147, 107.6098),
-          const LatLng(-6.9150, 107.6100),
-          const LatLng(-6.9160, 107.6110),
-          const LatLng(-6.9170, 107.6120),
-          const LatLng(-6.9180, 107.6130),
-        ],
-        events: [
-          TripEvent(
-            type: 'off_route',
-            timestamp: DateTime.now().subtract(const Duration(hours: 1, minutes: 50)),
-            description: 'User keluar jalur sebentar',
-          ),
-        ],
-      ),
-      Trip(
-        id: '2',
-        startTime: DateTime.now().subtract(const Duration(days: 1, hours: 3)),
-        endTime: DateTime.now().subtract(const Duration(days: 1, hours: 2, minutes: 30)),
-        duration: 1800, // 30 minutes
-        distance: 4500, // 4.5 km
-        origin: 'Kampus',
-        destination: 'Mall',
-        status: 'completed',
-        routePoints: [
-          const LatLng(-6.9180, 107.6130),
-          const LatLng(-6.9190, 107.6140),
-          const LatLng(-6.9200, 107.6150),
-          const LatLng(-6.9210, 107.6160),
-        ],
-        events: [],
-      ),
-      Trip(
-        id: '3',
-        startTime: DateTime.now().subtract(const Duration(days: 2, hours: 1)),
-        endTime: DateTime.now().subtract(const Duration(days: 2, hours: 0, minutes: 45)),
-        duration: 2700, // 45 minutes
-        distance: 6800, // 6.8 km
-        origin: 'Mall',
-        destination: 'Rumah',
-        status: 'off_route',
-        routePoints: [
-          const LatLng(-6.9210, 107.6160),
-          const LatLng(-6.9200, 107.6150),
-          const LatLng(-6.9190, 107.6140),
-          const LatLng(-6.9180, 107.6130),
-          const LatLng(-6.9170, 107.6120),
-        ],
-        events: [
-          TripEvent(
-            type: 'off_route',
-            timestamp: DateTime.now().subtract(const Duration(days: 2, hours: 0, minutes: 50)),
-            description: 'User keluar jalur dan belum kembali',
-          ),
-          TripEvent(
-            type: 'sos',
-            timestamp: DateTime.now().subtract(const Duration(days: 2, hours: 0, minutes: 40)),
-            description: 'Tombol SOS ditekan',
-          ),
-        ],
-      ),
-    ];
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return null;
 
-    setState(() => _isLoading = false);
-  }
+      final userDoc = await _firestore
+          .collection('users')
+          .doc(currentUser.uid)
+          .get();
+      final data = userDoc.data();
+      if (data == null) return null;
 
-  String _formatDuration(int seconds) {
-    final minutes = seconds ~/ 60;
-    if (minutes < 60) {
-      return '$minutes menit';
+      final pairedUid = data['pairedUserUid'];
+      if (pairedUid is String && pairedUid.trim().isNotEmpty) {
+        return pairedUid.trim();
+      }
+
+      final pairedUids = data['pairedUserUids'];
+      if (pairedUids is List && pairedUids.isNotEmpty) {
+        for (final uid in pairedUids) {
+          if (uid is String && uid.trim().isNotEmpty) {
+            return uid.trim();
+          }
+        }
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('[FAMILY_HISTORY] Failed to load pairedUserUid: $e');
+      return null;
     }
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> getNavigationHistoryStream(
+    String pairedUserUid,
+  ) {
+    debugPrint(
+      '[FAMILY_HISTORY] Listening navigation_history for userId: $pairedUserUid',
+    );
+    return _firestore
+        .collection('navigation_history')
+        .where('userId', isEqualTo: pairedUserUid)
+        .snapshots();
+  }
+
+  String formatTripDate(Timestamp? timestamp) {
+    if (timestamp == null) return '-';
+    return DateFormat('dd MMM yyyy').format(timestamp.toDate());
+  }
+
+  String formatTripTime(Timestamp? timestamp) {
+    if (timestamp == null) return '-';
+    return DateFormat('HH:mm').format(timestamp.toDate());
+  }
+
+  String formatDuration(dynamic durationSeconds) {
+    final seconds = _toInt(durationSeconds);
+    if (seconds == null) return '-';
+
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+    final minutes = safeSeconds ~/ 60;
+    if (minutes < 60) return '$minutes menit';
+
     final hours = minutes ~/ 60;
     final remainingMinutes = minutes % 60;
+    if (remainingMinutes == 0) return '$hours jam';
     return '$hours jam $remainingMinutes menit';
   }
 
-  String _formatDistance(double meters) {
-    if (meters < 1000) {
-      return '${meters.toStringAsFixed(0)} m';
-    }
+  String formatDistance(dynamic totalDistanceMeters) {
+    final meters = _toDouble(totalDistanceMeters);
+    if (meters == null) return '-';
+    if (meters < 1000) return '${meters.toStringAsFixed(0)} m';
     return '${(meters / 1000).toStringAsFixed(1)} km';
   }
 
-  String _getStatusText(String status) {
+  String formatStatusText(String? status) {
     switch (status) {
       case 'completed':
         return 'Selesai ✅';
       case 'cancelled':
-        return 'Dibatalkan ❌';
-      case 'off_route':
-        return 'Keluar Rute ⚠️';
+        return 'Dibatalkan';
+      case 'ongoing':
+        return 'Berjalan';
       default:
-        return 'Unknown';
+        return 'Berjalan';
     }
   }
 
-  Color _getStatusColor(String status) {
+  Color getStatusColor(String? status) {
     switch (status) {
       case 'completed':
         return Colors.green;
       case 'cancelled':
         return Colors.red;
-      case 'off_route':
-        return Colors.orange;
+      case 'ongoing':
+        return AppColors.primary;
       default:
         return Colors.grey;
     }
   }
 
-  Widget _buildMiniTag(String label, {IconData? icon, Color color = AppColors.primary}) {
+  int? _toInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  String _safeText(dynamic value, String fallback) {
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+    return fallback;
+  }
+
+  Widget _buildHistoryContent() {
+    return FutureBuilder<String?>(
+      future: _pairedUserUidFuture,
+      builder: (context, pairedSnapshot) {
+        if (pairedSnapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final pairedUserUid = pairedSnapshot.data;
+        if (pairedUserUid == null || pairedUserUid.isEmpty) {
+          return _buildEmptyState(
+            icon: Icons.link_off_rounded,
+            title: 'Belum ada pengguna tuna netra terhubung',
+            subtitle: 'Hubungkan akun terlebih dahulu untuk melihat riwayat',
+          );
+        }
+
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: getNavigationHistoryStream(pairedUserUid),
+          builder: (context, historySnapshot) {
+            if (historySnapshot.hasError) {
+              debugPrint(
+                '[FAMILY_HISTORY] History stream error: ${historySnapshot.error}',
+              );
+              return _buildEmptyState(
+                icon: Icons.error_outline_rounded,
+                title: 'Riwayat belum dapat dimuat',
+                subtitle: 'Periksa koneksi atau indeks Firestore',
+              );
+            }
+
+            if (historySnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final docs = [...?historySnapshot.data?.docs]
+              ..sort((a, b) {
+                final aStartTime = a.data()['startTime'];
+                final bStartTime = b.data()['startTime'];
+                final aMillis = aStartTime is Timestamp
+                    ? aStartTime.millisecondsSinceEpoch
+                    : 0;
+                final bMillis = bStartTime is Timestamp
+                    ? bStartTime.millisecondsSinceEpoch
+                    : 0;
+                return bMillis.compareTo(aMillis);
+              });
+            debugPrint(
+              '[FAMILY_HISTORY] Loaded ${docs.length} navigation_history docs',
+            );
+
+            if (docs.isEmpty) {
+              return _buildEmptyState(
+                icon: Icons.route_rounded,
+                title: 'Belum ada riwayat perjalanan',
+                subtitle: 'Riwayat navigasi tuna netra akan muncul di sini',
+              );
+            }
+
+            final items = docs
+                .map((doc) => NavigationHistoryItem.fromDoc(doc))
+                .toList();
+
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+              itemCount: items.length,
+              itemBuilder: (context, index) => _buildTripCard(items[index]),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.25),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: Colors.white, size: 40),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              title,
+              style: AppTextStyles.heading2.copyWith(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              subtitle,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+                height: 1.6,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTripCard(NavigationHistoryItem item) {
+    final statusColor = getStatusColor(item.status);
+    final durationText = formatDuration(item.durationSeconds);
+    final startTimeText = formatTripTime(item.startTime);
+    final endTimeText = formatTripTime(item.endTime);
+    final originName = _safeText(item.originName, 'Lokasi awal');
+    final destinationName = _safeText(item.destinationName, 'Tujuan');
+    final eventCount = _toInt(item.eventCount) ?? 0;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => NavigationHistoryDetailScreen(tripId: item.id),
+            ),
+          );
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.primary.withOpacity(0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primary.withOpacity(0.07),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  gradient: AppColors.primaryGradient,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  formatTripDate(item.startTime),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: statusColor.withOpacity(0.25)),
+                ),
+                child: Text(
+                  formatStatusText(item.status),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Icon(
+                Icons.access_time_rounded,
+                size: 18,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$startTimeText → $endTimeText ($durationText)',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                _buildPointIcon(
+                  icon: Icons.radio_button_checked,
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    originName,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 16,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    destinationName,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _buildPointIcon(icon: Icons.location_on, color: Colors.red),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildMiniStat(
+                  icon: Icons.straighten_rounded,
+                  label: formatDistance(item.totalDistanceMeters),
+                  color: AppColors.primary,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildMiniStat(
+                  icon: Icons.warning_amber_rounded,
+                  label: '$eventCount event',
+                  color: eventCount == 0 ? Colors.green : Colors.orange,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPointIcon({
+    required IconData icon,
+    required Color color,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      width: 32,
+      height: 32,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, color: Colors.white, size: 18),
+    );
+  }
+
+  Widget _buildMiniStat({
+    required IconData icon,
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(14),
@@ -1525,651 +1816,19 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 16, color: color),
-            const SizedBox(width: 6),
-          ],
-          Flexible(
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
             child: Text(
               label,
               style: AppTextStyles.bodySmall.copyWith(
                 color: color,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoTile(String label, String value, {Color color = AppColors.primary}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.primary.withOpacity(0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
-              fontSize: 11,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: AppTextStyles.bodyMedium.copyWith(
-              fontWeight: FontWeight.w700,
-              color: color,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primary.withOpacity(0.12)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: AppColors.primary),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTripCard(Trip trip) {
-    final dateStr = DateFormat('dd MMM yyyy').format(trip.startTime);
-    final timeStr = '${DateFormat('HH:mm').format(trip.startTime)} → ${DateFormat('HH:mm').format(trip.endTime)}';
-
-    return GestureDetector(
-      onTap: () => setState(() => _selectedTrip = trip),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.primary.withOpacity(0.08)),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(0.06),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Text(
-                    dateStr,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _getStatusColor(trip.status).withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: _getStatusColor(trip.status).withOpacity(0.2),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    _getStatusText(trip.status),
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: _getStatusColor(trip.status),
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Icon(
-                  Icons.access_time_rounded,
-                  size: 18,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '$timeStr (${_formatDuration(trip.duration)})',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.04),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
-                      color: Colors.green,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.radio_button_checked,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      trip.origin,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(
-                      Icons.arrow_forward_rounded,
-                      size: 16,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      trip.destination,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: const BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.location_on,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildMiniTag(
-                    '📏 ${_formatDistance(trip.distance)}',
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildMiniTag(
-                    '⚠️ ${trip.events.length} event',
-                    color: trip.events.isEmpty ? Colors.green : Colors.orange,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTripDetail(Trip trip) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.12),
-            blurRadius: 24,
-            offset: const Offset(0, -8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: () => setState(() => _selectedTrip = null),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.arrow_back_rounded,
-                      color: Colors.white,
-                      size: 20,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              DateFormat('dd MMM').format(trip.startTime),
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: _getStatusColor(trip.status).withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              _getStatusText(trip.status),
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '${trip.origin} → ${trip.destination}',
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        DateFormat('EEEE, dd MMMM yyyy • HH:mm').format(trip.startTime),
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: Colors.white.withOpacity(0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Map
-          Container(
-            height: 220,
-            margin: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.1),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: FlutterMap(
-                options: MapOptions(
-                  initialCenter: trip.routePoints.isNotEmpty ? trip.routePoints.first : const LatLng(-6.9147, 107.6098),
-                  initialZoom: 14.5,
-                ),
-                children: [
-                  TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.example.my_app',
-                  ),
-                  if (trip.routePoints.length >= 2)
-                    PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: trip.routePoints,
-                          color: trip.status == 'off_route' ? Colors.red : AppColors.primary,
-                          strokeWidth: 5.0,
-                          borderColor: Colors.white,
-                          borderStrokeWidth: 2.0,
-                        ),
-                      ],
-                    ),
-                  MarkerLayer(
-                    markers: [
-                      if (trip.routePoints.isNotEmpty)
-                        Marker(
-                          point: trip.routePoints.first,
-                          width: 40,
-                          height: 40,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.green.withOpacity(0.9),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.green.withOpacity(0.3),
-                                  blurRadius: 8,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.radio_button_checked,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      if (trip.routePoints.isNotEmpty)
-                        Marker(
-                          point: trip.routePoints.last,
-                          width: 40,
-                          height: 40,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.9),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withOpacity(0.3),
-                                  blurRadius: 8,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.location_on,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Stats
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildInfoTile('⏱️ Durasi', _formatDuration(trip.duration)),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildInfoTile('📏 Jarak', _formatDistance(trip.distance)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildInfoTile(
-                        '📊 Status',
-                        _getStatusText(trip.status),
-                        color: _getStatusColor(trip.status),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _buildInfoTile(
-                        '⚠️ Event',
-                        '${trip.events.length} kejadian',
-                        color: trip.events.isEmpty ? Colors.green : Colors.orange,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          // Timeline
-          if (trip.events.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Container(
-                    width: 4,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Timeline Event',
-                    style: AppTextStyles.bodyLarge.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            ...trip.events.map((event) => Container(
-              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: (event.type == 'sos' ? Colors.red : Colors.orange).withOpacity(0.06),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: (event.type == 'sos' ? Colors.red : Colors.orange).withOpacity(0.2),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: event.type == 'sos' ? Colors.red : Colors.orange,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: (event.type == 'sos' ? Colors.red : Colors.orange).withOpacity(0.3),
-                          blurRadius: 6,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          event.description,
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          DateFormat('HH:mm • dd MMM yyyy').format(event.timestamp),
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    event.type == 'sos' ? Icons.warning_rounded : Icons.error_outline_rounded,
-                    color: event.type == 'sos' ? Colors.red : Colors.orange,
-                    size: 20,
-                  ),
-                ],
-              ),
-            )),
-            const SizedBox(height: 24),
-          ] else ...[
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Colors.green.withOpacity(0.2),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 32,
-                      height: 32,
-                      decoration: const BoxDecoration(
-                        color: Colors.green,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.check_circle_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Text(
-                        'Perjalanan berjalan lancar tanpa kejadian khusus',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: Colors.green.shade700,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-          ],
         ],
       ),
     );
@@ -2266,31 +1925,532 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
                 ),
               ),
 
-              // Content
+              Expanded(child: _buildHistoryContent()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class NavigationHistoryDetailScreen extends StatelessWidget {
+  final String tripId;
+
+  const NavigationHistoryDetailScreen({
+    super.key,
+    required this.tripId,
+  });
+
+  Stream<DocumentSnapshot<Map<String, dynamic>>> get _tripStream {
+    return FirebaseFirestore.instance
+        .collection('navigation_history')
+        .doc(tripId)
+        .snapshots();
+  }
+
+  String formatTripDate(Timestamp? timestamp) {
+    if (timestamp == null) return '-';
+    return DateFormat('dd MMM yyyy').format(timestamp.toDate());
+  }
+
+  String formatTripTime(Timestamp? timestamp) {
+    if (timestamp == null) return '-';
+    return DateFormat('HH:mm').format(timestamp.toDate());
+  }
+
+  String formatDuration(dynamic durationSeconds) {
+    final seconds = _toInt(durationSeconds);
+    if (seconds == null) return '-';
+
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+    final minutes = safeSeconds ~/ 60;
+    if (minutes < 60) return '$minutes menit';
+
+    final hours = minutes ~/ 60;
+    final remainingMinutes = minutes % 60;
+    if (remainingMinutes == 0) return '$hours jam';
+    return '$hours jam $remainingMinutes menit';
+  }
+
+  String formatDistance(dynamic totalDistanceMeters) {
+    final meters = _toDouble(totalDistanceMeters);
+    if (meters == null) return '-';
+    if (meters < 1000) return '${meters.toStringAsFixed(0)} m';
+    return '${(meters / 1000).toStringAsFixed(1)} km';
+  }
+
+  String formatStatusText(String? status) {
+    switch (status) {
+      case 'completed':
+        return 'Selesai ✅';
+      case 'cancelled':
+        return 'Dibatalkan';
+      case 'ongoing':
+        return 'Sedang berjalan';
+      default:
+        return 'Sedang berjalan';
+    }
+  }
+
+  String formatCoordinate(dynamic lat, dynamic lng) {
+    final latitude = _toDouble(lat);
+    final longitude = _toDouble(lng);
+    if (latitude == null || longitude == null) return '-';
+    return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+  }
+
+  String formatEventCount(dynamic eventCount) {
+    final count = _toInt(eventCount) ?? 0;
+    return '$count event';
+  }
+
+  Color getStatusColor(String? status) {
+    switch (status) {
+      case 'completed':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.red;
+      case 'ongoing':
+        return AppColors.primary;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  int? _toInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
+  }
+
+  Timestamp? _toTimestamp(dynamic value) {
+    return value is Timestamp ? value : null;
+  }
+
+  String _safeText(dynamic value, String fallback) {
+    if (value is String && value.trim().isNotEmpty) {
+      return value.trim();
+    }
+    return fallback;
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.white, Colors.white.withOpacity(0.95)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.15),
+            blurRadius: 25,
+            offset: const Offset(0, 10),
+          ),
+        ],
+        border: Border.all(
+          color: AppColors.primary.withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.arrow_back_rounded,
+                color: Colors.white,
+                size: 24,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ShaderMask(
+                  shaderCallback: (bounds) =>
+                      AppColors.primaryGradient.createShader(bounds),
+                  child: Text(
+                    'Detail Perjalanan',
+                    style: AppTextStyles.heading2.copyWith(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Informasi riwayat navigasi',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotFoundState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(
+                Icons.search_off_rounded,
+                color: Colors.white,
+                size: 40,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Data riwayat tidak ditemukan',
+              style: AppTextStyles.heading2.copyWith(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryCard(Map<String, dynamic> data) {
+    final status = data['status'] is String ? data['status'] as String : null;
+    final statusColor = getStatusColor(status);
+    final originName = _safeText(data['originName'], 'Lokasi awal');
+    final destinationName = _safeText(data['destinationName'], 'Tujuan');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            statusColor.withOpacity(0.12),
+            Colors.white,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: statusColor.withOpacity(0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.07),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(Icons.route_rounded, color: statusColor, size: 28),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  formatStatusText(status),
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: statusColor,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '$originName → $destinationName',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSection({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.08)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withOpacity(0.07),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: AppColors.primary, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 4,
+            child: Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 6,
+            child: Text(
+              value,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w800,
+              ),
+              textAlign: TextAlign.right,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailContent(Map<String, dynamic> data) {
+    final startTime = _toTimestamp(data['startTime']);
+    final endTime = _toTimestamp(data['endTime']);
+    final status = data['status'] is String ? data['status'] as String : null;
+    final originName = _safeText(data['originName'], 'Lokasi awal');
+    final destinationName = _safeText(data['destinationName'], 'Tujuan');
+    final userId = _safeText(data['userId'], '-');
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+      children: [
+        _buildSummaryCard(data),
+        const SizedBox(height: 16),
+        _buildSection(
+          title: 'Informasi Perjalanan',
+          icon: Icons.info_outline_rounded,
+          children: [
+            _buildDetailRow('Tanggal', formatTripDate(startTime)),
+            _buildDetailRow('Waktu mulai', formatTripTime(startTime)),
+            _buildDetailRow('Waktu selesai', formatTripTime(endTime)),
+            _buildDetailRow('Durasi', formatDuration(data['durationSeconds'])),
+            _buildDetailRow('Status', formatStatusText(status)),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _buildSection(
+          title: 'Rute',
+          icon: Icons.route_rounded,
+          children: [
+            _buildDetailRow('Lokasi awal', originName),
+            _buildDetailRow('Tujuan', destinationName),
+            _buildDetailRow('Jarak total', formatDistance(data['totalDistanceMeters'])),
+            _buildDetailRow(
+              'Koordinat awal',
+              formatCoordinate(data['originLat'], data['originLng']),
+            ),
+            _buildDetailRow(
+              'Koordinat tujuan',
+              formatCoordinate(data['destinationLat'], data['destinationLng']),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        _buildSection(
+          title: 'Keamanan',
+          icon: Icons.health_and_safety_rounded,
+          children: [
+            _buildDetailRow('Jumlah event', formatEventCount(data['eventCount'])),
+          ],
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFFFAFBFC),
+              AppColors.primaryLight.withOpacity(0.08),
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(context),
               Expanded(
-                child: _selectedTrip != null
-                  ? _buildTripDetail(_selectedTrip!)
-                  : _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _trips.isEmpty
-                      ? Center(
-                          child: _buildEmptyCard(
-                            icon: Icons.route,
-                            title: 'Belum ada riwayat',
-                            subtitle: 'Riwayat perjalanan akan muncul di sini',
-                          ),
-                        )
-                      : ListView(
-                          padding: const EdgeInsets.all(16),
-                          children: [
-                            ..._trips.map(_buildTripCard),
-                          ],
-                        ),
+                child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: _tripStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (snapshot.hasError) {
+                      debugPrint(
+                        '[NAV_HISTORY_DETAIL] Failed to load trip $tripId: ${snapshot.error}',
+                      );
+                      return _buildNotFoundState();
+                    }
+
+                    final doc = snapshot.data;
+                    final data = doc?.data();
+                    if (doc == null || !doc.exists || data == null) {
+                      return _buildNotFoundState();
+                    }
+
+                    return _buildDetailContent(data);
+                  },
+                ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class NavigationHistoryItem {
+  final String id;
+  final Timestamp? startTime;
+  final Timestamp? endTime;
+  final dynamic durationSeconds;
+  final dynamic originName;
+  final dynamic destinationName;
+  final dynamic totalDistanceMeters;
+  final String? status;
+  final dynamic eventCount;
+
+  const NavigationHistoryItem({
+    required this.id,
+    required this.startTime,
+    required this.endTime,
+    required this.durationSeconds,
+    required this.originName,
+    required this.destinationName,
+    required this.totalDistanceMeters,
+    required this.status,
+    required this.eventCount,
+  });
+
+  factory NavigationHistoryItem.fromDoc(
+    QueryDocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+    return NavigationHistoryItem(
+      id: doc.id,
+      startTime:
+          data['startTime'] is Timestamp ? data['startTime'] as Timestamp : null,
+      endTime: data['endTime'] is Timestamp ? data['endTime'] as Timestamp : null,
+      durationSeconds: data['durationSeconds'],
+      originName: data['originName'],
+      destinationName: data['destinationName'],
+      totalDistanceMeters: data['totalDistanceMeters'],
+      status: data['status'] is String ? data['status'] as String : null,
+      eventCount: data['eventCount'],
     );
   }
 }

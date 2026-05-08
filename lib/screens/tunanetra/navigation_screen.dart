@@ -13,6 +13,7 @@ import '../../services/places_service.dart';
 import '../../services/routing_service.dart';
 import '../../services/analytics_service.dart';
 import '../../services/live_tracking_service.dart';
+import '../../services/navigation_history_service.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -28,6 +29,8 @@ class _NavigationScreenState extends State<NavigationScreen>
   final RoutingService _routingService = RoutingService();
   final AnalyticsService _analyticsService = AnalyticsService();
   final LiveTrackingService _liveTrackingService = LiveTrackingService();
+  final NavigationHistoryService _navigationHistoryService =
+      NavigationHistoryService();
   static const double _pedestrianSpeedMs = 1.4;
   static const double _arrivalThresholdMeters = 5.0;
 
@@ -88,6 +91,9 @@ class _NavigationScreenState extends State<NavigationScreen>
   // Time calculation variables
   bool _isNavigating = false; // Track if user is navigating
   DateTime? _navigationStartTime; // Time when navigation started
+  String? _currentTripId;
+  DateTime? _tripStartedAt;
+  bool _isStartingTripHistory = false;
   double _initialDurationSeconds = 0.0; // Initial duration from OSRM
   DateTime? _lastDurationUpdateTime; // Last time duration was updated
   Timer? _durationUpdateTimer; // Timer for periodic duration updates
@@ -777,19 +783,97 @@ class _NavigationScreenState extends State<NavigationScreen>
     return Colors.green;
   }
 
-  void _endNavigationSession({
+  Future<void> _startTripHistoryIfNeeded() async {
+    if (_currentTripId != null || _isStartingTripHistory) return;
+    if (_selectedPlace == null || !_isNavigating) return;
+
+    _isStartingTripHistory = true;
+    try {
+      final selectedPlace = _selectedPlace!;
+      final tripId = await _navigationHistoryService.startTrip(
+        originName: 'Lokasi awal',
+        destinationName: selectedPlace.name,
+        originLat: _userLocation.latitude,
+        originLng: _userLocation.longitude,
+        destinationLat: selectedPlace.latitude,
+        destinationLng: selectedPlace.longitude,
+        totalDistanceMeters: _routeDistanceMeters,
+      );
+
+      if (tripId == null) return;
+
+      if (!mounted || !_isNavigating) {
+        final startedAt = _tripStartedAt ?? _navigationStartTime;
+        final durationSeconds = startedAt == null
+            ? 0
+            : DateTime.now().difference(startedAt).inSeconds;
+        await _navigationHistoryService.cancelTrip(
+          tripId: tripId,
+          durationSeconds: durationSeconds < 0 ? 0 : durationSeconds,
+          totalDistanceMeters: _routeDistanceMeters,
+        );
+        return;
+      }
+
+      _currentTripId = tripId;
+      _tripStartedAt ??= _navigationStartTime ?? DateTime.now();
+      debugPrint('[NAV_HISTORY] Started trip: $tripId');
+    } catch (e, st) {
+      debugPrint('[NAV_HISTORY] Failed to start trip history: $e');
+      debugPrintStack(stackTrace: st);
+    } finally {
+      _isStartingTripHistory = false;
+    }
+  }
+
+  Future<void> _finishCurrentTripHistory({
+    required bool completed,
+    required int durationSeconds,
+    required double totalDistanceMeters,
+  }) async {
+    final tripId = _currentTripId;
+    if (tripId == null) return;
+
+    try {
+      if (completed) {
+        await _navigationHistoryService.finishTrip(
+          tripId: tripId,
+          durationSeconds: durationSeconds,
+          totalDistanceMeters: totalDistanceMeters,
+        );
+      } else {
+        await _navigationHistoryService.cancelTrip(
+          tripId: tripId,
+          durationSeconds: durationSeconds,
+          totalDistanceMeters: totalDistanceMeters,
+        );
+      }
+      debugPrint(
+        '[NAV_HISTORY] ${completed ? 'Completed' : 'Cancelled'} trip: $tripId',
+      );
+    } catch (e, st) {
+      debugPrint('[NAV_HISTORY] Failed to finish trip history: $e');
+      debugPrintStack(stackTrace: st);
+    } finally {
+      _currentTripId = null;
+      _tripStartedAt = null;
+    }
+  }
+
+  Future<void> _endNavigationSession({
     bool returnToPlaceList = true,
     String endReason = 'manual_exit',
-  }) {
+  }) async {
     final wasNavigating = _isNavigating;
-    final navigationStartedAt = _navigationStartTime;
+    final navigationStartedAt = _tripStartedAt ?? _navigationStartTime;
     final destinationName = _selectedPlace?.name ?? 'unknown';
     final remainingDistanceKm = _routeDistanceKm;
+    final totalDistanceMeters = _routeDistanceMeters;
+    final durationSeconds = navigationStartedAt == null
+        ? 0
+        : DateTime.now().difference(navigationStartedAt).inSeconds;
 
     if (wasNavigating) {
-      final durationSeconds = navigationStartedAt == null
-          ? 0
-          : DateTime.now().difference(navigationStartedAt).inSeconds;
       unawaited(
         _analyticsService.logEndNavigation(
           destinationName: destinationName,
@@ -799,6 +883,14 @@ class _NavigationScreenState extends State<NavigationScreen>
         ),
       );
     }
+
+    await _finishCurrentTripHistory(
+      completed: endReason == 'arrived',
+      durationSeconds: durationSeconds < 0 ? 0 : durationSeconds,
+      totalDistanceMeters: totalDistanceMeters,
+    );
+
+    if (!mounted) return;
 
     _stopLocationStreaming();
     _stopNavigationTracking();
@@ -820,6 +912,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _isLoadingRoute = false;
       _hasArrivedAtDestination = false;
       _isUsingPredictedPosition = false;
+      _tripStartedAt = null;
       if (returnToPlaceList) {
         _selectedPlace = null;
       }
@@ -828,6 +921,19 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   @override
   void dispose() {
+    if (_currentTripId != null) {
+      final startedAt = _tripStartedAt ?? _navigationStartTime;
+      final durationSeconds = startedAt == null
+          ? 0
+          : DateTime.now().difference(startedAt).inSeconds;
+      unawaited(
+        _finishCurrentTripHistory(
+          completed: false,
+          durationSeconds: durationSeconds < 0 ? 0 : durationSeconds,
+          totalDistanceMeters: _routeDistanceMeters,
+        ),
+      );
+    }
     _mapController.dispose();
     _stopSensorFusion();
     _durationUpdateTimer?.cancel(); // Cancel duration update timer
@@ -1188,6 +1294,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       );
 
       if (mounted) {
+        final tripStartedAt = DateTime.now();
         setState(() {
           _routePoints = points;
           _lastPassedRouteIndex = 0;
@@ -1210,10 +1317,15 @@ class _NavigationScreenState extends State<NavigationScreen>
 
           // Start navigation tracking
           _isNavigating = true;
-          _navigationStartTime = DateTime.now();
-          _lastDurationUpdateTime = DateTime.now();
+          _navigationStartTime = tripStartedAt;
+          _tripStartedAt ??= tripStartedAt;
+          _lastDurationUpdateTime = tripStartedAt;
           _destinationName = _selectedPlace?.name ?? 'unknown';
         });
+
+        if (!wasNavigating) {
+          await _startTripHistoryIfNeeded();
+        }
 
         // Start timer to update duration every 5 seconds
         _startDurationUpdateTimer();
@@ -1401,7 +1513,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       ),
     );
 
-    _endNavigationSession(endReason: 'arrived');
+    unawaited(_endNavigationSession(endReason: 'arrived'));
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -2230,7 +2342,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                     // Back button
                     GestureDetector(
                       onTap: () {
-                        _endNavigationSession();
+                        unawaited(_endNavigationSession());
                       },
                       child: Container(
                         padding: const EdgeInsets.all(10),
