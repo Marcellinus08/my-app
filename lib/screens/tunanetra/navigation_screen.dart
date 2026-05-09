@@ -98,8 +98,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   DateTime? _lastRoutePointSavedAt;
   Position? _lastKnownGpsPosition;
   bool _wasOffRoute = false;
-  bool _wasGpsLost = false;
-  bool _wasPredictionActive = false;
   double _initialDurationSeconds = 0.0; // Initial duration from OSRM
   DateTime? _lastDurationUpdateTime; // Last time duration was updated
   Timer? _durationUpdateTimer; // Timer for periodic duration updates
@@ -285,8 +283,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     _lastKnownGpsPosition = position;
     _lastPredictionTickAt = now;
     _predictedDistanceSinceLastGps = 0.0;
-    _updateGpsLostEventState(false, location: updatedLocation);
-    _updatePredictionEventState(false, location: updatedLocation);
 
     final snapResult = _snapPositionToRoute(updatedLocation);
     final displayLocation = snapResult.position;
@@ -337,7 +333,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     final now = DateTime.now();
     final gpsAge = now.difference(_lastGpsUpdateAt!);
     if (gpsAge < _gpsStaleThreshold) return;
-    _updateGpsLostEventState(true, location: _animatedUserLocation);
     if (_predictedDistanceSinceLastGps >= _maxPredictionDistanceMeters) return;
 
     final tickFrom = _lastPredictionTickAt ?? now;
@@ -364,7 +359,6 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     final snapResult = _snapPositionToRoute(predictedTarget);
     final displayLocation = snapResult.position;
-    _updatePredictionEventState(true, location: displayLocation);
 
     setState(() {
       _animatedUserLocation = displayLocation;
@@ -441,6 +435,20 @@ class _NavigationScreenState extends State<NavigationScreen>
         _lastPassedRouteIndex = segmentIndex;
       });
     }
+    unawaited(_syncRemainingRoutePolyline());
+  }
+
+  Future<void> _syncRemainingRoutePolyline() async {
+    final tripId = _currentTripId;
+    if (tripId == null) return;
+
+    final remainingPoints = _getRemainingRoutePoints();
+    if (remainingPoints.isEmpty) return;
+
+    await _navigationHistoryService.updateRemainingRoutePolyline(
+      tripId: tripId,
+      remainingRoutePolyline: remainingPoints,
+    );
   }
 
   Future<void> _handleOffRouteDetection({
@@ -933,29 +941,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     _wasOffRoute = offRouteNow;
   }
 
-  void _updateGpsLostEventState(bool gpsLostNow, {LatLng? location}) {
-    if (gpsLostNow && !_wasGpsLost) {
-      unawaited(_addTripEvent(type: 'gps_lost', location: location));
-    } else if (!gpsLostNow && _wasGpsLost) {
-      unawaited(_addTripEvent(type: 'gps_recovered', location: location));
-    }
-
-    _wasGpsLost = gpsLostNow;
-  }
-
-  void _updatePredictionEventState(
-    bool predictionActiveNow, {
-    LatLng? location,
-  }) {
-    if (predictionActiveNow && !_wasPredictionActive) {
-      unawaited(_addTripEvent(type: 'prediction_started', location: location));
-    } else if (!predictionActiveNow && _wasPredictionActive) {
-      unawaited(_addTripEvent(type: 'prediction_stopped', location: location));
-    }
-
-    _wasPredictionActive = predictionActiveNow;
-  }
-
   void recordSosPressedEvent() {
     unawaited(_addTripEvent(type: 'sos_pressed'));
   }
@@ -975,6 +960,8 @@ class _NavigationScreenState extends State<NavigationScreen>
         destinationLat: selectedPlace.latitude,
         destinationLng: selectedPlace.longitude,
         totalDistanceMeters: _routeDistanceMeters,
+        routePolyline: _routePoints,
+        remainingRoutePolyline: _routePoints,
       );
 
       if (tripId == null) return;
@@ -989,11 +976,19 @@ class _NavigationScreenState extends State<NavigationScreen>
           durationSeconds: durationSeconds < 0 ? 0 : durationSeconds,
           totalDistanceMeters: _routeDistanceMeters,
         );
+        await _liveTrackingService.updateNavigationTripState(
+          currentTripId: null,
+          isNavigating: false,
+        );
         return;
       }
 
       _currentTripId = tripId;
       _tripStartedAt ??= _navigationStartTime ?? DateTime.now();
+      await _liveTrackingService.updateNavigationTripState(
+        currentTripId: tripId,
+        isNavigating: true,
+      );
       _lastRoutePointLocation = null;
       _lastRoutePointSavedAt = null;
       await _saveRoutePointIfNeeded(
@@ -1045,14 +1040,16 @@ class _NavigationScreenState extends State<NavigationScreen>
       debugPrint('[NAV_HISTORY] Failed to finish trip history: $e');
       debugPrintStack(stackTrace: st);
     } finally {
+      await _liveTrackingService.updateNavigationTripState(
+        currentTripId: null,
+        isNavigating: false,
+      );
       _currentTripId = null;
       _tripStartedAt = null;
       _lastRoutePointLocation = null;
       _lastRoutePointSavedAt = null;
       _lastKnownGpsPosition = null;
       _wasOffRoute = false;
-      _wasGpsLost = false;
-      _wasPredictionActive = false;
     }
   }
 
@@ -1527,6 +1524,8 @@ class _NavigationScreenState extends State<NavigationScreen>
 
         if (!wasNavigating) {
           await _startTripHistoryIfNeeded();
+        } else {
+          unawaited(_syncRemainingRoutePolyline());
         }
 
         // Start timer to update duration every 5 seconds

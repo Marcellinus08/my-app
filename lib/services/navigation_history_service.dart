@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:latlong2/latlong.dart';
 
 class NavigationHistoryService {
   NavigationHistoryService({
@@ -23,6 +24,8 @@ class NavigationHistoryService {
     required double destinationLat,
     required double destinationLng,
     required double totalDistanceMeters,
+    List<LatLng>? routePolyline,
+    List<LatLng>? remainingRoutePolyline,
   }) async {
     try {
       final user = _auth.currentUser;
@@ -44,6 +47,12 @@ class NavigationHistoryService {
         'destinationLat': destinationLat,
         'destinationLng': destinationLng,
         'totalDistanceMeters': totalDistanceMeters,
+        'routePolyline': _latLngListToMapList(
+          routePolyline ?? const <LatLng>[],
+        ),
+        'remainingRoutePolyline': _latLngListToMapList(
+          remainingRoutePolyline ?? routePolyline ?? const <LatLng>[],
+        ),
         'status': 'ongoing',
         'eventCount': 0,
         'createdAt': FieldValue.serverTimestamp(),
@@ -55,6 +64,25 @@ class NavigationHistoryService {
       debugPrint('[NAV_HISTORY] Failed to start trip: $e');
       debugPrintStack(stackTrace: st);
       return null;
+    }
+  }
+
+  Future<void> updateRemainingRoutePolyline({
+    required String? tripId,
+    required List<LatLng> remainingRoutePolyline,
+  }) async {
+    if (tripId == null || tripId.isEmpty) return;
+
+    try {
+      await _collection.doc(tripId).update({
+        'remainingRoutePolyline': _latLngListToMapList(remainingRoutePolyline),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e, st) {
+      debugPrint(
+        '[NAV_HISTORY] Failed to update remainingRoutePolyline $tripId: $e',
+      );
+      debugPrintStack(stackTrace: st);
     }
   }
 
@@ -180,14 +208,6 @@ class NavigationHistoryService {
         return 'Keluar rute';
       case 'back_to_route':
         return 'Kembali ke rute';
-      case 'gps_lost':
-        return 'GPS lemah';
-      case 'gps_recovered':
-        return 'GPS kembali aktif';
-      case 'prediction_started':
-        return 'Mode prediksi aktif';
-      case 'prediction_stopped':
-        return 'Mode prediksi berhenti';
       case 'sos_pressed':
         return 'SOS ditekan';
       case 'arrived':
@@ -209,14 +229,6 @@ class NavigationHistoryService {
         return 'Pengguna terdeteksi keluar dari jalur navigasi';
       case 'back_to_route':
         return 'Pengguna kembali ke jalur navigasi';
-      case 'gps_lost':
-        return 'Sinyal GPS tidak diperbarui atau melemah';
-      case 'gps_recovered':
-        return 'Sinyal GPS kembali tersedia';
-      case 'prediction_started':
-        return 'Sistem menggunakan prediksi posisi sementara';
-      case 'prediction_stopped':
-        return 'Sistem kembali menggunakan GPS live';
       case 'sos_pressed':
         return 'Pengguna menekan tombol darurat';
       case 'arrived':
@@ -224,6 +236,15 @@ class NavigationHistoryService {
       default:
         return 'Terjadi event selama perjalanan';
     }
+  }
+
+  List<Map<String, double>> _latLngListToMapList(List<LatLng> points) {
+    return points
+        .map((point) => {
+              'lat': point.latitude,
+              'lng': point.longitude,
+            })
+        .toList();
   }
 
   Stream<QuerySnapshot<Map<String, dynamic>>> getUserTripHistoryStream(

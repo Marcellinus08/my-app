@@ -88,6 +88,101 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     return value is Timestamp ? value : null;
   }
 
+  LatLng? _parseLatLng(dynamic lat, dynamic lng) {
+    final parsedLat = _parseDouble(lat);
+    final parsedLng = _parseDouble(lng);
+    if (parsedLat == null || parsedLng == null) return null;
+    return LatLng(parsedLat, parsedLng);
+  }
+
+  List<LatLng> _parsePolyline(dynamic value) {
+    if (value is! List) return [];
+
+    return value
+        .map((point) {
+          if (point is Map) {
+            return _parseLatLng(point['lat'], point['lng']);
+          }
+          return null;
+        })
+        .whereType<LatLng>()
+        .toList();
+  }
+
+  Widget _buildMap({
+    required LatLng userLocation,
+    required double heading,
+    required bool hasLocation,
+    required String gpsStatus,
+    List<LatLng> activeRoute = const [],
+    LatLng? destination,
+  }) {
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: userLocation,
+        initialZoom: 16.0,
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.app',
+        ),
+        if (activeRoute.length >= 2)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: activeRoute,
+                color: Colors.blue,
+                strokeWidth: 5,
+                borderColor: Colors.white,
+                borderStrokeWidth: 2,
+              ),
+            ],
+          ),
+        MarkerLayer(
+          markers: [
+            if (destination != null)
+              Marker(
+                point: destination,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 3),
+                  ),
+                  child: const Icon(
+                    Icons.flag_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+            if (hasLocation)
+              Marker(
+                point: userLocation,
+                child: Transform.rotate(
+                  angle: heading * (math.pi / 180),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: gpsStatus == 'gps_live'
+                          ? Colors.blue
+                          : Colors.orange,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.location_on,
+                      color: Colors.white,
+                      size: 30,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -117,6 +212,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
           final speed = _parseDouble(data?['speed']);
           final accuracy = _parseDouble(data?['accuracy']);
           final isNavigating = data?['isNavigating'] as bool? ?? false;
+          final currentTripId = data?['currentTripId'] as String?;
           final gpsStatus = data?['gpsStatus'] as String? ?? '-';
           final destinationName =
               (data?['destinationName'] as String?)?.isNotEmpty == true
@@ -169,43 +265,48 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 ),
               ),
               Expanded(
-                child: FlutterMap(
-                  options: MapOptions(
-                    initialCenter: userLocation,
-                    initialZoom: 16.0,
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate:
-                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.app',
-                    ),
-                    if (hasLocation)
-                      MarkerLayer(
-                        markers: [
-                          Marker(
-                            point: userLocation,
-                            child: Transform.rotate(
-                              angle: heading * (math.pi / 180),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: gpsStatus == 'gps_live'
-                                      ? Colors.blue
-                                      : Colors.orange,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.location_on,
-                                  color: Colors.white,
-                                  size: 30,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
+                child: !isNavigationActive ||
+                        currentTripId == null ||
+                        currentTripId.isEmpty
+                    ? _buildMap(
+                        userLocation: userLocation,
+                        heading: heading,
+                        hasLocation: hasLocation,
+                        gpsStatus: gpsStatus,
+                      )
+                    : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                        stream: FirebaseFirestore.instance
+                            .collection('navigation_history')
+                            .doc(currentTripId)
+                            .snapshots(),
+                        builder: (context, tripSnapshot) {
+                          final tripData = tripSnapshot.data?.data();
+                          final remainingRoute = _parsePolyline(
+                            tripData?['remainingRoutePolyline'],
+                          );
+                          final routePolyline = _parsePolyline(
+                            tripData?['routePolyline'],
+                          );
+                          final activeRoute = remainingRoute.isNotEmpty
+                              ? remainingRoute
+                              : routePolyline;
+                          final destination = _parseLatLng(
+                            tripData?['destinationLat'],
+                            tripData?['destinationLng'],
+                          );
+
+                          return _buildMap(
+                            userLocation: hasLocation || activeRoute.isEmpty
+                                ? userLocation
+                                : activeRoute.first,
+                            heading: heading,
+                            hasLocation: hasLocation,
+                            gpsStatus: gpsStatus,
+                            activeRoute: activeRoute,
+                            destination: destination,
+                          );
+                        },
                       ),
-                  ],
-                ),
               ),
             ],
           );

@@ -729,6 +729,27 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     return lat != null && lng != null && isTrackingFresh(updatedAt);
   }
 
+  LatLng? _parseLatLng(dynamic lat, dynamic lng) {
+    final parsedLat = _parseDouble(lat);
+    final parsedLng = _parseDouble(lng);
+    if (parsedLat == null || parsedLng == null) return null;
+    return LatLng(parsedLat, parsedLng);
+  }
+
+  List<LatLng> _parsePolyline(dynamic value) {
+    if (value is! List) return [];
+
+    return value
+        .map((point) {
+          if (point is Map) {
+            return _parseLatLng(point['lat'], point['lng']);
+          }
+          return null;
+        })
+        .whereType<LatLng>()
+        .toList();
+  }
+
   String formatLastUpdate(Timestamp? updatedAt) {
     if (updatedAt == null) return '-';
     final duration = DateTime.now().difference(updatedAt.toDate());
@@ -772,6 +793,57 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       });
     }
 
+    final isNavigating = liveData?['isNavigating'] as bool? ?? false;
+    final currentTripId = liveData?['currentTripId'] as String?;
+
+    if (!isNavigating || currentTripId == null || currentTripId.isEmpty) {
+      return _buildMainMapContent(
+        center: center,
+        heading: heading,
+        hasLocation: hasLocation,
+        isGpsActive: isGpsActive,
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: _firestore
+          .collection('navigation_history')
+          .doc(currentTripId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final tripData = snapshot.data?.data();
+        final remainingRoute = _parsePolyline(
+          tripData?['remainingRoutePolyline'],
+        );
+        final routePolyline = _parsePolyline(tripData?['routePolyline']);
+        final activeRoute = remainingRoute.isNotEmpty
+            ? remainingRoute
+            : routePolyline;
+        final destination = _parseLatLng(
+          tripData?['destinationLat'],
+          tripData?['destinationLng'],
+        );
+
+        return _buildMainMapContent(
+          center: hasLocation || activeRoute.isEmpty ? center : activeRoute.first,
+          heading: heading,
+          hasLocation: hasLocation,
+          isGpsActive: isGpsActive,
+          activeRoute: activeRoute,
+          destination: destination,
+        );
+      },
+    );
+  }
+
+  Widget _buildMainMapContent({
+    required LatLng center,
+    required double heading,
+    required bool hasLocation,
+    required bool isGpsActive,
+    List<LatLng> activeRoute = const [],
+    LatLng? destination,
+  }) {
     return Stack(
       children: [
         FlutterMap(
@@ -791,9 +863,39 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
               userAgentPackageName: 'com.example.my_app',
               maxZoom: 18.0,
             ),
-            if (hasLocation)
-              MarkerLayer(
-                markers: [
+            if (activeRoute.length >= 2)
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: activeRoute,
+                    color: AppColors.primary,
+                    strokeWidth: 5,
+                    borderColor: Colors.white,
+                    borderStrokeWidth: 2,
+                  ),
+                ],
+              ),
+            MarkerLayer(
+              markers: [
+                if (destination != null)
+                  Marker(
+                    point: destination,
+                    width: 48,
+                    height: 48,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.red.withOpacity(0.9),
+                        border: Border.all(color: Colors.white, width: 3),
+                      ),
+                      child: const Icon(
+                        Icons.flag_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                if (hasLocation)
                   Marker(
                     point: center,
                     width: 56,
@@ -820,8 +922,8 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                       ),
                     ),
                   ),
-                ],
-              ),
+              ],
+            ),
           ],
         ),
         if (!hasLocation)
@@ -832,7 +934,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.92),
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.textTertiary.withOpacity(0.2)),
+                  border: Border.all(
+                    color: AppColors.textTertiary.withOpacity(0.2),
+                  ),
                 ),
                 child: Text(
                   isGpsActive ? 'Belum ada data lokasi' : 'User sedang offline',
@@ -1485,6 +1589,27 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
     return fallback;
   }
 
+  bool _shouldShowTripEvent(String type) {
+    return type != 'gps_lost' &&
+        type != 'gps_recovered' &&
+        type != 'prediction_started' &&
+        type != 'prediction_stopped';
+  }
+
+  Stream<int> getVisibleTripEventCountStream(String tripId) {
+    return _firestore
+        .collection('navigation_history')
+        .doc(tripId)
+        .collection('events')
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.where((doc) {
+        final type = doc.data()['type'];
+        return type is String && _shouldShowTripEvent(type);
+      }).length;
+    });
+  }
+
   Widget _buildHistoryContent() {
     return FutureBuilder<String?>(
       future: _pairedUserUidFuture,
@@ -1618,7 +1743,6 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
     final endTimeText = formatTripTime(item.endTime);
     final originName = _safeText(item.originName, 'Lokasi awal');
     final destinationName = _safeText(item.destinationName, 'Tujuan');
-    final eventCount = _toInt(item.eventCount) ?? 0;
 
     return Material(
       color: Colors.transparent,
@@ -1775,10 +1899,18 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildMiniStat(
-                  icon: Icons.warning_amber_rounded,
-                  label: '$eventCount event',
-                  color: eventCount == 0 ? Colors.green : Colors.orange,
+                child: StreamBuilder<int>(
+                  stream: getVisibleTripEventCountStream(item.id),
+                  builder: (context, snapshot) {
+                    final eventCount = snapshot.data ?? 0;
+                    return _buildMiniStat(
+                      icon: Icons.warning_amber_rounded,
+                      label: snapshot.connectionState == ConnectionState.waiting
+                          ? '-'
+                          : '$eventCount event',
+                      color: eventCount == 0 ? Colors.green : Colors.orange,
+                    );
+                  },
                 ),
               ),
             ],
@@ -2033,11 +2165,6 @@ class _NavigationHistoryDetailScreenState
     return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
   }
 
-  String formatEventCount(dynamic eventCount) {
-    final count = _toInt(eventCount) ?? 0;
-    return '$count event';
-  }
-
   String formatEventTime(Timestamp? timestamp) {
     if (timestamp == null) return '-';
     return DateFormat('HH:mm').format(timestamp.toDate());
@@ -2057,14 +2184,6 @@ class _NavigationHistoryDetailScreenState
         return Icons.warning_rounded;
       case 'back_to_route':
         return Icons.check_circle_outline_rounded;
-      case 'gps_lost':
-        return Icons.gps_off_rounded;
-      case 'gps_recovered':
-        return Icons.gps_fixed_rounded;
-      case 'prediction_started':
-        return Icons.timeline_rounded;
-      case 'prediction_stopped':
-        return Icons.gps_fixed_rounded;
       case 'sos_pressed':
         return Icons.warning_rounded;
       default:
@@ -2079,20 +2198,26 @@ class _NavigationHistoryDetailScreenState
       case 'navigation_completed':
       case 'arrived':
       case 'back_to_route':
-      case 'gps_recovered':
         return Colors.green;
       case 'navigation_cancelled':
-      case 'gps_lost':
       case 'sos_pressed':
         return Colors.red;
       case 'off_route':
-      case 'prediction_started':
         return Colors.orange;
-      case 'prediction_stopped':
-        return Colors.blue;
       default:
         return Colors.grey;
     }
+  }
+
+  bool _shouldShowTripEvent(String type) {
+    return type != 'gps_lost' &&
+        type != 'gps_recovered' &&
+        type != 'prediction_started' &&
+        type != 'prediction_stopped';
+  }
+
+  bool shouldShowTripEvent(String type) {
+    return _shouldShowTripEvent(type);
   }
 
   LatLng? parseLatLng(dynamic lat, dynamic lng) {
@@ -2428,6 +2553,7 @@ class _NavigationHistoryDetailScreenState
     required String title,
     required IconData icon,
     required List<Widget> children,
+    Widget? trailing,
   }) {
     return Container(
       width: double.infinity,
@@ -2459,13 +2585,19 @@ class _NavigationHistoryDetailScreenState
                 child: Icon(icon, color: AppColors.primary, size: 20),
               ),
               const SizedBox(width: 10),
-              Text(
-                title,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w900,
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
+              if (trailing != null) ...[
+                const SizedBox(width: 10),
+                trailing,
+              ],
             ],
           ),
           const SizedBox(height: 14),
@@ -2740,30 +2872,36 @@ class _NavigationHistoryDetailScreenState
   }
 
   Widget _buildTimelineSection() {
-    return _buildSection(
-      title: 'Timeline Kejadian',
-      icon: Icons.timeline_rounded,
-      children: [
-        StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _eventsStream,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Container(
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _eventsStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          debugPrint(
+            '[NAV_HISTORY_DETAIL] Events stream error: ${snapshot.error}',
+          );
+        }
+
+        final docs = (snapshot.data?.docs ?? [])
+            .where((doc) {
+              final type = doc.data()['type'];
+              return type is String && shouldShowTripEvent(type);
+            })
+            .toList();
+        final isWaiting = snapshot.connectionState == ConnectionState.waiting;
+
+        return _buildSection(
+          title: 'Timeline Kejadian',
+          icon: Icons.timeline_rounded,
+          trailing: _buildEventCountBadge(isWaiting ? null : docs.length),
+          children: [
+            if (isWaiting)
+              Container(
                 height: 96,
                 alignment: Alignment.center,
                 child: const CircularProgressIndicator(),
-              );
-            }
-
-            if (snapshot.hasError) {
-              debugPrint(
-                '[NAV_HISTORY_DETAIL] Events stream error: ${snapshot.error}',
-              );
-            }
-
-            final docs = snapshot.data?.docs ?? [];
-            if (docs.isEmpty) {
-              return Container(
+              )
+            else if (docs.isEmpty)
+              Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -2779,21 +2917,38 @@ class _NavigationHistoryDetailScreenState
                   ),
                   textAlign: TextAlign.center,
                 ),
-              );
-            }
+              )
+            else
+              Column(
+                children: [
+                  for (var i = 0; i < docs.length; i++)
+                    _buildEventTimelineItem(
+                      docs[i].data(),
+                      isLast: i == docs.length - 1,
+                    ),
+                ],
+              ),
+          ],
+        );
+      },
+    );
+  }
 
-            return Column(
-              children: [
-                for (var i = 0; i < docs.length; i++)
-                  _buildEventTimelineItem(
-                    docs[i].data(),
-                    isLast: i == docs.length - 1,
-                  ),
-              ],
-            );
-          },
+  Widget _buildEventCountBadge(int? count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.primary.withOpacity(0.14)),
+      ),
+      child: Text(
+        count == null ? '-' : '$count event',
+        style: AppTextStyles.bodySmall.copyWith(
+          color: AppColors.primary,
+          fontWeight: FontWeight.w900,
         ),
-      ],
+      ),
     );
   }
 
@@ -2935,17 +3090,6 @@ class _NavigationHistoryDetailScreenState
         _buildRouteMapSection(data),
         const SizedBox(height: 16),
         _buildTimelineSection(),
-        const SizedBox(height: 16),
-        _buildSection(
-          title: 'Keamanan',
-          icon: Icons.health_and_safety_rounded,
-          children: [
-            _buildDetailRow(
-              'Jumlah event',
-              formatEventCount(data['eventCount']),
-            ),
-          ],
-        ),
       ],
     );
   }

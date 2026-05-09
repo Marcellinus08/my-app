@@ -202,6 +202,7 @@ class LiveTrackingService {
     required String gpsStatus,
     required String connectionStatus,
     String? destinationName,
+    String? currentTripId,
     double? heading,
     double? speed,
     double? accuracy,
@@ -214,6 +215,7 @@ class LiveTrackingService {
       'speed': speed ?? (position.speed.isFinite ? position.speed : 0.0),
       'accuracy': accuracy ?? position.accuracy,
       'isNavigating': isNavigating,
+      if (currentTripId != null) 'currentTripId': currentTripId,
       'isPredicted': isPredicted,
       'gpsStatus': gpsStatus,
       'connectionStatus': connectionStatus,
@@ -269,6 +271,7 @@ class LiveTrackingService {
         'heading': null,
         'speed': null,
         'isNavigating': false,
+        'currentTripId': null,
         'isPredicted': false,
         'gpsStatus': 'gps_live',
         'connectionStatus': 'online',
@@ -298,6 +301,7 @@ class LiveTrackingService {
       'heading': null,
       'speed': null,
       'isNavigating': false,
+      'currentTripId': null,
       'isPredicted': false,
       'gpsStatus': null,
       'connectionStatus': 'offline',
@@ -317,6 +321,25 @@ class LiveTrackingService {
       'batteryLevel': batteryLevel,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  Future<void> updateNavigationTripState({
+    required String? currentTripId,
+    required bool isNavigating,
+  }) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      await _firestore.collection('live_tracking').doc(user.uid).set({
+        'userId': user.uid,
+        'isNavigating': isNavigating,
+        'currentTripId': isNavigating ? currentTripId : null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print('[LIVE_TRACKING] Failed to update navigation trip state: $e');
+    }
   }
 
   Future<bool> _ensureLocationReady() async {
