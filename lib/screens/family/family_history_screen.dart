@@ -11,6 +11,9 @@ import 'package:latlong2/latlong.dart';
 import '../../services/analytics_service.dart';
 import '../../utils/constants.dart';
 
+const Color _historyPrimaryText = Color(0xFF475569);
+const Color _historyStrongText = Color(0xFF334155);
+
 class FamilyHistoryScreen extends StatefulWidget {
   final String targetUid;
   final String familyId;
@@ -48,7 +51,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     AnalyticsService().logScreenView(screenName: 'FamilyHistory');
     _sheetController.addListener(_handleSheetSize);
     _pairedUserUidFuture = getPairedUserUid();
-    
+
     // Timer untuk update status offline/online dan last update setiap 1 detik
     _realtimeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
@@ -316,7 +319,11 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     );
   }
 
-  Widget _buildMiniTag(String label, {IconData? icon, Color color = AppColors.primary}) {
+  Widget _buildMiniTag(
+    String label, {
+    IconData? icon,
+    Color color = AppColors.primary,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -383,22 +390,28 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          ...items.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Text(
-                  '• $item',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.5,
-                  ),
+          ...items.map(
+            (item) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                '• $item',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.5,
                 ),
-              )),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildInfoTile(String label, String value, {Color color = AppColors.primary}) {
+  Widget _buildInfoTile(
+    String label,
+    String value, {
+    Color color = AppColors.primary,
+  }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
@@ -429,7 +442,10 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     );
   }
 
-  Widget _buildTunaNetraInfoCard(String pairedUid, Map<String, dynamic>? liveData) {
+  Widget _buildTunaNetraInfoCard(
+    String pairedUid,
+    Map<String, dynamic>? liveData,
+  ) {
     return GestureDetector(
       onTap: () => _showTunaNetraInfo(pairedUid),
       child: Container(
@@ -500,7 +516,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     _firestore.collection('users').doc(pairedUid).get().then((doc) {
       if (!mounted) return;
       final userName = doc.data()?['name'] as String? ?? '-';
-      
+
       showModalBottomSheet(
         context: context,
         shape: const RoundedRectangleBorder(
@@ -515,14 +531,19 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
               return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                 stream: getLiveTrackingStream(pairedUid),
                 builder: (context, snapshot) {
-                  final hasLiveData = snapshot.hasData && snapshot.data?.exists == true;
+                  final hasLiveData =
+                      snapshot.hasData && snapshot.data?.exists == true;
                   final liveData = hasLiveData ? snapshot.data!.data() : null;
-                  
-                  final isNavigating = liveData?['isNavigating'] as bool? ?? false;
-                  final batteryLevel = liveData?['batteryLevel']?.toString() ?? '-';
+
+                  final isNavigating =
+                      liveData?['isNavigating'] as bool? ?? false;
+                  final batteryLevel =
+                      liveData?['batteryLevel']?.toString() ?? '-';
                   final speed = liveData?['speed']?.toString() ?? '-';
                   final accuracy = liveData?['accuracy']?.toString() ?? '-';
-                  final destinationName = (liveData?['destinationName'] as String?)?.isNotEmpty == true
+                  final destinationName =
+                      (liveData?['destinationName'] as String?)?.isNotEmpty ==
+                          true
                       ? liveData!['destinationName'] as String
                       : '-';
                   final lat = _parseDouble(liveData?['lat']);
@@ -534,16 +555,23 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                   final isGpsActive = isGpsActiveTracking(liveData);
                   final isNavigationActive = isGpsActive && isNavigating;
                   final gpsStatusText = buildGpsStatusText(isGpsActive);
-                  final navigationText =
-                      buildNavigationText(isGpsActive, isNavigating);
-                  
+                  final navigationText = buildNavigationText(
+                    isGpsActive,
+                    isNavigating,
+                  );
+
                   return Padding(
                     padding: MediaQuery.of(context).viewInsets,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 24,
+                      ),
                       decoration: const BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(24),
+                        ),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -578,10 +606,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                           const SizedBox(height: 18),
                           _buildDetailRow('Nama', userName),
                           const SizedBox(height: 12),
-                          _buildDetailRow(
-                            'GPS',
-                            gpsStatusText,
-                          ),
+                          _buildDetailRow('GPS', gpsStatusText),
                           const SizedBox(height: 12),
                           _buildDetailRow(
                             'Lokasi',
@@ -595,10 +620,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                 : '-',
                           ),
                           const SizedBox(height: 12),
-                          _buildDetailRow(
-                            'Navigasi',
-                            navigationText,
-                          ),
+                          _buildDetailRow('Navigasi', navigationText),
                           const SizedBox(height: 12),
                           _buildDetailRow(
                             'Tujuan',
@@ -621,7 +643,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                           const SizedBox(height: 12),
                           _buildDetailRow(
                             'Last update',
-                            isNavigationActive ? formatLastUpdate(updatedAt) : '-',
+                            isNavigationActive
+                                ? formatLastUpdate(updatedAt)
+                                : '-',
                           ),
                           const SizedBox(height: 24),
                           SizedBox(
@@ -632,7 +656,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(14),
                                 ),
-                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
                               ),
                               child: const Text('Tutup'),
                             ),
@@ -711,7 +737,8 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   }
 
   Stream<DocumentSnapshot<Map<String, dynamic>>> getLiveTrackingStream(
-      String tunaNetraUid) {
+    String tunaNetraUid,
+  ) {
     return _firestore.collection('live_tracking').doc(tunaNetraUid).snapshots();
   }
 
@@ -825,7 +852,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         );
 
         return _buildMainMapContent(
-          center: hasLocation || activeRoute.isEmpty ? center : activeRoute.first,
+          center: hasLocation || activeRoute.isEmpty
+              ? center
+              : activeRoute.first,
           heading: heading,
           hasLocation: hasLocation,
           isGpsActive: isGpsActive,
@@ -930,7 +959,10 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
           Positioned.fill(
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.92),
                   borderRadius: BorderRadius.circular(16),
@@ -953,16 +985,21 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   }
 
   List<Widget> _buildLivePanelContent(Map<String, dynamic>? liveData) {
-    final destinationName = (liveData?['destinationName'] as String?)?.isNotEmpty == true
+    final destinationName =
+        (liveData?['destinationName'] as String?)?.isNotEmpty == true
         ? liveData!['destinationName'] as String
         : '-';
     final speedValue = _parseDouble(liveData?['speed']);
-    final speed = speedValue != null ? '${speedValue.toStringAsFixed(1)} m/s' : '-';
+    final speed = speedValue != null
+        ? '${speedValue.toStringAsFixed(1)} m/s'
+        : '-';
     final battery = liveData?['batteryLevel'] != null
         ? '${liveData!['batteryLevel']}%'
         : '-';
     final accuracyValue = _parseDouble(liveData?['accuracy']);
-    final accuracy = accuracyValue != null ? '${accuracyValue.toStringAsFixed(1)} m' : '-';
+    final accuracy = accuracyValue != null
+        ? '${accuracyValue.toStringAsFixed(1)} m'
+        : '-';
     final lat = _parseDouble(liveData?['lat']);
     final lng = _parseDouble(liveData?['lng']);
     final locationText = lat != null && lng != null
@@ -976,20 +1013,24 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
 
     // Prepare display values based on online status
     final displayLocation = isGpsActive ? locationText : '-';
-    final displayLat =
-        isGpsActive && lat != null ? lat.toStringAsFixed(6) : '-';
-    final displayLng =
-        isGpsActive && lng != null ? lng.toStringAsFixed(6) : '-';
+    final displayLat = isGpsActive && lat != null
+        ? lat.toStringAsFixed(6)
+        : '-';
+    final displayLng = isGpsActive && lng != null
+        ? lng.toStringAsFixed(6)
+        : '-';
     final displayAccuracy = isNavigationActive ? accuracy : '-';
     final displayDestination = isNavigationActive ? destinationName : '-';
     final navigationText = buildNavigationText(isGpsActive, isNavigating);
     final gpsStatusText = buildGpsStatusText(isGpsActive);
     final displaySpeed = isNavigationActive ? speed : '-';
-    final displayHeading =
-        isNavigationActive ? headingValue.toStringAsFixed(0) : '-';
+    final displayHeading = isNavigationActive
+        ? headingValue.toStringAsFixed(0)
+        : '-';
     final displayBattery = isGpsActive ? battery : '-';
-    final displayLastUpdate =
-        isNavigationActive ? formatLastUpdate(updatedAt) : '-';
+    final displayLastUpdate = isNavigationActive
+        ? formatLastUpdate(updatedAt)
+        : '-';
 
     return [
       _buildSectionTitle('🎯 Tujuan realtime monitoring'),
@@ -1025,21 +1066,26 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       const SizedBox(height: 18),
       _buildDetailCard(
         title: 'Status pergerakan',
-        items: [
-          'Kecepatan: $displaySpeed',
-          'Arah: $displayHeading°',
-        ],
+        items: ['Kecepatan: $displaySpeed', 'Arah: $displayHeading°'],
       ),
       const SizedBox(height: 18),
       if (isGpsActive)
         Row(
           children: [
             Expanded(
-              child: _buildMiniTag('GPS Live 🟢', icon: Icons.gps_fixed, color: Colors.green),
+              child: _buildMiniTag(
+                'GPS Live 🟢',
+                icon: Icons.gps_fixed,
+                color: Colors.green,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: _buildMiniTag('Predicted ⚠️', icon: Icons.verified_user, color: Colors.amber),
+              child: _buildMiniTag(
+                'Predicted ⚠️',
+                icon: Icons.verified_user,
+                color: Colors.amber,
+              ),
             ),
           ],
         ),
@@ -1066,18 +1112,25 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (pairedSnapshot.hasError || pairedUid == null || pairedUid.isEmpty) {
+          if (pairedSnapshot.hasError ||
+              pairedUid == null ||
+              pairedUid.isEmpty) {
             return Stack(
               children: [
                 Positioned.fill(child: _buildMainMap(null)),
                 Positioned.fill(
                   child: Center(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 14,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.92),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.textTertiary.withOpacity(0.2)),
+                        border: Border.all(
+                          color: AppColors.textTertiary.withOpacity(0.2),
+                        ),
                       ),
                       child: Text(
                         'Belum ada data lokasi',
@@ -1096,14 +1149,13 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
           return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
             stream: getLiveTrackingStream(pairedUid),
             builder: (context, snapshot) {
-              final hasLiveData = snapshot.hasData && snapshot.data?.exists == true;
+              final hasLiveData =
+                  snapshot.hasData && snapshot.data?.exists == true;
               final liveData = hasLiveData ? snapshot.data!.data() : null;
 
               return Stack(
                 children: [
-                  Positioned.fill(
-                    child: _buildMainMap(liveData),
-                  ),
+                  Positioned.fill(child: _buildMainMap(liveData)),
                   Positioned(
                     top: 0,
                     left: 0,
@@ -1159,8 +1211,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   ShaderMask(
-                                    shaderCallback: (bounds) =>
-                                        AppColors.primaryGradient.createShader(bounds),
+                                    shaderCallback: (bounds) => AppColors
+                                        .primaryGradient
+                                        .createShader(bounds),
                                     child: Text(
                                       'Lihat Detail & Lokasi',
                                       style: AppTextStyles.heading2.copyWith(
@@ -1198,7 +1251,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                       final isExpanded = _isSheetExpanded;
                       return Container(
                         decoration: BoxDecoration(
-                          color: isExpanded ? AppColors.background : Colors.transparent,
+                          color: isExpanded
+                              ? AppColors.background
+                              : Colors.transparent,
                           borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(24),
                           ),
@@ -1221,10 +1276,17 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                     right: 0,
                                     bottom: 130,
                                     child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                                      padding: const EdgeInsets.fromLTRB(
+                                        16,
+                                        12,
+                                        16,
+                                        0,
+                                      ),
                                       child: ListView(
                                         controller: controller,
-                                        padding: const EdgeInsets.only(bottom: 24),
+                                        padding: const EdgeInsets.only(
+                                          bottom: 24,
+                                        ),
                                         children: [
                                           GestureDetector(
                                             onTap: _toggleSheet,
@@ -1236,7 +1298,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                                   color: AppColors.textTertiary
                                                       .withOpacity(0.4),
                                                   borderRadius:
-                                                      BorderRadius.circular(999),
+                                                      BorderRadius.circular(
+                                                        999,
+                                                      ),
                                                 ),
                                               ),
                                             ),
@@ -1247,10 +1311,13 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                               Expanded(
                                                 child: Text(
                                                   'Riwayat Perjalanan',
-                                                  style: AppTextStyles.bodyLarge.copyWith(
-                                                    fontWeight: FontWeight.w800,
-                                                    color: AppColors.textPrimary,
-                                                  ),
+                                                  style: AppTextStyles.bodyLarge
+                                                      .copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        color: AppColors
+                                                            .textPrimary,
+                                                      ),
                                                 ),
                                               ),
                                               GestureDetector(
@@ -1259,15 +1326,21 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                                   width: 42,
                                                   height: 42,
                                                   decoration: BoxDecoration(
-                                                    gradient: AppColors.primaryGradient,
+                                                    gradient: AppColors
+                                                        .primaryGradient,
                                                     borderRadius:
-                                                        BorderRadius.circular(14),
+                                                        BorderRadius.circular(
+                                                          14,
+                                                        ),
                                                     boxShadow: [
                                                       BoxShadow(
                                                         color: AppColors.primary
                                                             .withOpacity(0.25),
                                                         blurRadius: 12,
-                                                        offset: const Offset(0, 6),
+                                                        offset: const Offset(
+                                                          0,
+                                                          6,
+                                                        ),
                                                       ),
                                                     ],
                                                   ),
@@ -1305,18 +1378,22 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                                   children: [
                                                     Text(
                                                       'Info Realtime',
-                                                      style: AppTextStyles.bodyMedium
+                                                      style: AppTextStyles
+                                                          .bodyMedium
                                                           .copyWith(
-                                                        fontWeight: FontWeight.w800,
-                                                      ),
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                          ),
                                                     ),
                                                     const SizedBox(height: 2),
                                                     Text(
                                                       'Status aktivitas dan koneksi pengguna',
-                                                      style: AppTextStyles.bodySmall
+                                                      style: AppTextStyles
+                                                          .bodySmall
                                                           .copyWith(
-                                                        color: AppColors.textSecondary,
-                                                      ),
+                                                            color: AppColors
+                                                                .textSecondary,
+                                                          ),
                                                     ),
                                                   ],
                                                 ),
@@ -1324,7 +1401,10 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                             ],
                                           ),
                                           const SizedBox(height: 12),
-                                          _buildTunaNetraInfoCard(pairedUid, liveData),
+                                          _buildTunaNetraInfoCard(
+                                            pairedUid,
+                                            liveData,
+                                          ),
                                           const SizedBox(height: 16),
                                           Container(
                                             padding: const EdgeInsets.all(12),
@@ -1346,7 +1426,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                               ],
                                             ),
                                             child: Column(
-                                              children: _buildLivePanelContent(liveData),
+                                              children: _buildLivePanelContent(
+                                                liveData,
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -1368,7 +1450,8 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                     Positioned.fill(
                                       child: GestureDetector(
                                         behavior: HitTestBehavior.translucent,
-                                        onTap: () => _showTunaNetraInfo(pairedUid),
+                                        onTap: () =>
+                                            _showTunaNetraInfo(pairedUid),
                                       ),
                                     ),
                                     Positioned(
@@ -1381,8 +1464,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                           height: 46,
                                           decoration: BoxDecoration(
                                             gradient: AppColors.primaryGradient,
-                                            borderRadius:
-                                                BorderRadius.circular(14),
+                                            borderRadius: BorderRadius.circular(
+                                              14,
+                                            ),
                                             boxShadow: [
                                               BoxShadow(
                                                 color: AppColors.primary
@@ -1403,7 +1487,8 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                     Align(
                                       alignment: Alignment.bottomCenter,
                                       child: GestureDetector(
-                                        onTap: () => _showTunaNetraInfo(pairedUid),
+                                        onTap: () =>
+                                            _showTunaNetraInfo(pairedUid),
                                         child: Padding(
                                           padding: const EdgeInsets.fromLTRB(
                                             16,
@@ -1411,7 +1496,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                             16,
                                             16,
                                           ),
-                                          child: _buildCollapsedSheetCard(liveData),
+                                          child: _buildCollapsedSheetCard(
+                                            liveData,
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -1512,7 +1599,7 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
 
   String formatTripDate(Timestamp? timestamp) {
     if (timestamp == null) return '-';
-    return DateFormat('dd MMM yyyy').format(timestamp.toDate());
+    return DateFormat('dd MMMM yyyy').format(timestamp.toDate());
   }
 
   String formatTripTime(Timestamp? timestamp) {
@@ -1534,6 +1621,13 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
     return '$hours jam $remainingMinutes menit';
   }
 
+  String formatCardDuration(dynamic durationSeconds) {
+    final seconds = _toInt(durationSeconds);
+    if (seconds == null) return '-';
+    if (seconds >= 0 && seconds < 60) return '1 menit';
+    return formatDuration(durationSeconds);
+  }
+
   String formatDistance(dynamic totalDistanceMeters) {
     final meters = _toDouble(totalDistanceMeters);
     if (meters == null) return '-';
@@ -1544,8 +1638,10 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
   String formatStatusText(String? status) {
     switch (status) {
       case 'completed':
-        return 'Selesai ✅';
+        return 'Selesai';
       case 'cancelled':
+      case 'canceled':
+      case 'batal':
         return 'Dibatalkan';
       case 'ongoing':
         return 'Berjalan';
@@ -1557,13 +1653,30 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
   Color getStatusColor(String? status) {
     switch (status) {
       case 'completed':
-        return Colors.green;
+        return AppColors.success;
       case 'cancelled':
-        return Colors.red;
+      case 'canceled':
+      case 'batal':
+        return AppColors.error;
       case 'ongoing':
         return AppColors.primary;
       default:
         return Colors.grey;
+    }
+  }
+
+  Color getStatusBackgroundColor(String? status) {
+    switch (status) {
+      case 'completed':
+        return AppColors.successLight;
+      case 'cancelled':
+      case 'canceled':
+      case 'batal':
+        return AppColors.errorLight;
+      case 'ongoing':
+        return AppColors.infoLight;
+      default:
+        return AppColors.surfaceLight;
     }
   }
 
@@ -1603,11 +1716,11 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
         .collection('events')
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.where((doc) {
-        final type = doc.data()['type'];
-        return type is String && _shouldShowTripEvent(type);
-      }).length;
-    });
+          return snapshot.docs.where((doc) {
+            final type = doc.data()['type'];
+            return type is String && _shouldShowTripEvent(type);
+          }).length;
+        });
   }
 
   Widget _buildHistoryContent() {
@@ -1738,7 +1851,8 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
 
   Widget _buildTripCard(NavigationHistoryItem item) {
     final statusColor = getStatusColor(item.status);
-    final durationText = formatDuration(item.durationSeconds);
+    final statusBackgroundColor = getStatusBackgroundColor(item.status);
+    final durationText = formatCardDuration(item.durationSeconds);
     final startTimeText = formatTripTime(item.startTime);
     final endTimeText = formatTripTime(item.endTime);
     final originName = _safeText(item.originName, 'Lokasi awal');
@@ -1755,182 +1869,248 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         child: Container(
-          margin: const EdgeInsets.only(bottom: 16),
+          margin: const EdgeInsets.only(bottom: 14),
           padding: const EdgeInsets.all(18),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(22),
             border: Border.all(color: AppColors.primary.withOpacity(0.08)),
             boxShadow: [
               BoxShadow(
-                color: AppColors.primary.withOpacity(0.07),
+                color: AppColors.textPrimary.withOpacity(0.08),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),
             ],
           ),
           child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  formatTripDate(item.startTime),
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: statusColor.withOpacity(0.25)),
-                ),
-                child: Text(
-                  formatStatusText(item.status),
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: statusColor,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Icon(
-                Icons.access_time_rounded,
-                size: 18,
-                color: AppColors.primary,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '$startTimeText → $endTimeText ($durationText)',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.04),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                _buildPointIcon(
-                  icon: Icons.radio_button_checked,
-                  color: Colors.green,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    originName,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
                     ),
-                    maxLines: 2,
+                    decoration: BoxDecoration(
+                      color: AppColors.infoLight,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: AppColors.primary.withOpacity(0.12),
+                      ),
+                    ),
+                    child: Text(
+                      formatTripDate(item.startTime),
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.visible,
+                    ),
+                  ),
+                  const Spacer(),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: statusBackgroundColor,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: statusColor.withOpacity(0.18)),
+                    ),
+                    child: Text(
+                      formatStatusText(item.status),
+                      style: AppTextStyles.caption.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Icon(
+                    Icons.access_time_rounded,
+                    size: 18,
+                    color: AppColors.textTertiary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$startTimeText -> $endTimeText',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: _historyStrongText,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    durationText,
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w900,
+                    ),
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE8EEF5)),
                 ),
-                const SizedBox(width: 10),
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.arrow_forward_rounded,
-                    size: 16,
-                    color: AppColors.primary,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    destinationName,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Rute Perjalanan',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                _buildPointIcon(icon: Icons.location_on, color: Colors.red),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildMiniStat(
-                  icon: Icons.straighten_rounded,
-                  label: formatDistance(item.totalDistanceMeters),
-                  color: AppColors.primary,
+                    const SizedBox(height: 12),
+                    _buildLocationInfo(
+                      icon: Icons.radio_button_checked,
+                      color: AppColors.success,
+                      label: 'Dari',
+                      value: originName,
+                      showConnector: true,
+                    ),
+                    const SizedBox(height: 6),
+                    _buildLocationInfo(
+                      icon: Icons.location_on_rounded,
+                      color: AppColors.error,
+                      label: 'Ke',
+                      value: destinationName,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: StreamBuilder<int>(
-                  stream: getVisibleTripEventCountStream(item.id),
-                  builder: (context, snapshot) {
-                    final eventCount = snapshot.data ?? 0;
-                    return _buildMiniStat(
-                      icon: Icons.warning_amber_rounded,
-                      label: snapshot.connectionState == ConnectionState.waiting
-                          ? '-'
-                          : '$eventCount event',
-                      color: eventCount == 0 ? Colors.green : Colors.orange,
-                    );
-                  },
-                ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildMiniStat(
+                      icon: Icons.straighten_rounded,
+                      label:
+                          'Jarak: ${formatDistance(item.totalDistanceMeters)}',
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: StreamBuilder<int>(
+                      stream: getVisibleTripEventCountStream(item.id),
+                      builder: (context, snapshot) {
+                        final eventCount = snapshot.data ?? 0;
+                        return _buildMiniStat(
+                          icon: Icons.warning_amber_rounded,
+                          label:
+                              snapshot.connectionState ==
+                                  ConnectionState.waiting
+                              ? '-'
+                              : '$eventCount aktivitas',
+                          color: eventCount == 0
+                              ? AppColors.success
+                              : AppColors.warning,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-        ],
-      ),
         ),
       ),
     );
   }
 
-  Widget _buildPointIcon({
+  Widget _buildLocationInfo({
     required IconData icon,
     required Color color,
+    required String label,
+    required String value,
+    bool showConnector = false,
   }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Column(
+          children: [
+            _buildPointIcon(icon: icon, color: color),
+            if (showConnector)
+              Container(
+                width: 2,
+                height: 30,
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.textTertiary.withOpacity(0.28),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: AppTextStyles.caption.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w900,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.visible,
+              ),
+              const SizedBox(height: 3),
+              Text(
+                value,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: _historyPrimaryText,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPointIcon({required IconData icon, required Color color}) {
     return Container(
-      width: 32,
-      height: 32,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: Icon(icon, color: Colors.white, size: 18),
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(icon, color: color, size: 18),
     );
   }
 
@@ -1940,10 +2120,11 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(14),
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.12)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -1953,7 +2134,7 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
           Expanded(
             child: Text(
               label,
-              style: AppTextStyles.bodySmall.copyWith(
+              style: AppTextStyles.caption.copyWith(
                 color: color,
                 fontWeight: FontWeight.w800,
               ),
@@ -1974,7 +2155,7 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
           gradient: LinearGradient(
             colors: [
               const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withOpacity(0.08),
+              AppColors.primaryLight.withOpacity(0.04),
             ],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
@@ -1985,26 +2166,19 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
             children: [
               // Header
               Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(20),
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.white, Colors.white.withOpacity(0.95)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primary.withOpacity(0.15),
-                      blurRadius: 25,
-                      offset: const Offset(0, 10),
+                      color: AppColors.textPrimary.withOpacity(0.06),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
                     ),
                   ],
-                  border: Border.all(
-                    color: AppColors.primary.withOpacity(0.1),
-                    width: 1,
-                  ),
+                  border: Border.all(color: const Color(0xFFE5EAF0), width: 1),
                 ),
                 child: Row(
                   children: [
@@ -2023,22 +2197,18 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) =>
-                                AppColors.primaryGradient.createShader(bounds),
-                            child: Text(
-                              'Riwayat Perjalanan',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w800,
-                              ),
+                          Text(
+                            'Riwayat Perjalanan',
+                            style: AppTextStyles.heading2.copyWith(
+                              color: AppColors.primary,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -2069,10 +2239,7 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
 class NavigationHistoryDetailScreen extends StatefulWidget {
   final String tripId;
 
-  const NavigationHistoryDetailScreen({
-    super.key,
-    required this.tripId,
-  });
+  const NavigationHistoryDetailScreen({super.key, required this.tripId});
 
   @override
   State<NavigationHistoryDetailScreen> createState() =>
@@ -2116,7 +2283,7 @@ class _NavigationHistoryDetailScreenState
 
   String formatTripDate(Timestamp? timestamp) {
     if (timestamp == null) return '-';
-    return DateFormat('dd MMM yyyy').format(timestamp.toDate());
+    return DateFormat('dd MMMM yyyy').format(timestamp.toDate());
   }
 
   String formatTripTime(Timestamp? timestamp) {
@@ -2138,6 +2305,13 @@ class _NavigationHistoryDetailScreenState
     return '$hours jam $remainingMinutes menit';
   }
 
+  String formatDisplayDuration(dynamic durationSeconds) {
+    final seconds = _toInt(durationSeconds);
+    if (seconds == null) return '-';
+    if (seconds >= 0 && seconds < 60) return '< 1 menit';
+    return formatDuration(durationSeconds);
+  }
+
   String formatDistance(dynamic totalDistanceMeters) {
     final meters = _toDouble(totalDistanceMeters);
     if (meters == null) return '-';
@@ -2148,8 +2322,10 @@ class _NavigationHistoryDetailScreenState
   String formatStatusText(String? status) {
     switch (status) {
       case 'completed':
-        return 'Selesai ✅';
+        return 'Selesai';
       case 'cancelled':
+      case 'canceled':
+      case 'batal':
         return 'Dibatalkan';
       case 'ongoing':
         return 'Sedang berjalan';
@@ -2198,12 +2374,12 @@ class _NavigationHistoryDetailScreenState
       case 'navigation_completed':
       case 'arrived':
       case 'back_to_route':
-        return Colors.green;
+        return AppColors.success;
       case 'navigation_cancelled':
       case 'sos_pressed':
-        return Colors.red;
+        return AppColors.error;
       case 'off_route':
-        return Colors.orange;
+        return AppColors.warning;
       default:
         return Colors.grey;
     }
@@ -2333,13 +2509,30 @@ class _NavigationHistoryDetailScreenState
   Color getStatusColor(String? status) {
     switch (status) {
       case 'completed':
-        return Colors.green;
+        return AppColors.success;
       case 'cancelled':
-        return Colors.red;
+      case 'canceled':
+      case 'batal':
+        return AppColors.error;
       case 'ongoing':
         return AppColors.primary;
       default:
         return Colors.grey;
+    }
+  }
+
+  Color getStatusSoftColor(String? status) {
+    switch (status) {
+      case 'completed':
+        return AppColors.successLight;
+      case 'cancelled':
+      case 'canceled':
+      case 'batal':
+        return AppColors.errorLight;
+      case 'ongoing':
+        return AppColors.infoLight;
+      default:
+        return AppColors.surfaceLight;
     }
   }
 
@@ -2371,24 +2564,20 @@ class _NavigationHistoryDetailScreenState
 
   Widget _buildHeader(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Colors.white.withOpacity(0.95)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.15),
-            blurRadius: 25,
-            offset: const Offset(0, 10),
+            color: AppColors.textPrimary.withOpacity(0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
         border: Border.all(
-          color: AppColors.primary.withOpacity(0.1),
+          color: AppColors.primary.withOpacity(0.08),
           width: 1,
         ),
       ),
@@ -2400,7 +2589,7 @@ class _NavigationHistoryDetailScreenState
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: const Icon(
                 Icons.arrow_back_rounded,
@@ -2409,22 +2598,18 @@ class _NavigationHistoryDetailScreenState
               ),
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                ShaderMask(
-                  shaderCallback: (bounds) =>
-                      AppColors.primaryGradient.createShader(bounds),
-                  child: Text(
-                    'Detail Perjalanan',
-                    style: AppTextStyles.heading2.copyWith(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                    ),
+                Text(
+                  'Detail Perjalanan',
+                  style: AppTextStyles.heading2.copyWith(
+                    color: AppColors.primary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -2491,10 +2676,7 @@ class _NavigationHistoryDetailScreenState
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            statusColor.withOpacity(0.12),
-            Colors.white,
-          ],
+          colors: [statusColor.withOpacity(0.12), Colors.white],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -2530,10 +2712,12 @@ class _NavigationHistoryDetailScreenState
                     color: statusColor,
                     fontWeight: FontWeight.w900,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '$originName → $destinationName',
+                  '$originName -> $destinationName',
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textPrimary,
                     fontWeight: FontWeight.w700,
@@ -2560,13 +2744,13 @@ class _NavigationHistoryDetailScreenState
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: AppColors.primary.withOpacity(0.08)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.07),
+            color: AppColors.textPrimary.withOpacity(0.06),
             blurRadius: 18,
-            offset: const Offset(0, 8),
+            offset: const Offset(0, 7),
           ),
         ],
       ),
@@ -2592,15 +2776,14 @@ class _NavigationHistoryDetailScreenState
                     color: AppColors.textPrimary,
                     fontWeight: FontWeight.w900,
                   ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (trailing != null) ...[
-                const SizedBox(width: 10),
-                trailing,
-              ],
+              if (trailing != null) ...[const SizedBox(width: 10), trailing],
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           ...children,
         ],
       ),
@@ -2608,24 +2791,29 @@ class _NavigationHistoryDetailScreenState
   }
 
   Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE8EEF5))),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            flex: 4,
+            flex: 5,
             child: Text(
               label,
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
-            flex: 6,
+            flex: 7,
             child: Text(
               value,
               style: AppTextStyles.bodyMedium.copyWith(
@@ -2633,6 +2821,69 @@ class _NavigationHistoryDetailScreenState
                 fontWeight: FontWeight.w800,
               ),
               textAlign: TextAlign.right,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRouteInfoTile({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String value,
+    int maxLines = 2,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE8EEF5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 19),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    height: 1.35,
+                  ),
+                  maxLines: maxLines,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
             ),
           ),
         ],
@@ -2748,13 +2999,22 @@ class _NavigationHistoryDetailScreenState
   }
 
   Widget _buildRouteMapSection(Map<String, dynamic> tripData) {
-    final status =
-        tripData['status'] is String ? tripData['status'] as String : 'ongoing';
+    final status = tripData['status'] is String
+        ? tripData['status'] as String
+        : 'ongoing';
 
     return _buildSection(
       title: 'Rute Perjalanan',
       icon: Icons.map_rounded,
       children: [
+        Text(
+          'Peta rute perjalanan pengguna',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
         StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _routePointsStream,
           builder: (context, snapshot) {
@@ -2784,8 +3044,8 @@ class _NavigationHistoryDetailScreenState
                 height: 280,
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(16),
+                  color: AppColors.infoLight.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: AppColors.primary.withOpacity(0.1)),
                 ),
                 child: Center(
@@ -2817,9 +3077,15 @@ class _NavigationHistoryDetailScreenState
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: SizedBox(
+                  borderRadius: BorderRadius.circular(18),
+                  child: Container(
                     height: 280,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: AppColors.primary.withOpacity(0.10),
+                      ),
+                    ),
                     child: FlutterMap(
                       mapController: _historyMapController,
                       options: MapOptions(
@@ -2845,8 +3111,8 @@ class _NavigationHistoryDetailScreenState
                   ),
                 ),
                 const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
+                SizedBox(
+                  width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () => _focusRoute(
                       routePoints: routePoints,
@@ -2857,8 +3123,10 @@ class _NavigationHistoryDetailScreenState
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(14),
                       ),
                     ),
                   ),
@@ -2881,16 +3149,14 @@ class _NavigationHistoryDetailScreenState
           );
         }
 
-        final docs = (snapshot.data?.docs ?? [])
-            .where((doc) {
-              final type = doc.data()['type'];
-              return type is String && shouldShowTripEvent(type);
-            })
-            .toList();
+        final docs = (snapshot.data?.docs ?? []).where((doc) {
+          final type = doc.data()['type'];
+          return type is String && shouldShowTripEvent(type);
+        }).toList();
         final isWaiting = snapshot.connectionState == ConnectionState.waiting;
 
         return _buildSection(
-          title: 'Timeline Kejadian',
+          title: 'Aktivitas',
           icon: Icons.timeline_rounded,
           trailing: _buildEventCountBadge(isWaiting ? null : docs.length),
           children: [
@@ -2910,7 +3176,7 @@ class _NavigationHistoryDetailScreenState
                   border: Border.all(color: AppColors.primary.withOpacity(0.1)),
                 ),
                 child: Text(
-                  'Tidak ada event selama perjalanan',
+                  'Tidak ada kejadian selama perjalanan',
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textSecondary,
                     fontWeight: FontWeight.w700,
@@ -2938,12 +3204,12 @@ class _NavigationHistoryDetailScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.1),
+        color: AppColors.infoLight,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.primary.withOpacity(0.14)),
+        border: Border.all(color: AppColors.primary.withOpacity(0.12)),
       ),
       child: Text(
-        count == null ? '-' : '$count event',
+        count == null ? '-' : '$count',
         style: AppTextStyles.bodySmall.copyWith(
           color: AppColors.primary,
           fontWeight: FontWeight.w900,
@@ -2959,7 +3225,7 @@ class _NavigationHistoryDetailScreenState
     final type = data['type'] is String ? data['type'] as String : 'unknown';
     final color = getEventColor(type);
     final timestamp = _toTimestamp(data['timestamp']);
-    final title = _safeText(data['title'], 'Event perjalanan');
+    final title = _safeText(data['title'], 'Kejadian perjalanan');
     final description = _safeText(data['description'], '-');
 
     return IntrinsicHeight(
@@ -2995,9 +3261,16 @@ class _NavigationHistoryDetailScreenState
               child: Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: color.withOpacity(0.16)),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: color.withOpacity(0.14)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.textPrimary.withOpacity(0.04),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3011,6 +3284,8 @@ class _NavigationHistoryDetailScreenState
                               color: AppColors.textPrimary,
                               fontWeight: FontWeight.w900,
                             ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -3030,6 +3305,8 @@ class _NavigationHistoryDetailScreenState
                         color: AppColors.textSecondary,
                         height: 1.4,
                       ),
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -3047,7 +3324,6 @@ class _NavigationHistoryDetailScreenState
     final status = data['status'] is String ? data['status'] as String : null;
     final originName = _safeText(data['originName'], 'Lokasi awal');
     final destinationName = _safeText(data['destinationName'], 'Tujuan');
-    final userId = _safeText(data['userId'], '-');
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -3061,7 +3337,10 @@ class _NavigationHistoryDetailScreenState
             _buildDetailRow('Tanggal', formatTripDate(startTime)),
             _buildDetailRow('Waktu mulai', formatTripTime(startTime)),
             _buildDetailRow('Waktu selesai', formatTripTime(endTime)),
-            _buildDetailRow('Durasi', formatDuration(data['durationSeconds'])),
+            _buildDetailRow(
+              'Durasi',
+              formatDisplayDuration(data['durationSeconds']),
+            ),
             _buildDetailRow('Status', formatStatusText(status)),
           ],
         ),
@@ -3070,19 +3349,41 @@ class _NavigationHistoryDetailScreenState
           title: 'Rute',
           icon: Icons.route_rounded,
           children: [
-            _buildDetailRow('Lokasi awal', originName),
-            _buildDetailRow('Tujuan', destinationName),
-            _buildDetailRow(
-              'Jarak total',
-              formatDistance(data['totalDistanceMeters']),
+            _buildRouteInfoTile(
+              icon: Icons.radio_button_checked,
+              color: AppColors.success,
+              label: 'Dari',
+              value: originName,
             ),
-            _buildDetailRow(
-              'Koordinat awal',
-              formatCoordinate(data['originLat'], data['originLng']),
+            _buildRouteInfoTile(
+              icon: Icons.location_on_rounded,
+              color: AppColors.error,
+              label: 'Ke',
+              value: destinationName,
             ),
-            _buildDetailRow(
-              'Koordinat tujuan',
-              formatCoordinate(data['destinationLat'], data['destinationLng']),
+            _buildRouteInfoTile(
+              icon: Icons.straighten_rounded,
+              color: AppColors.primary,
+              label: 'Jarak total',
+              value: formatDistance(data['totalDistanceMeters']),
+              maxLines: 1,
+            ),
+            _buildRouteInfoTile(
+              icon: Icons.my_location_rounded,
+              color: AppColors.textTertiary,
+              label: 'Koordinat awal',
+              value: formatCoordinate(data['originLat'], data['originLng']),
+              maxLines: 2,
+            ),
+            _buildRouteInfoTile(
+              icon: Icons.flag_rounded,
+              color: AppColors.textTertiary,
+              label: 'Koordinat tujuan',
+              value: formatCoordinate(
+                data['destinationLat'],
+                data['destinationLng'],
+              ),
+              maxLines: 2,
             ),
           ],
         ),
@@ -3174,9 +3475,12 @@ class NavigationHistoryItem {
     final data = doc.data();
     return NavigationHistoryItem(
       id: doc.id,
-      startTime:
-          data['startTime'] is Timestamp ? data['startTime'] as Timestamp : null,
-      endTime: data['endTime'] is Timestamp ? data['endTime'] as Timestamp : null,
+      startTime: data['startTime'] is Timestamp
+          ? data['startTime'] as Timestamp
+          : null,
+      endTime: data['endTime'] is Timestamp
+          ? data['endTime'] as Timestamp
+          : null,
       durationSeconds: data['durationSeconds'],
       originName: data['originName'],
       destinationName: data['destinationName'],
