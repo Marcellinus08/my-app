@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/live_tracking_service.dart';
+import '../../services/sos_service.dart';
 import '../../services/user_service.dart';
 import '../../services/weather_service.dart';
 
@@ -21,7 +22,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   String _userName = 'Pengguna';
   WeatherData? _weatherData;
   bool _isLoadingWeather = true;
+  bool _isSendingSos = false;
   final LiveTrackingService _liveTrackingService = LiveTrackingService();
+  final SosService _sosService = SosService();
   
   late AnimationController _fadeController;
   late AnimationController _rotationController;
@@ -156,61 +159,70 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
   }
 
-  void _triggerEmergency() {
+  Future<void> _triggerEmergency() async {
+    if (_isSendingSos) return;
+
+    setState(() {
+      _isSendingSos = true;
+    });
+
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        content: Row(
+          children: [
+            CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.error),
             ),
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Text(
+                'Mengirim SOS...',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  fontWeight: FontWeight.w700,
                 ),
-                child: const Icon(Icons.warning_rounded, size: 60, color: Color(0xFFEF4444)),
               ),
-              const SizedBox(height: 20),
-              const Text(
-                'DARURAT',
-                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Mengirim lokasi Anda ke kontak darurat...',
-                style: AppTextStyles.bodyMedium.copyWith(color: Colors.white),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.error,
-                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                child: const Text('BATAL', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
+
+    try {
+      await _sosService.sendSosAlert();
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SOS berhasil dikirim ke keluarga'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal mengirim SOS: ${_formatSosError(e)}'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingSos = false;
+        });
+      }
+    }
+  }
+
+  String _formatSosError(Object error) {
+    return error.toString().replaceAll('Exception: ', '');
   }
 
   @override

@@ -8,6 +8,7 @@ import '../../models/family_location_model.dart';
 import '../../services/family_location_service.dart';
 import '../../services/analytics_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/user_service.dart';
 import '../../utils/constants.dart';
 import 'family_history_screen.dart';
@@ -58,6 +59,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     super.initState();
     _initializeAnimations();
     AnalyticsService().logScreenView(screenName: 'FamilyHome');
+    NotificationService.instance.initializeForFamilyUser();
     _loadMonitoredUsers();
     _liveTrackingFreshnessTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
