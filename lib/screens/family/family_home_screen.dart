@@ -15,36 +15,43 @@ import 'family_history_screen.dart';
 import 'family_settings_screen.dart';
 
 class FamilyHomeScreen extends StatefulWidget {
-  final String? targetUid; // uid of the tunaNetra user to monitor (optional for backward compatibility)
+  final String?
+  targetUid; // uid of the tunaNetra user to monitor (optional for backward compatibility)
   final String familyId;
+  final Map<String, dynamic>? initialSosData;
 
   const FamilyHomeScreen({
     super.key,
     this.targetUid,
     required this.familyId,
+    this.initialSosData,
   });
 
   @override
   State<FamilyHomeScreen> createState() => _FamilyHomeScreenState();
 }
 
-class _FamilyHomeScreenState extends State<FamilyHomeScreen> 
+class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     with TickerProviderStateMixin {
   final FamilyLocationService _locationService = FamilyLocationService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  
+
   // List of monitored users
   List<Map<String, dynamic>> _monitoredUsers = [];
   Map<String, FamilyLocation?> _latestLocations = {};
   Map<String, StreamSubscription<FamilyLocation>?> _subscriptions = {};
   Map<String, Map<String, dynamic>?> _liveTrackingData = {};
   Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?>
-      _liveTrackingSubscriptions = {};
-  
+  _liveTrackingSubscriptions = {};
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _activeSosSubscription;
+  DocumentSnapshot<Map<String, dynamic>>? _activeSosDoc;
+  Map<String, dynamic>? _activeSosData;
+
   String _familyName = 'Keluarga';
   bool _isLoadingUsers = true;
   String _resolvedFamilyId = '';
-  
+
   // Debug info
   String? _debugPairingCode;
   String? _debugErrorMessage;
@@ -57,11 +64,15 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   @override
   void initState() {
     super.initState();
+    _activeSosData = widget.initialSosData;
     _initializeAnimations();
     AnalyticsService().logScreenView(screenName: 'FamilyHome');
     NotificationService.instance.initializeForFamilyUser();
     _loadMonitoredUsers();
-    _liveTrackingFreshnessTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+    _subscribeToActiveSos();
+    _liveTrackingFreshnessTimer = Timer.periodic(const Duration(seconds: 1), (
+      _,
+    ) {
       if (mounted) {
         setState(() {
           _liveTrackingNow = DateTime.now();
@@ -82,9 +93,10 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       duration: const Duration(seconds: 25),
     )..repeat();
 
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
 
     _fadeController.forward();
   }
@@ -104,7 +116,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       if (resolvedFamilyId.isEmpty) {
         throw Exception('Family ID kosong - user belum terautentikasi');
       }
-      
+
       // Use the NEW correct method that uses pairedUserUid
       final userService = UserService();
       final users = await userService.getTunaNetraUsersByFamilyId(
@@ -115,11 +127,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         setState(() {
           _monitoredUsers = users;
           _isLoadingUsers = false;
-          
+
           // Set debug info
           _debugPairingCode = 'Method: pairedUserUid';
-          _debugErrorMessage = users.isEmpty 
-              ? 'Tidak ada TunaNetra user yang terhubung' 
+          _debugErrorMessage = users.isEmpty
+              ? 'Tidak ada TunaNetra user yang terhubung'
               : null;
         });
       }
@@ -172,14 +184,52 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         .doc(uid)
         .snapshots()
         .listen((snapshot) {
-      if (mounted) {
-        setState(() {
-          _liveTrackingData[uid] = snapshot.data();
+          if (mounted) {
+            setState(() {
+              _liveTrackingData[uid] = snapshot.data();
+            });
+          }
         });
-      }
-    });
 
     _liveTrackingSubscriptions[uid] = sub;
+  }
+
+  void _subscribeToActiveSos() {
+    final familyId = widget.familyId.trim().isNotEmpty
+        ? widget.familyId.trim()
+        : (AuthService().currentUserId ?? '');
+
+    if (familyId.isEmpty) {
+      debugPrint('[FamilyHome] Skip SOS listener, familyId empty');
+      return;
+    }
+
+    _resolvedFamilyId = familyId;
+    _activeSosSubscription?.cancel();
+    _activeSosSubscription = _firestore
+        .collection('sos_alerts')
+        .where('familyUids', arrayContains: familyId)
+        .where('status', isEqualTo: 'active')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
+            setState(() {
+              if (snapshot.docs.isEmpty) {
+                _activeSosDoc = null;
+                _activeSosData = null;
+              } else {
+                _activeSosDoc = snapshot.docs.first;
+                _activeSosData = snapshot.docs.first.data();
+              }
+            });
+          },
+          onError: (Object error) {
+            debugPrint('[FamilyHome] Active SOS listener error: $error');
+          },
+        );
   }
 
   bool _isUserOnline(String uid) {
@@ -221,6 +271,100 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     );
   }
 
+  void _openSosLocation() {
+    final userId =
+        _readString(_activeSosData?['userId']) ??
+        _readString(widget.initialSosData?['userId']) ??
+        widget.targetUid ??
+        '';
+
+    if (userId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lokasi SOS belum tersedia'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) =>
+            FamilyHistoryScreen(targetUid: userId, familyId: _resolvedFamilyId),
+      ),
+    );
+  }
+
+  Future<void> resolveSosAlert() async {
+    try {
+      final doc = _activeSosDoc;
+      if (doc == null) {
+        await _resolveLatestSosAlertFallback();
+      } else {
+        await doc.reference.update({
+          'status': 'resolved',
+          'resolvedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      debugPrint('[FamilyHome] SOS resolved');
+      if (!mounted) return;
+      setState(() {
+        _activeSosDoc = null;
+        _activeSosData = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SOS ditandai sudah ditangani'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[FamilyHome] Resolve SOS failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menandai SOS: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _resolveLatestSosAlertFallback() async {
+    final familyId = _resolvedFamilyId.isNotEmpty
+        ? _resolvedFamilyId
+        : (AuthService().currentUserId ?? '');
+    if (familyId.isEmpty) {
+      throw Exception('Family UID kosong');
+    }
+
+    final userId = _readString(_activeSosData?['userId']);
+    var query = _firestore
+        .collection('sos_alerts')
+        .where('familyUids', arrayContains: familyId)
+        .where('status', isEqualTo: 'active');
+
+    if (userId != null) {
+      query = query.where('userId', isEqualTo: userId);
+    }
+
+    final snapshot = await query
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .get();
+    if (snapshot.docs.isEmpty) {
+      throw Exception('SOS aktif tidak ditemukan');
+    }
+
+    await snapshot.docs.first.reference.update({
+      'status': 'resolved',
+      'resolvedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   @override
   void dispose() {
     for (var sub in _subscriptions.values) {
@@ -229,6 +373,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     for (var sub in _liveTrackingSubscriptions.values) {
       sub?.cancel();
     }
+    _activeSosSubscription?.cancel();
     _liveTrackingFreshnessTimer?.cancel();
     _rotationController.dispose();
     _fadeController.dispose();
@@ -257,15 +402,21 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
               return AnimatedBuilder(
                 animation: _rotationController,
                 builder: (context, child) {
-                  final angle = _rotationController.value * 2 * math.pi + (index * math.pi / 2);
+                  final angle =
+                      _rotationController.value * 2 * math.pi +
+                      (index * math.pi / 2);
                   final size = 120.0 + (index * 40);
                   final distance = 150.0 + (index * 30);
-                  
+
                   return Positioned(
-                    left: MediaQuery.of(context).size.width / 2 + 
-                          math.cos(angle) * distance - size / 2,
-                    top: MediaQuery.of(context).size.height / 3 + 
-                         math.sin(angle) * distance - size / 2,
+                    left:
+                        MediaQuery.of(context).size.width / 2 +
+                        math.cos(angle) * distance -
+                        size / 2,
+                    top:
+                        MediaQuery.of(context).size.height / 3 +
+                        math.sin(angle) * distance -
+                        size / 2,
                     child: Container(
                       width: size,
                       height: size,
@@ -285,10 +436,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             }),
 
             // Main content with fade animation
-            FadeTransition(
-              opacity: _fadeAnimation,
-              child: _buildMainContent(),
-            ),
+            FadeTransition(opacity: _fadeAnimation, child: _buildMainContent()),
           ],
         ),
       ),
@@ -305,10 +453,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF0D47A1),
-                  const Color(0xFF1565C0),
-                ],
+                colors: [const Color(0xFF0D47A1), const Color(0xFF1565C0)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -396,6 +541,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           ),
 
+          if (_activeSosData != null) _buildActiveSosBanner(),
+
           // Monitored Users List
           Expanded(
             child: _isLoadingUsers
@@ -407,8 +554,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                     ),
                   )
                 : _monitoredUsers.isEmpty
-                    ? _buildEmptyState()
-                    : _buildUsersList(),
+                ? _buildEmptyState()
+                : _buildUsersList(),
           ),
 
           // Add User Button at Bottom
@@ -421,10 +568,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      const Color(0xFFEC4899),
-                      const Color(0xFFDB2777),
-                    ],
+                    colors: [const Color(0xFFEC4899), const Color(0xFFDB2777)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -463,131 +607,199 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     );
   }
 
+  Widget _buildActiveSosBanner() {
+    final userName = _readString(_activeSosData?['userName']) ?? 'Pengguna';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 8, 20, 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.error,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.error.withOpacity(0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_rounded, color: Colors.white, size: 24),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'SOS Aktif - $userName membutuhkan bantuan',
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _openSosLocation,
+                  icon: const Icon(Icons.location_on_rounded, size: 18),
+                  label: const Text('Lihat Lokasi'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppColors.error,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: resolveSosAlert,
+                  icon: const Icon(Icons.check_circle_rounded, size: 18),
+                  label: const Text('Tandai Ditangani'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    side: const BorderSide(color: Colors.white, width: 1.5),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyState() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(40),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Container(
+            width: 100,
+            height: 100,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.people_outline_rounded,
+              size: 50,
+              color: AppColors.primary.withOpacity(0.5),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Belum Ada Pengguna',
+            style: AppTextStyles.heading3.copyWith(
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Tambahkan pengguna TunaNetra yang ingin Anda monitoring',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 30),
+
+          // Debug Info Section
+          if (_debugErrorMessage != null)
             Container(
-              width: 100,
-              height: 100,
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                shape: BoxShape.circle,
+                color: Colors.red.withOpacity(0.05),
+                border: Border.all(color: Colors.red.withOpacity(0.3)),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(
-                Icons.people_outline_rounded,
-                size: 50,
-                color: AppColors.primary.withOpacity(0.5),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Belum Ada Pengguna',
-              style: AppTextStyles.heading3.copyWith(
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Tambahkan pengguna TunaNetra yang ingin Anda monitoring',
-              style: AppTextStyles.bodyMedium.copyWith(
-                color: AppColors.textSecondary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 30),
-            
-            // Debug Info Section
-            if (_debugErrorMessage != null)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.05),
-                  border: Border.all(
-                    color: Colors.red.withOpacity(0.3),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '🔍 DEBUG INFO',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '🔍 DEBUG INFO',
+                  const SizedBox(height: 10),
+
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.red.withOpacity(0.3)),
+                    ),
+                    child: Text(
+                      _debugErrorMessage ?? '',
                       style: AppTextStyles.bodySmall.copyWith(
                         color: Colors.red,
-                        fontWeight: FontWeight.w700,
                         fontSize: 11,
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: Colors.red.withOpacity(0.3),
-                        ),
-                      ),
-                      child: Text(
-                        _debugErrorMessage ?? '',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: Colors.red,
-                          fontSize: 11,
-                        ),
-                      ),
+                  ),
+
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    
-                    const SizedBox(height: 10),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.amber.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Pastikan di Firestore:',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 10,
-                              color: Colors.amber[700],
-                            ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pastikan di Firestore:',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 10,
+                            color: Colors.amber[700],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '1. Family user (uid: ${_resolvedFamilyId.isNotEmpty ? _resolvedFamilyId : "[kosong]"})\n'
-                            '   memiliki field:\n'
-                            '   - pairedUserUid: "[tunanetra_uid]"\n'
-                            '   ATAU\n'
-                            '   - pairedUserUids: ["uid1", "uid2"]\n\n'
-                            '2. TunaNetra user harus\n'
-                            '   memiliki:\n'
-                            '   - userType: "tunanetra"\n'
-                            '   - name, email, dll\n\n'
-                            '3. Cek Console (flutter logs)\n'
-                            '   untuk detail lengkap',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              fontSize: 9,
-                              color: Colors.amber[900],
-                              height: 1.4,
-                              fontFamily: 'monospace',
-                            ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '1. Family user (uid: ${_resolvedFamilyId.isNotEmpty ? _resolvedFamilyId : "[kosong]"})\n'
+                          '   memiliki field:\n'
+                          '   - pairedUserUid: "[tunanetra_uid]"\n'
+                          '   ATAU\n'
+                          '   - pairedUserUids: ["uid1", "uid2"]\n\n'
+                          '2. TunaNetra user harus\n'
+                          '   memiliki:\n'
+                          '   - userType: "tunanetra"\n'
+                          '   - name, email, dll\n\n'
+                          '3. Cek Console (flutter logs)\n'
+                          '   untuk detail lengkap',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontSize: 9,
+                            color: Colors.amber[900],
+                            height: 1.4,
+                            fontFamily: 'monospace',
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-          ],
-        ),
-      );
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildUsersList() {
@@ -600,7 +812,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           final location = _latestLocations[uid];
           final isOnline = _isUserOnline(uid);
           final batteryLevel = _getLiveBatteryLevel(uid);
-          
+
           return GestureDetector(
             onTap: () {
               Navigator.push(
@@ -686,7 +898,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                           ),
                           child: Center(
                             child: Text(
-                              (user['name'] as String).characters.first.toUpperCase(),
+                              (user['name'] as String).characters.first
+                                  .toUpperCase(),
                               style: AppTextStyles.heading2.copyWith(
                                 color: Colors.white,
                                 fontSize: 24,
@@ -718,11 +931,15 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                                     width: 10,
                                     height: 10,
                                     decoration: BoxDecoration(
-                                      color: isOnline ? Colors.green : Colors.orange,
+                                      color: isOnline
+                                          ? Colors.green
+                                          : Colors.orange,
                                       shape: BoxShape.circle,
                                       boxShadow: [
                                         BoxShadow(
-                                          color: isOnline ? Colors.green : Colors.orange,
+                                          color: isOnline
+                                              ? Colors.green
+                                              : Colors.orange,
                                           blurRadius: 6,
                                           offset: const Offset(0, 2),
                                         ),
@@ -733,7 +950,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                                   Text(
                                     isOnline ? 'Aktif' : 'Tidak aktif',
                                     style: AppTextStyles.bodySmall.copyWith(
-                                      color: isOnline ? Colors.green : Colors.orange,
+                                      color: isOnline
+                                          ? Colors.green
+                                          : Colors.orange,
                                       fontWeight: FontWeight.w700,
                                       fontSize: 12,
                                     ),
@@ -777,7 +996,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                     child: Column(
                       children: [
                         // Phone Number
-                        if (user['phoneNumber'] != null && (user['phoneNumber'] as String).isNotEmpty)
+                        if (user['phoneNumber'] != null &&
+                            (user['phoneNumber'] as String).isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
                             child: Row(
@@ -797,7 +1017,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'Nomor Telepon',
@@ -810,10 +1031,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                                       const SizedBox(height: 2),
                                       Text(
                                         user['phoneNumber'] ?? '-',
-                                        style: AppTextStyles.bodyMedium.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13,
-                                        ),
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 13,
+                                            ),
                                       ),
                                     ],
                                   ),
@@ -823,7 +1045,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                           ),
 
                         // Email
-                        if (user['email'] != null && (user['email'] as String).isNotEmpty)
+                        if (user['email'] != null &&
+                            (user['email'] as String).isNotEmpty)
                           Row(
                             children: [
                               Container(
@@ -913,8 +1136,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                             value: location.navigationStatus == 'navigating'
                                 ? 'Navigasi'
                                 : location.speed > 0.8
-                                    ? 'Berjalan'
-                                    : 'Diam',
+                                ? 'Berjalan'
+                                : 'Diam',
                             isActive: location.navigationStatus == 'navigating',
                           ),
                         ],
@@ -1123,6 +1346,12 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     return value is Timestamp ? value : null;
   }
 
+  String? _readString(dynamic value) {
+    if (value is! String) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
   bool _isLiveTrackingFresh(Timestamp? updatedAt) {
     if (updatedAt == null) return false;
     return _liveTrackingNow.difference(updatedAt.toDate()).inSeconds <= 30;
@@ -1141,7 +1370,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: isActive ? AppColors.primary.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+              color: isActive
+                  ? AppColors.primary.withOpacity(0.1)
+                  : Colors.orange.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -1188,4 +1419,3 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     }
   }
 }
-

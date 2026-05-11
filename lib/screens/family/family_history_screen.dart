@@ -39,6 +39,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   bool _hasCenteredMap = false;
   bool _isSheetExpanded = false;
   Timer? _realtimeUpdateTimer;
+  Map<String, dynamic>? _latestLiveDataForSos;
   static const double _liveZoom = 16.5;
   static const LatLng _fallbackCenter = LatLng(-6.9147, 107.6098);
   static const double _sheetMin = 0.40;
@@ -106,6 +107,38 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  String get _currentFamilyUid {
+    final familyId = widget.familyId.trim();
+    if (familyId.isNotEmpty) return familyId;
+    return _auth.currentUser?.uid ?? '';
+  }
+
+  void _handleBackNavigation() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    debugPrint('[FamilyHistory] Back fallback to family home');
+    navigator.pushReplacementNamed(
+      AppRoutes.familyHome,
+      arguments: {'targetUid': widget.targetUid, 'familyId': _currentFamilyUid},
+    );
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> getActiveSosStream(
+    String familyUid,
+  ) {
+    return _firestore
+        .collection('sos_alerts')
+        .where('familyUids', arrayContains: familyUid)
+        .where('status', isEqualTo: 'active')
+        .orderBy('createdAt', descending: true)
+        .limit(1)
+        .snapshots();
   }
 
   Widget _buildCollapsedSheetCard(Map<String, dynamic>? liveData) {
@@ -792,6 +825,113 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     return '${duration.inDays} hari lalu';
   }
 
+  String formatSosTime(Timestamp? createdAt) {
+    if (createdAt == null) return 'Baru saja';
+    final duration = DateTime.now().difference(createdAt.toDate());
+    if (duration.inSeconds < 60) return 'Baru saja';
+    if (duration.inMinutes < 60) return '${duration.inMinutes} menit lalu';
+    if (duration.inHours < 24) return '${duration.inHours} jam lalu';
+    return '${duration.inDays} hari lalu';
+  }
+
+  Future<void> focusToSosLocation(Map<String, dynamic> sosData) async {
+    final sosLat = _parseDouble(sosData['lat']);
+    final sosLng = _parseDouble(sosData['lng']);
+    final liveLat = _parseDouble(_latestLiveDataForSos?['lat']);
+    final liveLng = _parseDouble(_latestLiveDataForSos?['lng']);
+    final target = sosLat != null && sosLng != null
+        ? LatLng(sosLat, sosLng)
+        : liveLat != null && liveLng != null
+        ? LatLng(liveLat, liveLng)
+        : null;
+
+    debugPrint('[FamilyHistory] focus SOS location');
+
+    if (target == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lokasi SOS belum tersedia'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    _mapController.move(target, _liveZoom);
+    _animateSheetTo(_sheetMin);
+  }
+
+  Future<void> resolveSosAlert(String sosId, String familyUid) async {
+    try {
+      await _firestore.collection('sos_alerts').doc(sosId).update({
+        'status': 'resolved',
+        'resolvedAt': FieldValue.serverTimestamp(),
+        'resolvedBy': familyUid,
+      });
+
+      debugPrint('[FamilyHistory] resolve SOS success: $sosId');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SOS ditandai sudah ditangani'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[FamilyHistory] resolve SOS failed: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal menandai SOS: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmResolveSosAlert(String sosId) async {
+    final familyUid = _currentFamilyUid;
+    if (familyUid.isEmpty) {
+      debugPrint('[FamilyHistory] resolve SOS failed: familyUid empty');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Akun keluarga tidak ditemukan'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Tandai Ditangani'),
+        content: const Text('Tandai SOS ini sudah ditangani?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Batal'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.error,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Ya'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await resolveSosAlert(sosId, familyUid);
+    }
+  }
+
   String buildGpsStatusText(bool isGpsActive) {
     return isGpsActive ? 'Aktif' : 'Tidak aktif';
   }
@@ -984,6 +1124,127 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     );
   }
 
+  Widget _buildActiveSosBanner({
+    required DocumentSnapshot<Map<String, dynamic>> sosDoc,
+    required Map<String, dynamic>? liveData,
+  }) {
+    final data = sosDoc.data();
+    _latestLiveDataForSos = liveData;
+    final userName = (data?['userName'] as String?)?.trim().isNotEmpty == true
+        ? data!['userName'] as String
+        : 'Pengguna';
+    final createdAt = _parseTimestamp(data?['createdAt']);
+
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.error,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.error.withOpacity(0.28),
+              blurRadius: 18,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.16),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.warning_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'SOS Aktif',
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$userName membutuhkan bantuan segera',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.white.withOpacity(0.92),
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        formatSosTime(createdAt),
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.white.withOpacity(0.78),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: data == null
+                        ? null
+                        : () => focusToSosLocation(data),
+                    icon: const Icon(Icons.location_on_rounded, size: 18),
+                    label: const Text('Lihat Lokasi'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.error,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _confirmResolveSosAlert(sosDoc.id),
+                    icon: const Icon(Icons.check_circle_rounded, size: 18),
+                    label: const Text('Tandai Ditangani'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Colors.white, width: 1.5),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Widget> _buildLivePanelContent(Map<String, dynamic>? liveData) {
     final destinationName =
         (liveData?['destinationName'] as String?)?.isNotEmpty == true
@@ -1103,416 +1364,462 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: FutureBuilder<String?>(
-        future: _pairedUserUidFuture,
-        builder: (context, pairedSnapshot) {
-          final pairedUid = pairedSnapshot.data;
-          if (pairedSnapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return PopScope(
+      canPop: Navigator.canPop(context),
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          _handleBackNavigation();
+        }
+      },
+      child: Scaffold(
+        body: FutureBuilder<String?>(
+          future: _pairedUserUidFuture,
+          builder: (context, pairedSnapshot) {
+            final pairedUid = pairedSnapshot.data;
+            if (pairedSnapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          if (pairedSnapshot.hasError ||
-              pairedUid == null ||
-              pairedUid.isEmpty) {
-            return Stack(
-              children: [
-                Positioned.fill(child: _buildMainMap(null)),
-                Positioned.fill(
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.92),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.textTertiary.withOpacity(0.2),
+            if (pairedSnapshot.hasError ||
+                pairedUid == null ||
+                pairedUid.isEmpty) {
+              return Stack(
+                children: [
+                  Positioned.fill(child: _buildMainMap(null)),
+                  Positioned.fill(
+                    child: Center(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 14,
                         ),
-                      ),
-                      child: Text(
-                        'Belum ada data lokasi',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textSecondary,
-                          fontWeight: FontWeight.w700,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.92),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: AppColors.textTertiary.withOpacity(0.2),
+                          ),
+                        ),
+                        child: Text(
+                          'Belum ada data lokasi',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.textSecondary,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            );
-          }
+                ],
+              );
+            }
 
-          return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-            stream: getLiveTrackingStream(pairedUid),
-            builder: (context, snapshot) {
-              final hasLiveData =
-                  snapshot.hasData && snapshot.data?.exists == true;
-              final liveData = hasLiveData ? snapshot.data!.data() : null;
+            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              stream: getLiveTrackingStream(pairedUid),
+              builder: (context, snapshot) {
+                final hasLiveData =
+                    snapshot.hasData && snapshot.data?.exists == true;
+                final liveData = hasLiveData ? snapshot.data!.data() : null;
 
-              return Stack(
-                children: [
-                  Positioned.fill(child: _buildMainMap(liveData)),
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: SafeArea(
-                      bottom: false,
-                      child: Container(
-                        margin: const EdgeInsets.all(16),
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.white,
-                              Colors.white.withOpacity(0.95),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withOpacity(0.15),
-                              blurRadius: 25,
-                              offset: const Offset(0, 10),
+                return Stack(
+                  children: [
+                    Positioned.fill(child: _buildMainMap(liveData)),
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        bottom: false,
+                        child: Container(
+                          margin: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.white,
+                                Colors.white.withOpacity(0.95),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
-                          ],
-                          border: Border.all(
-                            color: AppColors.primary.withOpacity(0.1),
-                            width: 1,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(0.15),
+                                blurRadius: 25,
+                                offset: const Offset(0, 10),
+                              ),
+                            ],
+                            border: Border.all(
+                              color: AppColors.primary.withOpacity(0.1),
+                              width: 1,
+                            ),
                           ),
-                        ),
-                        child: Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => Navigator.pop(context),
-                              child: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  gradient: AppColors.primaryGradient,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.arrow_back_rounded,
-                                  color: Colors.white,
-                                  size: 24,
+                          child: Row(
+                            children: [
+                              GestureDetector(
+                                onTap: _handleBackNavigation,
+                                child: Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    gradient: AppColors.primaryGradient,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.arrow_back_rounded,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ShaderMask(
-                                    shaderCallback: (bounds) => AppColors
-                                        .primaryGradient
-                                        .createShader(bounds),
-                                    child: Text(
-                                      'Lihat Detail & Lokasi',
-                                      style: AppTextStyles.heading2.copyWith(
-                                        color: Colors.white,
-                                        fontSize: 22,
-                                        fontWeight: FontWeight.w800,
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ShaderMask(
+                                      shaderCallback: (bounds) => AppColors
+                                          .primaryGradient
+                                          .createShader(bounds),
+                                      child: Text(
+                                        'Lihat Detail & Lokasi',
+                                        style: AppTextStyles.heading2.copyWith(
+                                          color: Colors.white,
+                                          fontSize: 22,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Pantau realtime & riwayat perjalanan',
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.textSecondary,
                                       ),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                     ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    'Pantau realtime & riwayat perjalanan',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: AppColors.textSecondary,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  DraggableScrollableSheet(
-                    controller: _sheetController,
-                    minChildSize: _sheetMin,
-                    maxChildSize: _sheetMax,
-                    initialChildSize: _sheetMin,
-                    builder: (context, controller) {
-                      final isExpanded = _isSheetExpanded;
-                      return Container(
-                        decoration: BoxDecoration(
-                          color: isExpanded
-                              ? AppColors.background
-                              : Colors.transparent,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(24),
-                          ),
-                          boxShadow: isExpanded
-                              ? [
-                                  BoxShadow(
-                                    color: AppColors.primary.withOpacity(0.18),
-                                    blurRadius: 24,
-                                    offset: const Offset(0, -6),
-                                  ),
-                                ]
-                              : [],
-                        ),
-                        child: isExpanded
-                            ? Stack(
-                                children: [
-                                  Positioned(
-                                    top: 0,
-                                    left: 0,
-                                    right: 0,
-                                    bottom: 130,
-                                    child: Padding(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        12,
-                                        16,
-                                        0,
-                                      ),
-                                      child: ListView(
-                                        controller: controller,
-                                        padding: const EdgeInsets.only(
-                                          bottom: 24,
-                                        ),
-                                        children: [
-                                          GestureDetector(
-                                            onTap: _toggleSheet,
-                                            child: Center(
-                                              child: Container(
-                                                width: 48,
-                                                height: 5,
-                                                decoration: BoxDecoration(
-                                                  color: AppColors.textTertiary
-                                                      .withOpacity(0.4),
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        999,
-                                                      ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(height: 14),
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  'Riwayat Perjalanan',
-                                                  style: AppTextStyles.bodyLarge
-                                                      .copyWith(
-                                                        fontWeight:
-                                                            FontWeight.w800,
-                                                        color: AppColors
-                                                            .textPrimary,
-                                                      ),
-                                                ),
-                                              ),
-                                              GestureDetector(
-                                                onTap: _openHistoryScreen,
-                                                child: Container(
-                                                  width: 42,
-                                                  height: 42,
-                                                  decoration: BoxDecoration(
-                                                    gradient: AppColors
-                                                        .primaryGradient,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          14,
-                                                        ),
-                                                    boxShadow: [
-                                                      BoxShadow(
-                                                        color: AppColors.primary
-                                                            .withOpacity(0.25),
-                                                        blurRadius: 12,
-                                                        offset: const Offset(
-                                                          0,
-                                                          6,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.route_rounded,
-                                                    color: Colors.white,
-                                                    size: 22,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 14),
-                                          Row(
-                                            children: [
-                                              Container(
-                                                width: 36,
-                                                height: 36,
-                                                decoration: BoxDecoration(
-                                                  color: AppColors.primary
-                                                      .withOpacity(0.12),
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                child: const Icon(
-                                                  Icons.radar_rounded,
-                                                  color: AppColors.primary,
-                                                  size: 20,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 10),
-                                              Expanded(
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Text(
-                                                      'Info Realtime',
-                                                      style: AppTextStyles
-                                                          .bodyMedium
-                                                          .copyWith(
-                                                            fontWeight:
-                                                                FontWeight.w800,
-                                                          ),
-                                                    ),
-                                                    const SizedBox(height: 2),
-                                                    Text(
-                                                      'Status aktivitas dan koneksi pengguna',
-                                                      style: AppTextStyles
-                                                          .bodySmall
-                                                          .copyWith(
-                                                            color: AppColors
-                                                                .textSecondary,
-                                                          ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 12),
-                                          _buildTunaNetraInfoCard(
-                                            pairedUid,
-                                            liveData,
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Container(
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius:
-                                                  BorderRadius.circular(18),
-                                              border: Border.all(
-                                                color: AppColors.primary
-                                                    .withOpacity(0.12),
-                                              ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color: AppColors.primary
-                                                      .withOpacity(0.08),
-                                                  blurRadius: 16,
-                                                  offset: const Offset(0, 8),
-                                                ),
-                                              ],
-                                            ),
-                                            child: Column(
-                                              children: _buildLivePanelContent(
-                                                liveData,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    left: 16,
-                                    right: 16,
-                                    bottom: 12,
-                                    child: _buildCollapsedSheetCard(liveData),
-                                  ),
-                                ],
-                              )
-                            : Material(
-                                color: Colors.transparent,
-                                child: Stack(
-                                  children: [
-                                    Positioned.fill(
-                                      child: GestureDetector(
-                                        behavior: HitTestBehavior.translucent,
-                                        onTap: () =>
-                                            _showTunaNetraInfo(pairedUid),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      right: 24,
-                                      bottom: 118,
-                                      child: GestureDetector(
-                                        onTap: _openHistoryScreen,
-                                        child: Container(
-                                          width: 46,
-                                          height: 46,
-                                          decoration: BoxDecoration(
-                                            gradient: AppColors.primaryGradient,
-                                            borderRadius: BorderRadius.circular(
-                                              14,
-                                            ),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: AppColors.primary
-                                                    .withOpacity(0.25),
-                                                blurRadius: 14,
-                                                offset: const Offset(0, 6),
-                                              ),
-                                            ],
-                                          ),
-                                          child: const Icon(
-                                            Icons.route_rounded,
-                                            color: Colors.white,
-                                            size: 22,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Align(
-                                      alignment: Alignment.bottomCenter,
-                                      child: GestureDetector(
-                                        onTap: () =>
-                                            _showTunaNetraInfo(pairedUid),
-                                        child: Padding(
-                                          padding: const EdgeInsets.fromLTRB(
-                                            16,
-                                            0,
-                                            16,
-                                            16,
-                                          ),
-                                          child: _buildCollapsedSheetCard(
-                                            liveData,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
                                   ],
                                 ),
                               ),
-                      );
-                    },
-                  ),
-                ],
-              );
-            },
-          );
-        },
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 142,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        top: false,
+                        bottom: false,
+                        child:
+                            StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                              stream: getActiveSosStream(_currentFamilyUid),
+                              builder: (context, sosSnapshot) {
+                                final docs = sosSnapshot.data?.docs ?? [];
+                                if (docs.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+
+                                debugPrint(
+                                  '[FamilyHistory] active SOS found: '
+                                  '${docs.first.id}',
+                                );
+                                return _buildActiveSosBanner(
+                                  sosDoc: docs.first,
+                                  liveData: liveData,
+                                );
+                              },
+                            ),
+                      ),
+                    ),
+                    DraggableScrollableSheet(
+                      controller: _sheetController,
+                      minChildSize: _sheetMin,
+                      maxChildSize: _sheetMax,
+                      initialChildSize: _sheetMin,
+                      builder: (context, controller) {
+                        final isExpanded = _isSheetExpanded;
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: isExpanded
+                                ? AppColors.background
+                                : Colors.transparent,
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(24),
+                            ),
+                            boxShadow: isExpanded
+                                ? [
+                                    BoxShadow(
+                                      color: AppColors.primary.withOpacity(
+                                        0.18,
+                                      ),
+                                      blurRadius: 24,
+                                      offset: const Offset(0, -6),
+                                    ),
+                                  ]
+                                : [],
+                          ),
+                          child: isExpanded
+                              ? Stack(
+                                  children: [
+                                    Positioned(
+                                      top: 0,
+                                      left: 0,
+                                      right: 0,
+                                      bottom: 130,
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          16,
+                                          12,
+                                          16,
+                                          0,
+                                        ),
+                                        child: ListView(
+                                          controller: controller,
+                                          padding: const EdgeInsets.only(
+                                            bottom: 24,
+                                          ),
+                                          children: [
+                                            GestureDetector(
+                                              onTap: _toggleSheet,
+                                              child: Center(
+                                                child: Container(
+                                                  width: 48,
+                                                  height: 5,
+                                                  decoration: BoxDecoration(
+                                                    color: AppColors
+                                                        .textTertiary
+                                                        .withOpacity(0.4),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 14),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    'Riwayat Perjalanan',
+                                                    style: AppTextStyles
+                                                        .bodyLarge
+                                                        .copyWith(
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          color: AppColors
+                                                              .textPrimary,
+                                                        ),
+                                                  ),
+                                                ),
+                                                GestureDetector(
+                                                  onTap: _openHistoryScreen,
+                                                  child: Container(
+                                                    width: 42,
+                                                    height: 42,
+                                                    decoration: BoxDecoration(
+                                                      gradient: AppColors
+                                                          .primaryGradient,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            14,
+                                                          ),
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: AppColors
+                                                              .primary
+                                                              .withOpacity(
+                                                                0.25,
+                                                              ),
+                                                          blurRadius: 12,
+                                                          offset: const Offset(
+                                                            0,
+                                                            6,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.route_rounded,
+                                                      color: Colors.white,
+                                                      size: 22,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 14),
+                                            Row(
+                                              children: [
+                                                Container(
+                                                  width: 36,
+                                                  height: 36,
+                                                  decoration: BoxDecoration(
+                                                    color: AppColors.primary
+                                                        .withOpacity(0.12),
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.radar_rounded,
+                                                    color: AppColors.primary,
+                                                    size: 20,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment
+                                                            .start,
+                                                    children: [
+                                                      Text(
+                                                        'Info Realtime',
+                                                        style: AppTextStyles
+                                                            .bodyMedium
+                                                            .copyWith(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w800,
+                                                            ),
+                                                      ),
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        'Status aktivitas dan koneksi pengguna',
+                                                        style: AppTextStyles
+                                                            .bodySmall
+                                                            .copyWith(
+                                                              color: AppColors
+                                                                  .textSecondary,
+                                                            ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 12),
+                                            _buildTunaNetraInfoCard(
+                                              pairedUid,
+                                              liveData,
+                                            ),
+                                            const SizedBox(height: 16),
+                                            Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white,
+                                                borderRadius:
+                                                    BorderRadius.circular(18),
+                                                border: Border.all(
+                                                  color: AppColors.primary
+                                                      .withOpacity(0.12),
+                                                ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: AppColors.primary
+                                                        .withOpacity(0.08),
+                                                    blurRadius: 16,
+                                                    offset: const Offset(0, 8),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: Column(
+                                                children:
+                                                    _buildLivePanelContent(
+                                                      liveData,
+                                                    ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    Positioned(
+                                      left: 16,
+                                      right: 16,
+                                      bottom: 12,
+                                      child: _buildCollapsedSheetCard(liveData),
+                                    ),
+                                  ],
+                                )
+                              : Material(
+                                  color: Colors.transparent,
+                                  child: Stack(
+                                    children: [
+                                      Positioned.fill(
+                                        child: GestureDetector(
+                                          behavior: HitTestBehavior.translucent,
+                                          onTap: () =>
+                                              _showTunaNetraInfo(pairedUid),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        right: 24,
+                                        bottom: 118,
+                                        child: GestureDetector(
+                                          onTap: _openHistoryScreen,
+                                          child: Container(
+                                            width: 46,
+                                            height: 46,
+                                            decoration: BoxDecoration(
+                                              gradient:
+                                                  AppColors.primaryGradient,
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: AppColors.primary
+                                                      .withOpacity(0.25),
+                                                  blurRadius: 14,
+                                                  offset: const Offset(0, 6),
+                                                ),
+                                              ],
+                                            ),
+                                            child: const Icon(
+                                              Icons.route_rounded,
+                                              color: Colors.white,
+                                              size: 22,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Align(
+                                        alignment: Alignment.bottomCenter,
+                                        child: GestureDetector(
+                                          onTap: () =>
+                                              _showTunaNetraInfo(pairedUid),
+                                          child: Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              16,
+                                              0,
+                                              16,
+                                              16,
+                                            ),
+                                            child: _buildCollapsedSheetCard(
+                                              liveData,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                        );
+                      },
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ),
       ),
     );
   }

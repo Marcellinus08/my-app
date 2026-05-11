@@ -32,6 +32,12 @@ class SosService {
         throw Exception('User belum login');
       }
 
+      final idToken = await currentUser.getIdToken();
+      if (idToken == null || idToken.trim().isEmpty) {
+        throw Exception('Token autentikasi tidak tersedia');
+      }
+      debugPrint('[SosService] Firebase ID Token berhasil didapat');
+
       final uid = currentUser.uid;
       final profile = await getTunaNetraProfile(uid);
       if (profile == null) {
@@ -86,10 +92,14 @@ class SosService {
 
       for (final familyUid in familyUids) {
         try {
+          debugPrint('[SosService] Mengirim SOS dengan authorization header');
           final response = await _httpClient
               .post(
                 Uri.parse(workerSendSosUrl),
-                headers: const {'Content-Type': 'application/json'},
+                headers: {
+                  'Authorization': 'Bearer $idToken',
+                  'Content-Type': 'application/json',
+                },
                 body: jsonEncode({
                   'userId': uid,
                   'familyUid': familyUid,
@@ -101,6 +111,15 @@ class SosService {
                 }),
               )
               .timeout(const Duration(seconds: 15));
+
+          debugPrint(
+            '[SosService] Worker response status: ${response.statusCode}',
+          );
+          debugPrint('[SosService] Worker response body: ${response.body}');
+
+          if (response.statusCode == 401 || response.statusCode == 403) {
+            throw Exception('Sesi tidak valid. Silakan login ulang.');
+          }
 
           final responseBody = _decodeJsonObject(response.body);
           final success =
@@ -117,6 +136,9 @@ class SosService {
             );
           }
         } catch (e) {
+          if (e.toString().contains('Sesi tidak valid. Silakan login ulang.')) {
+            rethrow;
+          }
           failedCount += 1;
           debugPrint('[SosService] SOS error for familyUid=$familyUid: $e');
         }

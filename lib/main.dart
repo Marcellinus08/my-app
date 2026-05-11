@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
+import 'services/notification_service.dart';
 import 'utils/constants.dart';
 import 'screens/auth/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -14,8 +16,22 @@ import 'screens/tunanetra/ebook_screen.dart';
 import 'screens/tunanetra/smartcane_monitoring_screen.dart';
 import 'screens/tunanetra/settings_screen.dart';
 import 'screens/family/family_home_screen.dart';
+import 'screens/family/family_history_screen.dart';
 import 'screens/family/family_members_list_screen.dart';
 import 'screens/family/family_member_detail_screen.dart';
+
+final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  debugPrint('[MAIN] background message received');
+  debugPrint('[MAIN] background payload data: ${message.data}');
+
+  if (message.data['type'] == 'sos') {
+    await NotificationService.showBackgroundSosLocalNotification(message);
+  }
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -51,6 +67,12 @@ void main() async {
     print('   → Verify google-services.json is correct\n');
   }
 
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  await NotificationService.instance.initializeMessageHandlers(
+    navigatorKey: appNavigatorKey,
+  );
+
   runApp(const MyApp());
 }
 
@@ -73,6 +95,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -128,14 +151,54 @@ class MyApp extends StatelessWidget {
         AppRoutes.familyHome: (context) {
           final args =
               ModalRoute.of(context)?.settings.arguments
-                  as Map<String, String>?;
+                  as Map<String, dynamic>?;
           return FamilyHomeScreen(
-            targetUid: args?['targetUid'] ?? '',
-            familyId: args?['familyId'] ?? '',
+            targetUid: args?['targetUid'] as String? ?? '',
+            familyId: args?['familyId'] as String? ?? '',
+            initialSosData: _extractSosRouteData(args),
           );
         },
-        // TODO: Add familyMonitoring and familySettings
+        AppRoutes.familyMonitoring: (context) {
+          final args =
+              ModalRoute.of(context)?.settings.arguments
+                  as Map<String, dynamic>?;
+          return FamilyHistoryScreen(
+            targetUid:
+                args?['targetUid'] as String? ??
+                args?['userId'] as String? ??
+                '',
+            familyId:
+                args?['familyId'] as String? ??
+                args?['familyUid'] as String? ??
+                '',
+          );
+        },
+        // TODO: Add familySettings
       },
     );
   }
+}
+
+Map<String, dynamic>? _extractSosRouteData(Map<String, dynamic>? args) {
+  if (args == null) return null;
+
+  final sosData = args['sosData'];
+  if (sosData is Map<String, dynamic>) {
+    return sosData;
+  }
+
+  if (args['fromSos'] == true) {
+    return {
+      'type': 'sos',
+      'userId': args['userId'] ?? args['targetUid'],
+      'familyUid': args['familyUid'] ?? args['familyId'],
+      'userName': args['userName'],
+      'lat': args['lat'],
+      'lng': args['lng'],
+      'batteryLevel': args['batteryLevel'],
+      'currentTripId': args['currentTripId'],
+    };
+  }
+
+  return null;
 }

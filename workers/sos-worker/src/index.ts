@@ -25,8 +25,20 @@ type TestFcmRequestBody = {
   title?: unknown;
   body?: unknown;
   userId?: unknown;
+  familyUid?: unknown;
   lat?: unknown;
   lng?: unknown;
+  batteryLevel?: unknown;
+  currentTripId?: unknown;
+};
+
+type FirebaseIdTokenPayload = {
+  aud?: unknown;
+  iss?: unknown;
+  exp?: unknown;
+  iat?: unknown;
+  sub?: unknown;
+  user_id?: unknown;
 };
 
 const firebaseMessagingScope =
@@ -34,7 +46,8 @@ const firebaseMessagingScope =
 const firebaseMessagingAndDatastoreScope =
   'https://www.googleapis.com/auth/firebase.messaging https://www.googleapis.com/auth/datastore';
 const googleOAuthTokenUrl = 'https://oauth2.googleapis.com/token';
-const sosEmergencyChannelId = 'sos_emergency_channel';
+const firebaseSecureTokenCertsUrl =
+  'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -128,6 +141,30 @@ async function handleSendSos(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  const bearerToken = getBearerToken(request);
+  if (bearerToken.status === 'missing') {
+    return jsonResponse(
+      {
+        success: false,
+        message: 'Missing authorization token',
+      },
+      401,
+    );
+  }
+
+  if (bearerToken.status === 'invalid') {
+    return jsonResponse(
+      {
+        success: false,
+        message: 'Invalid authorization header',
+      },
+      401,
+    );
+  }
+  const idToken = (bearerToken as { status: 'ok'; token: string }).token;
+
+  console.log('[send-sos] token received');
+
   const body = await parseJsonBody<SosRequestBody>(request);
   if (!body.ok) {
     return jsonResponse(
@@ -150,8 +187,68 @@ async function handleSendSos(request: Request, env: Env): Promise<Response> {
     );
   }
 
+  let decodedToken: FirebaseIdTokenPayload;
   try {
-    const result = await sendSosNotification(env, body.value);
+    decodedToken = await verifyFirebaseIdToken(idToken, env);
+    console.log('[send-sos] token verified');
+  } catch {
+    return jsonResponse(
+      {
+        success: false,
+        message: 'Invalid authorization token',
+      },
+      401,
+    );
+  }
+
+  try {
+    const authUid = getAuthUid(decodedToken);
+    const requestUserId = getRequiredString(body.value.userId);
+    if (authUid !== requestUserId) {
+      return jsonResponse(
+        {
+          success: false,
+          message: 'User ID does not match authenticated user',
+        },
+        403,
+      );
+    }
+    console.log('[send-sos] uid matched');
+
+    const accessToken = await getAccessToken(
+      env,
+      firebaseMessagingAndDatastoreScope,
+    );
+    const userIsValid = await isTunaNetraUser(env, authUid, accessToken);
+    if (!userIsValid) {
+      return jsonResponse(
+        {
+          success: false,
+          message: 'Authenticated user is not a tunanetra user',
+        },
+        403,
+      );
+    }
+
+    const familyUid = getRequiredString(body.value.familyUid);
+    const relationshipIsValid = await isFamilyPairedWithUser(
+      env,
+      familyUid,
+      authUid,
+      accessToken,
+    );
+    if (!relationshipIsValid) {
+      return jsonResponse(
+        {
+          success: false,
+          message: 'Family user is not paired with this user',
+        },
+        403,
+      );
+    }
+    console.log('[send-sos] relationship verified');
+
+    const result = await sendSosNotification(env, body.value, accessToken);
 
     if (result.tokenCount === 0) {
       return jsonResponse(
@@ -163,6 +260,7 @@ async function handleSendSos(request: Request, env: Env): Promise<Response> {
       );
     }
 
+    console.log('[send-sos] SOS sent');
     return jsonResponse({
       success: true,
       message: 'SOS notification sent',
@@ -182,6 +280,7 @@ async function handleSendSos(request: Request, env: Env): Promise<Response> {
 }
 
 async function handleTestFcm(request: Request, env: Env): Promise<Response> {
+  // Development-only endpoint for manually testing FCM delivery.
   if (request.method !== 'POST') {
     return jsonResponse(
       {
@@ -270,23 +369,19 @@ async function sendTestFcmMessage(
     body: JSON.stringify({
       message: {
         token: body.token,
-        notification: {
-          title,
-          body: notificationBody,
-        },
         data: {
           type: 'sos',
+          title,
+          body: notificationBody,
           userId,
+          familyUid: getOptionalString(body.familyUid) ?? '',
           lat,
           lng,
+          batteryLevel: optionalStringValue(body.batteryLevel),
+          currentTripId: getOptionalString(body.currentTripId) ?? '',
         },
         android: {
           priority: 'HIGH',
-          notification: {
-            channel_id: sosEmergencyChannelId,
-            sound: 'default',
-            click_action: 'FLUTTER_NOTIFICATION_CLICK',
-          },
         },
       },
     }),
@@ -303,13 +398,13 @@ async function sendTestFcmMessage(
 async function sendSosNotification(
   env: Env,
   data: SosRequestBody,
+  accessToken?: string,
 ): Promise<{ tokenCount: number; sentCount: number; failedCount: number }> {
   const familyUid = getRequiredString(data.familyUid);
-  const accessToken = await getAccessToken(
-    env,
-    firebaseMessagingAndDatastoreScope,
-  );
-  const tokens = await getFamilyFcmTokens(env, familyUid, accessToken);
+  const authAccessToken =
+    accessToken ??
+    (await getAccessToken(env, firebaseMessagingAndDatastoreScope));
+  const tokens = await getFamilyFcmTokens(env, familyUid, authAccessToken);
 
   if (tokens.length === 0) {
     return {
@@ -323,9 +418,14 @@ async function sendSosNotification(
   let failedCount = 0;
 
   await Promise.all(
-    tokens.map(async (token) => {
+    tokens.map(async (fcmToken) => {
       try {
-        await sendFcmToToken(env, accessToken, token, createSosFcmPayload(data));
+        await sendFcmToToken(
+          env,
+          authAccessToken,
+          fcmToken,
+          createSosFcmPayload(data),
+        );
         sentCount += 1;
       } catch {
         failedCount += 1;
@@ -429,12 +529,10 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
   const userName = getRequiredString(data.userName);
 
   return {
-    notification: {
-      title: '\u{1F6A8} SOS Darurat',
-      body: `${userName} membutuhkan bantuan segera`,
-    },
     data: {
       type: 'sos',
+      title: '\u{1F6A8} SOS Darurat',
+      body: `${userName} membutuhkan bantuan segera`,
       userId,
       familyUid,
       userName,
@@ -445,13 +543,226 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
     },
     android: {
       priority: 'HIGH',
-      notification: {
-        channel_id: sosEmergencyChannelId,
-        sound: 'default',
-        click_action: 'FLUTTER_NOTIFICATION_CLICK',
-      },
     },
   };
+}
+
+function getBearerToken(
+  request: Request,
+): { status: 'ok'; token: string } | { status: 'missing' | 'invalid' } {
+  const authorization = request.headers.get('Authorization');
+  if (authorization === null || authorization.trim().length === 0) {
+    return { status: 'missing' };
+  }
+
+  const match = authorization.trim().match(/^Bearer\s+(.+)$/i);
+  if (match === null || match[1].trim().length === 0) {
+    return { status: 'invalid' };
+  }
+
+  return { status: 'ok', token: match[1].trim() };
+}
+
+async function verifyFirebaseIdToken(
+  idToken: string,
+  env: Env,
+): Promise<FirebaseIdTokenPayload> {
+  const jwtParts = idToken.split('.');
+  if (jwtParts.length !== 3) {
+    throw new Error('Invalid Firebase ID token');
+  }
+
+  const header = decodeJwtPart(jwtParts[0]);
+  const payload = decodeJwtPart(jwtParts[1]) as FirebaseIdTokenPayload;
+  if (!isRecord(header) || header.alg !== 'RS256') {
+    throw new Error('Invalid Firebase ID token algorithm');
+  }
+
+  const kid = typeof header.kid === 'string' ? header.kid : '';
+  if (kid.length === 0) {
+    throw new Error('Firebase ID token kid is missing');
+  }
+
+  validateFirebaseClaims(payload, env);
+
+  const certResponse = await fetch(firebaseSecureTokenCertsUrl);
+  const certs = await readJsonOrText(certResponse);
+  if (!certResponse.ok || !isRecord(certs)) {
+    throw new Error('Unable to fetch Firebase public certificates');
+  }
+
+  const certificate = certs[kid];
+  if (typeof certificate !== 'string' || certificate.trim().length === 0) {
+    throw new Error('Firebase public certificate not found');
+  }
+
+  const publicKey = await importX509Certificate(certificate);
+  const signatureIsValid = await verifyJwtSignature(idToken, publicKey);
+  if (!signatureIsValid) {
+    throw new Error('Firebase ID token signature is invalid');
+  }
+
+  return payload;
+}
+
+function decodeJwtPart(part: string): Record<string, unknown> {
+  const json = new TextDecoder().decode(base64UrlToUint8Array(part));
+  const decoded = JSON.parse(json) as unknown;
+  if (!isRecord(decoded)) {
+    throw new Error('Invalid JWT payload');
+  }
+
+  return decoded;
+}
+
+async function importX509Certificate(certificatePem: string): Promise<CryptoKey> {
+  const pemContents = certificatePem
+    .replace('-----BEGIN CERTIFICATE-----', '')
+    .replace('-----END CERTIFICATE-----', '')
+    .replace(/\s/g, '');
+  const certificateDer = base64ToArrayBuffer(pemContents);
+  const subjectPublicKeyInfo = extractSubjectPublicKeyInfo(certificateDer);
+
+  return crypto.subtle.importKey(
+    'spki',
+    subjectPublicKeyInfo,
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      hash: 'SHA-256',
+    },
+    false,
+    ['verify'],
+  );
+}
+
+async function verifyJwtSignature(
+  idToken: string,
+  publicKey: CryptoKey,
+): Promise<boolean> {
+  const jwtParts = idToken.split('.');
+  if (jwtParts.length !== 3) {
+    return false;
+  }
+
+  const signedContent = `${jwtParts[0]}.${jwtParts[1]}`;
+  const signature = base64UrlToUint8Array(jwtParts[2]);
+
+  return crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5',
+    publicKey,
+    signature,
+    new TextEncoder().encode(signedContent),
+  );
+}
+
+function validateFirebaseClaims(
+  payload: FirebaseIdTokenPayload,
+  env: Env,
+): void {
+  const firebaseConfig = getFirebaseConfig(env);
+  assertFirebaseConfig(firebaseConfig);
+
+  const now = Math.floor(Date.now() / 1000);
+  const issuer = `https://securetoken.google.com/${firebaseConfig.projectId}`;
+  if (payload.aud !== firebaseConfig.projectId) {
+    throw new Error('Firebase ID token audience is invalid');
+  }
+
+  if (payload.iss !== issuer) {
+    throw new Error('Firebase ID token issuer is invalid');
+  }
+
+  if (typeof payload.exp !== 'number' || payload.exp <= now) {
+    throw new Error('Firebase ID token is expired');
+  }
+
+  if (
+    typeof payload.iat !== 'number' ||
+    payload.iat > now + 300 ||
+    payload.iat <= 0
+  ) {
+    throw new Error('Firebase ID token issued-at claim is invalid');
+  }
+
+  const authUid = getAuthUid(payload);
+  if (authUid.length === 0) {
+    throw new Error('Firebase ID token subject is missing');
+  }
+}
+
+function getAuthUid(payload: FirebaseIdTokenPayload): string {
+  const userId = typeof payload.user_id === 'string' ? payload.user_id : '';
+  const subject = typeof payload.sub === 'string' ? payload.sub : '';
+  return userId.trim() || subject.trim();
+}
+
+async function isTunaNetraUser(
+  env: Env,
+  userUid: string,
+  accessToken: string,
+): Promise<boolean> {
+  const document = await getFirestoreDocument(
+    env,
+    `users/${userUid}`,
+    accessToken,
+  );
+  const userType = readFirestoreStringField(document, 'userType');
+  return userType === 'tunanetra' || userType === 'UserType.tunanetra';
+}
+
+async function isFamilyPairedWithUser(
+  env: Env,
+  familyUid: string,
+  tunaNetraUid: string,
+  accessToken: string,
+): Promise<boolean> {
+  const document = await getFirestoreDocument(
+    env,
+    `users/${familyUid}`,
+    accessToken,
+  );
+  const userType = readFirestoreStringField(document, 'userType');
+  const pairedUserUid = readFirestoreStringField(document, 'pairedUserUid');
+
+  return (
+    (userType === 'family' || userType === 'UserType.family') &&
+    pairedUserUid === tunaNetraUid
+  );
+}
+
+async function getFirestoreDocument(
+  env: Env,
+  documentPath: string,
+  accessToken: string,
+): Promise<unknown> {
+  const firebaseConfig = getFirebaseConfig(env);
+  assertFirebaseConfig(firebaseConfig);
+  const path = documentPath
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  const url =
+    `https://firestore.googleapis.com/v1/projects/` +
+    `${encodeURIComponent(firebaseConfig.projectId)}` +
+    `/databases/(default)/documents/${path}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  const body = await readJsonOrText(response);
+  if (!response.ok) {
+    throw new Error(JSON.stringify(body));
+  }
+
+  return body;
 }
 
 function getFirebaseConfig(env: Env): FirebaseConfig {
@@ -569,6 +880,15 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+function base64UrlToUint8Array(base64Url: string): Uint8Array {
+  const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64.padEnd(
+    base64.length + ((4 - (base64.length % 4)) % 4),
+    '=',
+  );
+  return new Uint8Array(base64ToArrayBuffer(padded));
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   let binary = '';
@@ -578,6 +898,87 @@ function arrayBufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   }
 
   return btoa(binary);
+}
+
+type Asn1Element = {
+  tag: number;
+  start: number;
+  valueStart: number;
+  valueEnd: number;
+  end: number;
+};
+
+function extractSubjectPublicKeyInfo(certificateDer: ArrayBuffer): ArrayBuffer {
+  const bytes = new Uint8Array(certificateDer);
+  const certificate = readAsn1Element(bytes, 0);
+  if (certificate.tag !== 0x30) {
+    throw new Error('Invalid X509 certificate');
+  }
+
+  const tbsCertificate = readAsn1Element(bytes, certificate.valueStart);
+  if (tbsCertificate.tag !== 0x30) {
+    throw new Error('Invalid X509 certificate body');
+  }
+
+  let offset = tbsCertificate.valueStart;
+  const maybeVersion = readAsn1Element(bytes, offset);
+  if (maybeVersion.tag === 0xa0) {
+    offset = maybeVersion.end;
+  }
+
+  // serialNumber, signature, issuer, validity, subject
+  for (let i = 0; i < 5; i += 1) {
+    offset = readAsn1Element(bytes, offset).end;
+  }
+
+  const subjectPublicKeyInfo = readAsn1Element(bytes, offset);
+  if (subjectPublicKeyInfo.tag !== 0x30) {
+    throw new Error('X509 certificate public key is missing');
+  }
+
+  return bytes
+    .slice(subjectPublicKeyInfo.start, subjectPublicKeyInfo.end)
+    .buffer;
+}
+
+function readAsn1Element(bytes: Uint8Array, offset: number): Asn1Element {
+  if (offset >= bytes.length) {
+    throw new Error('Invalid ASN.1 offset');
+  }
+
+  const start = offset;
+  const tag = bytes[offset];
+  offset += 1;
+  const firstLengthByte = bytes[offset];
+  offset += 1;
+
+  let length = firstLengthByte;
+  if ((firstLengthByte & 0x80) !== 0) {
+    const lengthBytes = firstLengthByte & 0x7f;
+    if (lengthBytes === 0 || lengthBytes > 4) {
+      throw new Error('Invalid ASN.1 length');
+    }
+
+    length = 0;
+    for (let i = 0; i < lengthBytes; i += 1) {
+      length = (length << 8) | bytes[offset];
+      offset += 1;
+    }
+  }
+
+  const valueStart = offset;
+  const valueEnd = valueStart + length;
+  if (valueEnd > bytes.length) {
+    throw new Error('Invalid ASN.1 element length');
+  }
+
+  return {
+    tag,
+    start,
+    valueStart,
+    valueEnd,
+    end: valueEnd,
+  };
 }
 
 async function parseJsonBody<T>(
