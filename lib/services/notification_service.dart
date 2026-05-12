@@ -483,6 +483,7 @@ class NotificationService {
       'batteryLevel': _readStringFromMap(data, 'batteryLevel'),
       'currentTripId': _readStringFromMap(data, 'currentTripId'),
       'userName': _readStringFromMap(data, 'userName') ?? 'Pengguna',
+      'sosId': _readStringFromMap(data, 'sosId'),
       'sosData': data,
     };
 

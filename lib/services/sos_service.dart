@@ -69,7 +69,7 @@ class SosService {
         throw Exception('Belum ada keluarga terhubung');
       }
 
-      await saveSosAlert(
+      final sosId = await saveSosAlert(
         userId: uid,
         userName: userName,
         familyUids: familyUids,
@@ -108,6 +108,7 @@ class SosService {
                   'lng': lng,
                   'batteryLevel': batteryLevel,
                   'currentTripId': currentTripId,
+                  'sosId': sosId,
                 }),
               )
               .timeout(const Duration(seconds: 15));
@@ -222,7 +223,7 @@ class SosService {
     }
   }
 
-  Future<void> saveSosAlert({
+  Future<String> saveSosAlert({
     required String userId,
     required String userName,
     required List<String> familyUids,
@@ -231,7 +232,7 @@ class SosService {
     required int? batteryLevel,
     required String currentTripId,
   }) async {
-    await _firestore.collection('sos_alerts').add({
+    final docRef = await _firestore.collection('sos_alerts').add({
       'userId': userId,
       'userName': userName,
       'familyUids': familyUids,
@@ -244,7 +245,8 @@ class SosService {
       'resolvedAt': null,
     });
 
-    debugPrint('[SosService] SOS alert saved to Firestore');
+    debugPrint('[SosService] SOS alert saved to Firestore: ${docRef.id}');
+    return docRef.id;
   }
 
   Future<void> saveSosTripEvent({

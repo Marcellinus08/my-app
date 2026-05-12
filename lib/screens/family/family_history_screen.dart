@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -17,11 +18,13 @@ const Color _historyStrongText = Color(0xFF334155);
 class FamilyHistoryScreen extends StatefulWidget {
   final String targetUid;
   final String familyId;
+  final Map<String, dynamic>? initialSosData;
 
   const FamilyHistoryScreen({
     super.key,
     required this.targetUid,
     required this.familyId,
+    this.initialSosData,
   });
 
   @override
@@ -37,9 +40,14 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   StateSetter? _modalSetState;
   late final Future<String?> _pairedUserUidFuture;
   bool _hasCenteredMap = false;
+  bool _hasFocusedInitialSos = false;
+  bool _hideInitialSosFallback = false;
+  bool _hideSosCardAfterResolve = false;
   bool _isSheetExpanded = false;
   Timer? _realtimeUpdateTimer;
   Map<String, dynamic>? _latestLiveDataForSos;
+  String? _lastLoggedActiveSosId;
+  final Set<String> _hiddenResolvedSosIds = {};
   static const double _liveZoom = 16.5;
   static const LatLng _fallbackCenter = LatLng(-6.9147, 107.6098);
   static const double _sheetMin = 0.40;
@@ -115,6 +123,39 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     return _auth.currentUser?.uid ?? '';
   }
 
+  Map<String, dynamic>? get _initialSosFallbackData {
+    if (_hideInitialSosFallback) return null;
+    final data = widget.initialSosData;
+    if (data == null) return null;
+
+    final userId = _readSosString(data['userId']) ?? widget.targetUid;
+    return {
+      ...data,
+      'userId': userId,
+      'userName': _readSosString(data['userName']) ?? 'Pengguna',
+      'lat': data['lat'],
+      'lng': data['lng'],
+      'batteryLevel': data['batteryLevel'],
+      'currentTripId': data['currentTripId'],
+      'status': data['status'] ?? 'active',
+    };
+  }
+
+  String get _initialSosFallbackId {
+    final data = widget.initialSosData;
+    if (data == null) return '';
+    return _readSosString(data['sosId']) ??
+        _readSosString(data['alertId']) ??
+        _readSosString(data['id']) ??
+        '';
+  }
+
+  String? _readSosString(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    return text.isEmpty ? null : text;
+  }
+
   void _handleBackNavigation() {
     final navigator = Navigator.of(context);
     if (navigator.canPop()) {
@@ -135,9 +176,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     return _firestore
         .collection('sos_alerts')
         .where('familyUids', arrayContains: familyUid)
-        .where('status', isEqualTo: 'active')
-        .orderBy('createdAt', descending: true)
-        .limit(1)
         .snapshots();
   }
 
@@ -825,13 +863,57 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     return '${duration.inDays} hari lalu';
   }
 
-  String formatSosTime(Timestamp? createdAt) {
-    if (createdAt == null) return 'Baru saja';
-    final duration = DateTime.now().difference(createdAt.toDate());
-    if (duration.inSeconds < 60) return 'Baru saja';
-    if (duration.inMinutes < 60) return '${duration.inMinutes} menit lalu';
-    if (duration.inHours < 24) return '${duration.inHours} jam lalu';
-    return '${duration.inDays} hari lalu';
+  String formatSosSentTime(Timestamp? createdAt) {
+    if (createdAt == null) return 'Dikirim: -';
+
+    final sentAt = createdAt.toDate();
+    final duration = DateTime.now().difference(sentAt);
+    if (duration.inSeconds < 60) return 'Dikirim baru saja';
+    if (duration.inMinutes < 60) {
+      return 'Dikirim ${duration.inMinutes} menit lalu';
+    }
+    if (duration.inHours < 24) {
+      return 'Dikirim ${duration.inHours} jam lalu';
+    }
+
+    return 'Dikirim: ${DateFormat('d MMM yyyy, HH:mm').format(sentAt)}';
+  }
+
+  String formatSosCoordinate(dynamic value) {
+    final coordinate = _parseDouble(value);
+    if (coordinate == null) return '-';
+    return coordinate.toStringAsFixed(6);
+  }
+
+  String buildCoordinateText(dynamic lat, dynamic lng) {
+    final latitude = _parseDouble(lat);
+    final longitude = _parseDouble(lng);
+    if (latitude == null || longitude == null) return '-';
+    return '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
+  }
+
+  Future<void> copySosCoordinate(dynamic lat, dynamic lng) async {
+    final coordinateText = buildCoordinateText(lat, lng);
+    if (coordinateText == '-') {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Koordinat tidak tersedia'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: coordinateText));
+    debugPrint('[FamilyHistory] koordinat SOS berhasil dicopy');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Koordinat berhasil disalin'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   Future<void> focusToSosLocation(Map<String, dynamic> sosData) async {
@@ -845,7 +927,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         ? LatLng(liveLat, liveLng)
         : null;
 
-    debugPrint('[FamilyHistory] focus SOS location');
+    debugPrint('[FamilyHistory] tombol Lihat Lokasi ditekan');
 
     if (target == null) {
       if (!mounted) return;
@@ -858,20 +940,72 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       return;
     }
 
-    _mapController.move(target, _liveZoom);
+    try {
+      _mapController.move(target, _liveZoom);
+    } catch (e) {
+      debugPrint('[FamilyHistory] map belum siap untuk fokus SOS: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Map belum siap'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     _animateSheetTo(_sheetMin);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Menampilkan lokasi SOS'),
+        backgroundColor: AppColors.primary,
+      ),
+    );
+  }
+
+  void _focusInitialSosFromArgumentsIfNeeded() {
+    if (_hasFocusedInitialSos) return;
+    final sosData = widget.initialSosData;
+    if (sosData == null) return;
+
+    final target = _parseLatLng(sosData['lat'], sosData['lng']);
+    if (target == null) return;
+
+    _hasFocusedInitialSos = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        _mapController.move(target, _liveZoom);
+        _animateSheetTo(_sheetMin);
+        debugPrint(
+          '[FamilyHistory] auto focus SOS dari notification arguments',
+        );
+      } catch (e) {
+        _hasFocusedInitialSos = false;
+        debugPrint(
+          '[FamilyHistory] gagal auto focus SOS dari notification arguments: $e',
+        );
+      }
+    });
   }
 
   Future<void> resolveSosAlert(String sosId, String familyUid) async {
     try {
-      await _firestore.collection('sos_alerts').doc(sosId).update({
-        'status': 'resolved',
-        'resolvedAt': FieldValue.serverTimestamp(),
-        'resolvedBy': familyUid,
-      });
+      final resolvedSosIds = await _resolveActiveSosAlerts(
+        familyUid: familyUid,
+        primarySosId: sosId,
+      );
 
-      debugPrint('[FamilyHistory] resolve SOS success: $sosId');
+      debugPrint(
+        '[FamilyHistory] SOS berhasil ditandai resolved: $resolvedSosIds',
+      );
       if (!mounted) return;
+      setState(() {
+        _hideInitialSosFallback = true;
+        _hideSosCardAfterResolve = true;
+        _hiddenResolvedSosIds.addAll(resolvedSosIds);
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('SOS ditandai sudah ditangani'),
@@ -879,7 +1013,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         ),
       );
     } catch (e) {
-      debugPrint('[FamilyHistory] resolve SOS failed: $e');
+      debugPrint('[FamilyHistory] error resolve SOS: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -888,6 +1022,63 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         ),
       );
     }
+  }
+
+  Future<List<String>> _resolveActiveSosAlerts({
+    required String familyUid,
+    required String primarySosId,
+  }) async {
+    if (familyUid.trim().isEmpty) {
+      throw Exception('Family UID kosong');
+    }
+
+    final idsToResolve = <String>{};
+    final trimmedPrimarySosId = primarySosId.trim();
+    if (trimmedPrimarySosId.isNotEmpty) {
+      idsToResolve.add(trimmedPrimarySosId);
+    }
+
+    final userId =
+        _readSosString(widget.initialSosData?['userId']) ?? widget.targetUid;
+    final snapshot = await _firestore
+        .collection('sos_alerts')
+        .where('familyUids', arrayContains: familyUid)
+        .limit(50)
+        .get();
+
+    final activeDocs =
+        snapshot.docs.where((doc) {
+          final data = doc.data();
+          final isActive = data['status'] == 'active';
+          final docUserId = _readSosString(data['userId']);
+          final sameUser = userId.trim().isEmpty || docUserId == userId.trim();
+          return isActive && sameUser;
+        }).toList()..sort((a, b) {
+          final aCreatedAt = _parseTimestamp(a.data()['createdAt']);
+          final bCreatedAt = _parseTimestamp(b.data()['createdAt']);
+          final aMillis = aCreatedAt?.toDate().millisecondsSinceEpoch ?? 0;
+          final bMillis = bCreatedAt?.toDate().millisecondsSinceEpoch ?? 0;
+          return bMillis.compareTo(aMillis);
+        });
+
+    idsToResolve.addAll(activeDocs.map((doc) => doc.id));
+
+    if (idsToResolve.isEmpty) {
+      throw Exception('SOS aktif tidak ditemukan');
+    }
+
+    final batch = _firestore.batch();
+    for (final sosId in idsToResolve) {
+      final docRef = _firestore.collection('sos_alerts').doc(sosId);
+      batch.update(docRef, {
+        'status': 'resolved',
+        'resolvedAt': FieldValue.serverTimestamp(),
+        'resolvedBy': familyUid,
+      });
+    }
+    await batch.commit();
+
+    return idsToResolve.toList();
   }
 
   Future<void> _confirmResolveSosAlert(String sosId) async {
@@ -908,8 +1099,10 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Tandai Ditangani'),
-        content: const Text('Tandai SOS ini sudah ditangani?'),
+        title: const Text('Tandai SOS ditangani?'),
+        content: const Text(
+          'Pastikan keluarga sudah merespons kondisi pengguna.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -921,7 +1114,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
               foregroundColor: Colors.white,
             ),
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Ya'),
+            child: const Text('Ya, Tandai'),
           ),
         ],
       ),
@@ -1124,31 +1317,27 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     );
   }
 
-  Widget _buildActiveSosBanner({
-    required DocumentSnapshot<Map<String, dynamic>> sosDoc,
-    required Map<String, dynamic>? liveData,
+  Widget buildSosEmergencyCard({
+    required String sosId,
+    required Map<String, dynamic> sosData,
   }) {
-    final data = sosDoc.data();
-    _latestLiveDataForSos = liveData;
-    final userName = (data?['userName'] as String?)?.trim().isNotEmpty == true
-        ? data!['userName'] as String
-        : 'Pengguna';
-    final createdAt = _parseTimestamp(data?['createdAt']);
+    final createdAt = _parseTimestamp(sosData['createdAt']);
 
     return Material(
       color: Colors.transparent,
       child: Container(
         width: double.infinity,
         margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: AppColors.error,
-          borderRadius: BorderRadius.circular(18),
+          color: const Color(0xFFB91C1C),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.16)),
           boxShadow: [
             BoxShadow(
-              color: AppColors.error.withOpacity(0.28),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
+              color: AppColors.error.withOpacity(0.26),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
@@ -1157,21 +1346,22 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  width: 42,
-                  height: 42,
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.16),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: const Icon(
-                    Icons.warning_rounded,
+                    Icons.warning_amber_rounded,
                     color: Colors.white,
-                    size: 26,
+                    size: 22,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 9),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1184,22 +1374,13 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                           fontSize: 16,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 3),
                       Text(
-                        '$userName membutuhkan bantuan segera',
+                        formatSosSentTime(createdAt),
                         style: AppTextStyles.bodySmall.copyWith(
-                          color: Colors.white.withOpacity(0.92),
+                          color: Colors.white.withOpacity(0.82),
+                          fontSize: 10,
                           fontWeight: FontWeight.w600,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        formatSosTime(createdAt),
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: Colors.white.withOpacity(0.78),
-                          fontSize: 11,
                         ),
                       ),
                     ],
@@ -1207,39 +1388,85 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.12)),
+              ),
+              child: Text(
+                'Lat: ${formatSosCoordinate(sosData['lat'])}  |  '
+                'Lng: ${formatSosCoordinate(sosData['lng'])}',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  height: 1.25,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(height: 8),
             Row(
               children: [
                 Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: data == null
-                        ? null
-                        : () => focusToSosLocation(data),
-                    icon: const Icon(Icons.location_on_rounded, size: 18),
-                    label: const Text('Lihat Lokasi'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: AppColors.error,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
+                  child: _buildSosActionButton(
+                    icon: Icons.copy_rounded,
+                    label: 'Copy Koordinat',
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.white.withOpacity(0.14),
+                    borderColor: Colors.white.withOpacity(0.65),
+                    onPressed: () =>
+                        copySosCoordinate(sosData['lat'], sosData['lng']),
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _confirmResolveSosAlert(sosDoc.id),
-                    icon: const Icon(Icons.check_circle_rounded, size: 18),
-                    label: const Text('Tandai Ditangani'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Colors.white, width: 1.5),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
+                  child: _buildSosActionButton(
+                    icon: Icons.check_circle_rounded,
+                    label: 'Tandai Ditangani',
+                    foregroundColor: AppColors.error,
+                    backgroundColor: Colors.white,
+                    onPressed: () => _confirmResolveSosAlert(sosId),
                   ),
                 ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSosActionButton({
+    required IconData icon,
+    required String label,
+    required Color foregroundColor,
+    required Color backgroundColor,
+    required VoidCallback onPressed,
+    Color? borderColor,
+  }) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 42),
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 18),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: borderColor ?? Colors.transparent),
+          ),
+          textStyle: AppTextStyles.bodySmall.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
@@ -1420,6 +1647,8 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                 final hasLiveData =
                     snapshot.hasData && snapshot.data?.exists == true;
                 final liveData = hasLiveData ? snapshot.data!.data() : null;
+                _latestLiveDataForSos = liveData;
+                _focusInitialSosFromArgumentsIfNeeded();
 
                 return Stack(
                   children: [
@@ -1511,7 +1740,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                       ),
                     ),
                     Positioned(
-                      top: 142,
+                      top: 154,
                       left: 0,
                       right: 0,
                       child: SafeArea(
@@ -1521,18 +1750,70 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                               stream: getActiveSosStream(_currentFamilyUid),
                               builder: (context, sosSnapshot) {
-                                final docs = sosSnapshot.data?.docs ?? [];
-                                if (docs.isEmpty) {
+                                if (_hideSosCardAfterResolve) {
                                   return const SizedBox.shrink();
                                 }
 
-                                debugPrint(
-                                  '[FamilyHistory] active SOS found: '
-                                  '${docs.first.id}',
-                                );
-                                return _buildActiveSosBanner(
-                                  sosDoc: docs.first,
-                                  liveData: liveData,
+                                if (sosSnapshot.hasError) {
+                                  debugPrint(
+                                    '[FamilyHistory] active SOS listener error: '
+                                    '${sosSnapshot.error}',
+                                  );
+                                }
+
+                                final activeDocs =
+                                    (sosSnapshot.data?.docs ?? []).where((doc) {
+                                      return doc.data()['status'] == 'active' &&
+                                          !_hiddenResolvedSosIds.contains(
+                                            doc.id,
+                                          );
+                                    }).toList()..sort((a, b) {
+                                      final aCreatedAt = _parseTimestamp(
+                                        a.data()['createdAt'],
+                                      );
+                                      final bCreatedAt = _parseTimestamp(
+                                        b.data()['createdAt'],
+                                      );
+                                      final aMillis =
+                                          aCreatedAt
+                                              ?.toDate()
+                                              .millisecondsSinceEpoch ??
+                                          0;
+                                      final bMillis =
+                                          bCreatedAt
+                                              ?.toDate()
+                                              .millisecondsSinceEpoch ??
+                                          0;
+                                      return bMillis.compareTo(aMillis);
+                                    });
+
+                                if (activeDocs.isEmpty) {
+                                  final fallbackData = _initialSosFallbackData;
+                                  if (fallbackData != null) {
+                                    debugPrint(
+                                      '[FamilyHistory] menampilkan SOS dari '
+                                      'notification arguments',
+                                    );
+                                    return buildSosEmergencyCard(
+                                      sosId: _initialSosFallbackId,
+                                      sosData: fallbackData,
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                }
+
+                                final sosDoc = activeDocs.first;
+                                if (_lastLoggedActiveSosId != sosDoc.id) {
+                                  _lastLoggedActiveSosId = sosDoc.id;
+                                  debugPrint(
+                                    '[FamilyHistory] active SOS ditemukan: '
+                                    '${sosDoc.id}',
+                                  );
+                                }
+
+                                return buildSosEmergencyCard(
+                                  sosId: sosDoc.id,
+                                  sosData: sosDoc.data(),
                                 );
                               },
                             ),

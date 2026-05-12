@@ -171,6 +171,7 @@ class MyApp extends StatelessWidget {
                 args?['familyId'] as String? ??
                 args?['familyUid'] as String? ??
                 '',
+            initialSosData: _extractSosRouteData(args),
           );
         },
         // TODO: Add familySettings
@@ -197,6 +198,7 @@ Map<String, dynamic>? _extractSosRouteData(Map<String, dynamic>? args) {
       'lng': args['lng'],
       'batteryLevel': args['batteryLevel'],
       'currentTripId': args['currentTripId'],
+      'sosId': args['sosId'],
     };
   }
 

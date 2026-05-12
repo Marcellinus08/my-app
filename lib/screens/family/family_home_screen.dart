@@ -541,8 +541,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           ),
 
-          if (_activeSosData != null) _buildActiveSosBanner(),
-
           // Monitored Users List
           Expanded(
             child: _isLoadingUsers

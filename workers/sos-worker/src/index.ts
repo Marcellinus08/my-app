@@ -18,6 +18,7 @@ type SosRequestBody = {
   lng?: unknown;
   batteryLevel?: unknown;
   currentTripId?: unknown;
+  sosId?: unknown;
 };
 
 type TestFcmRequestBody = {
@@ -30,6 +31,7 @@ type TestFcmRequestBody = {
   lng?: unknown;
   batteryLevel?: unknown;
   currentTripId?: unknown;
+  sosId?: unknown;
 };
 
 type FirebaseIdTokenPayload = {
@@ -379,6 +381,7 @@ async function sendTestFcmMessage(
           lng,
           batteryLevel: optionalStringValue(body.batteryLevel),
           currentTripId: getOptionalString(body.currentTripId) ?? '',
+          sosId: getOptionalString(body.sosId) ?? '',
         },
         android: {
           priority: 'HIGH',
@@ -540,6 +543,7 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
       lng: optionalStringValue(data.lng),
       batteryLevel: optionalStringValue(data.batteryLevel),
       currentTripId: getOptionalString(data.currentTripId) ?? '',
+      sosId: getOptionalString(data.sosId) ?? '',
     },
     android: {
       priority: 'HIGH',
