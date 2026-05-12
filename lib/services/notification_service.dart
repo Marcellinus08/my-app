@@ -22,14 +22,10 @@ class NotificationService {
 
   // Set true after adding android/app/src/main/res/raw/sos_alert.mp3 or .wav.
   static const bool useCustomSosSound = false;
-  static final Int64List _sosVibrationPattern = Int64List.fromList([
-    0,
-    1000,
-    500,
-    1000,
-    500,
-    1500,
-  ]);
+  static Int64List? get _sosVibrationPattern {
+    if (kIsWeb) return null;
+    return Int64List.fromList([0, 1000, 500, 1000, 500, 1500]);
+  }
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -263,6 +259,13 @@ class NotificationService {
   }
 
   Future<void> createSosNotificationChannel() async {
+    if (kIsWeb) {
+      debugPrint(
+        '[NotificationService] Web detected, skip Android notification channel',
+      );
+      return;
+    }
+
     if (_localNotificationsInitialized) {
       return;
     }
@@ -300,6 +303,8 @@ class NotificationService {
   }
 
   Future<void> _handleLocalNotificationLaunchDetails() async {
+    if (kIsWeb) return;
+
     final details = await _localNotifications.getNotificationAppLaunchDetails();
     final response = details?.notificationResponse;
     final payload = response?.payload;
@@ -323,6 +328,8 @@ class NotificationService {
   static Future<void> showBackgroundSosLocalNotification(
     RemoteMessage message,
   ) async {
+    if (kIsWeb) return;
+
     final data = Map<String, dynamic>.from(message.data);
     if (data['type'] != 'sos') return;
 
@@ -369,6 +376,8 @@ class NotificationService {
   Future<void> _showSosLocalNotificationFromData(
     Map<String, dynamic> data,
   ) async {
+    if (kIsWeb) return;
+
     final title = _readStringFromMap(data, 'title') ?? 'SOS Darurat';
     final body =
         _readStringFromMap(data, 'body') ?? 'Pengguna membutuhkan bantuan';
@@ -541,6 +550,9 @@ class NotificationService {
   }
 
   String get _platformName {
+    if (kIsWeb) {
+      return 'web';
+    }
     if (defaultTargetPlatform == TargetPlatform.android) {
       return 'android';
     }
