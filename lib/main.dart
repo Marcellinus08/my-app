@@ -69,9 +69,7 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  await NotificationService.instance.initializeMessageHandlers(
-    navigatorKey: appNavigatorKey,
-  );
+  await NotificationService.instance.initialize(navigatorKey: appNavigatorKey);
 
   runApp(const MyApp());
 }

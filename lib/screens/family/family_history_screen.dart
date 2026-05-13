@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../services/analytics_service.dart';
+import '../../services/notification_service.dart';
 import '../../utils/constants.dart';
 
 const Color _historyPrimaryText = Color(0xFF475569);
@@ -1000,6 +1001,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       debugPrint(
         '[FamilyHistory] SOS berhasil ditandai resolved: $resolvedSosIds',
       );
+      NotificationService.instance.stopSosAlarmLoop();
       if (!mounted) return;
       setState(() {
         _hideInitialSosFallback = true;

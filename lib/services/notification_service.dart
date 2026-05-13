@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' hide Int64List;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -15,13 +16,15 @@ class NotificationService {
 
   static final NotificationService instance = NotificationService._();
 
-  static const String sosEmergencyChannelId = 'sos_emergency_channel';
+  static const String sosEmergencyChannelId = 'sos_emergency_channel_v4';
   static const String sosEmergencyChannelName = 'SOS Emergency';
   static const String sosEmergencyChannelDescription = 'Notifikasi darurat SOS';
   static const String sosCustomSoundResourceName = 'sos_alert';
+  static const int sosEmergencyNotificationId = 8801;
+  static const Duration sosAlarmRepeatInterval = Duration(seconds: 5);
 
-  // Set true after adding android/app/src/main/res/raw/sos_alert.mp3 or .wav.
-  static const bool useCustomSosSound = false;
+  // android/app/src/main/res/raw/sos_alert.mp3 is required for this sound.
+  static const bool useCustomSosSound = true;
   static Int64List? get _sosVibrationPattern {
     if (kIsWeb) return null;
     return Int64List.fromList([0, 1000, 500, 1000, 500, 1500]);
@@ -34,7 +37,11 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   StreamSubscription<String>? _tokenRefreshSubscription;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+  _activeSosStatusSubscription;
   GlobalKey<NavigatorState>? _navigatorKey;
+  Timer? _sosAlarmTimer;
+  Map<String, dynamic>? _activeSosData;
   bool _messageHandlersInitialized = false;
   bool _localNotificationsInitialized = false;
 
@@ -68,12 +75,16 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.max,
         category: AndroidNotificationCategory.alarm,
+        visibility: NotificationVisibility.public,
         fullScreenIntent: false,
         enableVibration: true,
         vibrationPattern: _sosVibrationPattern,
         playSound: true,
         sound: _sosNotificationSound,
         audioAttributesUsage: AudioAttributesUsage.alarm,
+        onlyAlertOnce: false,
+        ongoing: true,
+        autoCancel: false,
       ),
     );
   }
@@ -91,7 +102,7 @@ class NotificationService {
     }
   }
 
-  Future<void> initializeMessageHandlers({
+  Future<void> initialize({
     required GlobalKey<NavigatorState> navigatorKey,
   }) async {
     if (_messageHandlersInitialized) {
@@ -101,7 +112,9 @@ class NotificationService {
 
     _navigatorKey = navigatorKey;
     _messageHandlersInitialized = true;
-    await createSosNotificationChannel();
+
+    await requestNotificationPermission();
+    await createSosEmergencyChannel();
     await _handleLocalNotificationLaunchDetails();
 
     FirebaseMessaging.onMessage.listen((message) {
@@ -109,7 +122,7 @@ class NotificationService {
       debugPrint('[NotificationService] payload data: ${message.data}');
       if (_isSosMessage(message)) {
         debugPrint('[NotificationService] foreground SOS received');
-        showSosLocalNotification(message);
+        showSosLocalNotification(Map<String, dynamic>.from(message.data));
         handleSosNotification(message);
       }
     });
@@ -136,6 +149,12 @@ class NotificationService {
     });
   }
 
+  Future<void> initializeMessageHandlers({
+    required GlobalKey<NavigatorState> navigatorKey,
+  }) {
+    return initialize(navigatorKey: navigatorKey);
+  }
+
   Future<void> initializeForFamilyUser() async {
     debugPrint('[NotificationService] initializeForFamilyUser() started');
 
@@ -153,7 +172,7 @@ class NotificationService {
       return;
     }
 
-    await createSosNotificationChannel();
+    await createSosEmergencyChannel();
     await requestNotificationPermission();
 
     final token = await _messaging.getToken();
@@ -258,7 +277,7 @@ class NotificationService {
     debugPrint('[NotificationService] Token refresh listener aktif');
   }
 
-  Future<void> createSosNotificationChannel() async {
+  Future<void> createSosEmergencyChannel() async {
     if (kIsWeb) {
       debugPrint(
         '[NotificationService] Web detected, skip Android notification channel',
@@ -269,6 +288,8 @@ class NotificationService {
     if (_localNotificationsInitialized) {
       return;
     }
+
+    debugPrint('Creating SOS emergency channel v4');
 
     const initializationSettingsAndroid = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
@@ -296,10 +317,11 @@ class NotificationService {
 
     _localNotificationsInitialized = true;
     _debugSosSoundChoice();
-    debugPrint(
-      '[NotificationService] Android SOS notification channel dibuat: '
-      '$sosEmergencyChannelId',
-    );
+    debugPrint('SOS channel created with sound and vibration');
+  }
+
+  Future<void> createSosNotificationChannel() {
+    return createSosEmergencyChannel();
   }
 
   Future<void> _handleLocalNotificationLaunchDetails() async {
@@ -319,10 +341,10 @@ class NotificationService {
     }
   }
 
-  Future<void> showSosLocalNotification(RemoteMessage message) async {
-    await createSosNotificationChannel();
-    final data = Map<String, dynamic>.from(message.data);
+  Future<void> showSosLocalNotification(Map<String, dynamic> data) async {
+    await createSosEmergencyChannel();
     await _showSosLocalNotificationFromData(data);
+    _startSosAlarmLoop(data);
   }
 
   static Future<void> showBackgroundSosLocalNotification(
@@ -330,11 +352,18 @@ class NotificationService {
   ) async {
     if (kIsWeb) return;
 
-    final data = Map<String, dynamic>.from(message.data);
+    await showBackgroundSosLocalNotificationFromData(
+      Map<String, dynamic>.from(message.data),
+    );
+  }
+
+  static Future<void> showBackgroundSosLocalNotificationFromData(
+    Map<String, dynamic> data,
+  ) async {
+    if (kIsWeb) return;
     if (data['type'] != 'sos') return;
 
-    debugPrint('[NotificationService] background message received');
-    debugPrint('[NotificationService] background payload data: $data');
+    debugPrint('[NotificationService] background SOS payload data: $data');
 
     final plugin = FlutterLocalNotificationsPlugin();
     const initializationSettingsAndroid = AndroidInitializationSettings(
@@ -347,30 +376,29 @@ class NotificationService {
 
     final androidChannel = _buildSosAndroidChannel();
 
+    debugPrint('Creating SOS emergency channel v4');
+
     await plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >()
         ?.createNotificationChannel(androidChannel);
     _debugSosSoundChoice();
-    debugPrint(
-      '[NotificationService] Android SOS notification channel dibuat: '
-      '$sosEmergencyChannelId',
-    );
+    debugPrint('SOS channel created with sound and vibration');
 
-    final title = _readStringFromMap(data, 'title') ?? 'SOS Darurat';
-    final body =
-        _readStringFromMap(data, 'body') ?? 'Pengguna membutuhkan bantuan';
+    final title = _sosNotificationTitle;
+    final body = _sosNotificationBody(data);
 
     await plugin.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      sosEmergencyNotificationId,
       title,
       body,
       _buildSosNotificationDetails(),
       payload: jsonEncode(data),
     );
 
-    debugPrint('[NotificationService] SOS local notification ditampilkan');
+    debugPrint('Showing SOS notification with sound and vibration');
+    debugPrint('SOS local notification shown');
   }
 
   Future<void> _showSosLocalNotificationFromData(
@@ -378,19 +406,20 @@ class NotificationService {
   ) async {
     if (kIsWeb) return;
 
-    final title = _readStringFromMap(data, 'title') ?? 'SOS Darurat';
-    final body =
-        _readStringFromMap(data, 'body') ?? 'Pengguna membutuhkan bantuan';
+    final title = _sosNotificationTitle;
+    final body = _sosNotificationBody(data);
+
+    debugPrint('Showing SOS notification with sound and vibration');
 
     await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      sosEmergencyNotificationId,
       title,
       body,
       _buildSosNotificationDetails(),
       payload: jsonEncode(data),
     );
 
-    debugPrint('[NotificationService] SOS local notification ditampilkan');
+    debugPrint('SOS local notification shown');
   }
 
   Future<void> handleSosNotification(RemoteMessage message) async {
@@ -487,6 +516,7 @@ class NotificationService {
       'sosData': data,
     };
 
+    debugPrint('Navigating to FamilyMonitoringScreen from SOS');
     debugPrint('[NotificationService] Navigate to family monitoring: $args');
 
     navigator.pushNamedAndRemoveUntil(
@@ -503,16 +533,107 @@ class NotificationService {
   }) {
     if (payload == null || payload.isEmpty) return;
 
+    debugPrint('SOS notification clicked');
+
+    final data = parseNotificationPayload(payload);
+    if (data == null || data['type'] != 'sos') return;
+
+    _scheduleSosNavigationFromData(data, delay: delay);
+  }
+
+  void _startSosAlarmLoop(Map<String, dynamic> data) {
+    if (kIsWeb) return;
+
+    _activeSosData = Map<String, dynamic>.from(data);
+    _listenActiveSosStatus(data);
+
+    if (_sosAlarmTimer?.isActive == true) {
+      debugPrint('[NotificationService] SOS alarm loop already active');
+      return;
+    }
+
+    debugPrint('[NotificationService] SOS alarm loop started');
+    _sosAlarmTimer = Timer.periodic(sosAlarmRepeatInterval, (_) async {
+      final latestData = _activeSosData;
+      if (latestData == null || latestData['type'] != 'sos') {
+        stopSosAlarmLoop();
+        return;
+      }
+
+      debugPrint('[NotificationService] SOS alarm loop cycle');
+      await _showSosLocalNotificationFromData(latestData);
+    });
+  }
+
+  void stopSosAlarmLoop({bool cancelNotification = true}) {
+    final hadActiveAlarm =
+        _sosAlarmTimer != null ||
+        _activeSosData != null ||
+        _activeSosStatusSubscription != null;
+
+    _sosAlarmTimer?.cancel();
+    _sosAlarmTimer = null;
+    _activeSosData = null;
+    _activeSosStatusSubscription?.cancel();
+    _activeSosStatusSubscription = null;
+
+    if (cancelNotification && !kIsWeb) {
+      _localNotifications.cancel(sosEmergencyNotificationId);
+    }
+
+    if (hadActiveAlarm) {
+      debugPrint('[NotificationService] SOS alarm loop stopped');
+    }
+  }
+
+  void _listenActiveSosStatus(Map<String, dynamic> data) {
+    final sosId =
+        _readStringFromMap(data, 'sosId') ??
+        _readStringFromMap(data, 'alertId') ??
+        _readStringFromMap(data, 'id');
+    if (sosId == null) {
+      debugPrint(
+        '[NotificationService] SOS id missing, skip resolved listener',
+      );
+      return;
+    }
+
+    _activeSosStatusSubscription?.cancel();
+    _activeSosStatusSubscription = _firestore
+        .collection('sos_alerts')
+        .doc(sosId)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            final status = snapshot.data()?['status']?.toString();
+            debugPrint('[NotificationService] active SOS status: $status');
+            if (status == 'resolved') {
+              stopSosAlarmLoop();
+            }
+          },
+          onError: (Object error) {
+            debugPrint(
+              '[NotificationService] SOS status listener failed: $error',
+            );
+          },
+        );
+  }
+
+  void handleSosNotificationTap(String payload) {
+    _handleLocalNotificationPayload(payload);
+  }
+
+  Map<String, dynamic>? parseNotificationPayload(String payload) {
     try {
       final decoded = jsonDecode(payload);
-      if (decoded is! Map) return;
+      if (decoded is! Map) return null;
 
       final data = Map<String, dynamic>.from(decoded);
-      if (data['type'] != 'sos') return;
-
-      _scheduleSosNavigationFromData(data, delay: delay);
+      debugPrint('SOS payload parsed');
+      return data;
     } catch (e) {
       debugPrint('[NotificationService] local payload decode failed: $e');
+      return null;
     }
   }
 
@@ -548,6 +669,13 @@ class NotificationService {
     if (value == null) return null;
     final text = value.toString().trim();
     return text.isEmpty ? null : text;
+  }
+
+  static String get _sosNotificationTitle => '🚨 SOS Darurat';
+
+  static String _sosNotificationBody(Map<String, dynamic> data) {
+    final userName = _readStringFromMap(data, 'userName') ?? 'Pengguna';
+    return '$userName membutuhkan bantuan segera';
   }
 
   String get _platformName {

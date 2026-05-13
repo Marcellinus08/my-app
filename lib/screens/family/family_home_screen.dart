@@ -310,6 +310,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       }
 
       debugPrint('[FamilyHome] SOS resolved');
+      NotificationService.instance.stopSosAlarmLoop();
       if (!mounted) return;
       setState(() {
         _activeSosDoc = null;
