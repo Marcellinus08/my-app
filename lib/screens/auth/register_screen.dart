@@ -29,8 +29,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   late TextEditingController _userPasswordController;
   late TextEditingController _userNameController;
   late TextEditingController _userPhoneController;
-  late TextEditingController _familyNameController;
-  late TextEditingController _familyPhoneController;
 
   // Controllers - Keluarga
   late TextEditingController _familyEmailController;
@@ -106,8 +104,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _userPasswordController = TextEditingController();
     _userNameController = TextEditingController();
     _userPhoneController = TextEditingController();
-    _familyNameController = TextEditingController();
-    _familyPhoneController = TextEditingController();
 
     _familyEmailController = TextEditingController();
     _familyPasswordController = TextEditingController();
@@ -122,8 +118,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _userPasswordController.dispose();
     _userNameController.dispose();
     _userPhoneController.dispose();
-    _familyNameController.dispose();
-    _familyPhoneController.dispose();
 
     _familyEmailController.dispose();
     _familyPasswordController.dispose();
@@ -275,19 +269,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       await _pairingService.savePairingCode(user.uid, pairingCode);
       print('✅ Pairing code saved');
 
-      print('\n[UI] Saving family contact information...');
-      final familyContact = FamilyContact(
-        name: _familyNameController.text.trim(),
-        phoneNumber: _familyPhoneController.text.trim(),
-      );
-
+      print('\n[UI] Saving Pengguna data...');
       await _userService.saveTunaNetraUser(
         uid: user.uid,
         email: email,
         name: name,
         phoneNumber: phone,
         pairingCode: pairingCode,
-        familyContacts: [familyContact],
+        familyContacts: [],
       );
       print('✅ Family contact saved');
 
@@ -411,11 +400,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       final tunaNetraUid = verifiedPairingInfo['uid'] as String;
 
       print('🔄 [Keluarga] Saving Keluarga data...');
+      final familyName = _familyNameController2.text.trim();
+      final familyPhone = _familyPhoneController2.text.trim();
+      
       await _userService.saveFamilyUser(
         uid: user.uid,
         email: email,
-        name: _familyNameController2.text.trim(),
-        phoneNumber: _familyPhoneController2.text.trim(),
+        name: familyName,
+        phoneNumber: familyPhone,
         pairingCode: pairingCode,
         pairedUserUid: tunaNetraUid,
         isEmailVerified: true,
@@ -426,6 +418,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         user.uid,
         tunaNetraUid,
         pairingCode,
+        fallbackName: familyName,
+        fallbackEmail: email,
+        fallbackPhone: familyPhone,
       );
 
       print('✅ Registration complete!');
@@ -832,26 +827,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Family Contact Name
-          ModernTextField(
-            controller: _familyNameController,
-            label: 'Nama Kontak Keluarga',
-            icon: Icons.family_restroom_rounded,
-            validator: _validateName,
-            semanticLabel: 'Nama kontak keluarga untuk monitoring',
-          ),
-          const SizedBox(height: 16),
-
-          // Family Contact Phone
-          ModernTextField(
-            controller: _familyPhoneController,
-            label: 'Nomor HP Keluarga',
-            icon: Icons.phone_rounded,
-            validator: _validatePhone,
-            semanticLabel: 'Nomor HP kontak keluarga',
-          ),
-          const SizedBox(height: 28),
-
           // DAFTAR Button
           _isLoading
               ? Container(
@@ -959,48 +934,57 @@ class _RegisterScreenState extends State<RegisterScreen> {
             controller: _familyPasswordController,
             label: 'Password',
             icon: Icons.lock_rounded,
-            validator: _validatePassword,
             isPassword: true,
-            semanticLabel: 'Password untuk login keluarga',
+            validator: (value) {
+              if (value == null || value.isEmpty)
+                return 'Password harus diisi';
+              if (value.length < 8)
+                return 'Password minimal 8 karakter';
+              return null;
+            },
+            semanticLabel: 'Password untuk akun keluarga',
           ),
           const SizedBox(height: 16),
 
-          // Name
+          // Nama Lengkap
           ModernTextField(
             controller: _familyNameController2,
             label: 'Nama Lengkap',
             icon: Icons.person_rounded,
-            validator: _validateName,
-            semanticLabel: 'Nama lengkap Anda',
+            validator: (value) {
+              if (value == null || value.isEmpty)
+                return 'Nama harus diisi';
+              return null;
+            },
+            semanticLabel: 'Nama lengkap keluarga',
           ),
           const SizedBox(height: 16),
 
-          // Phone
+          // Nomor HP
           ModernTextField(
             controller: _familyPhoneController2,
             label: 'Nomor HP',
             icon: Icons.phone_rounded,
-            validator: _validatePhone,
-            semanticLabel: 'Nomor HP Anda',
+            keyboardType: TextInputType.phone,
+            validator: (value) {
+              if (value == null || value.isEmpty)
+                return 'Nomor HP harus diisi';
+              if (!RegExp(r'^(\+62|0)[0-9]{9,12}$').hasMatch(value)) {
+                return 'Format nomor HP tidak valid';
+              }
+              return null;
+            },
+            semanticLabel: 'Nomor HP keluarga',
           ),
           const SizedBox(height: 28),
-
-          // DAFTAR Button
           _isLoading
-              ? Container(
-                  height: 54,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.primaryGradient,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Center(
-                    child: SizedBox(
-                      height: 24,
-                      width: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
+              ? const Center(
+                  child: SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
                   ),
                 )

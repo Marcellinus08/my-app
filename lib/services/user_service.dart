@@ -44,6 +44,11 @@ class UserService {
 
       print('\n[USER] SUBSTEP 2: Converting user to map (toMap)');
       final userMap = user.toMap();
+      // Jika tidak ada family contacts, jangan sertakan field tersebut di Firestore
+      if (familyContacts.isEmpty) {
+        userMap.remove('familyContacts');
+        print('   ➖ Omitting empty familyContacts from Firestore write');
+      }
       print('   ✅ User converted to Firestore-compatible map');
       print('   Data keys: ${userMap.keys.join(', ')}');
 
@@ -598,6 +603,171 @@ class UserService {
       print('         2) Security rules allow writes');
       print('         3) Network connection is stable');
       return false;
+    }
+  }
+
+  // ========== FAMILY DEVICE TRACKING ==========
+  /// Register device ketika family user login
+  /// Disimpan di subcollection: users/{tunanetraUid}/connected_family_devices/{deviceId}
+  Future<String> registerFamilyDevice({
+    required String tunanetraUid,
+    required String familyUid,
+    required String familyName,
+    required String deviceId,
+    String? deviceName,
+    required String deviceType, // 'android', 'ios', 'web'
+  }) async {
+    try {
+      print('\n╔════════════════════════════════════════════════════════╗');
+      print('║ [USER SERVICE] registerFamilyDevice()                 ║');
+      print('╚════════════════════════════════════════════════════════╝');
+
+      final now = DateTime.now();
+      final device = FamilyDevice(
+        deviceId: deviceId,
+        familyUid: familyUid,
+        familyName: familyName,
+        deviceName: deviceName,
+        deviceType: deviceType,
+        firstConnectedAt: now,
+        lastSeen: now,
+      );
+
+      print('📱 Registering device:');
+      print('   Tunanetra UID: $tunanetraUid');
+      print('   Family UID: $familyUid');
+      print('   Device ID: $deviceId');
+      print('   Device Type: $deviceType');
+      print('   Device Name: ${deviceName ?? "Not set"}');
+
+      // Simpan ke subcollection connected_family_devices
+      await _firestore
+          .collection('users')
+          .doc(tunanetraUid)
+          .collection('connected_family_devices')
+          .doc(deviceId)
+          .set(device.toMap());
+
+      print('✅ Device registered successfully');
+      return deviceId;
+    } catch (e) {
+      print('❌ Error registering device: $e');
+      throw Exception('Gagal mendaftar device: $e');
+    }
+  }
+
+  /// Update last seen timestamp & status device
+  Future<void> updateDeviceLastSeen(
+    String tunanetraUid,
+    String deviceId,
+  ) async {
+    try {
+      final updateData = <String, dynamic>{
+        'lastSeen': DateTime.now().toIso8601String(),
+      };
+
+      await _firestore
+          .collection('users')
+          .doc(tunanetraUid)
+          .collection('connected_family_devices')
+          .doc(deviceId)
+          .update(updateData);
+
+      print('✅ Device last seen updated: $deviceId');
+    } catch (e) {
+      print('❌ Error updating device last seen: $e');
+      // Don't throw - ini background task
+    }
+  }
+
+  /// Get semua connected family devices untuk tunanetra user
+  Future<List<FamilyDevice>> getConnectedFamilyDevices(
+    String tunanetraUid,
+  ) async {
+    try {
+      print('\n╔════════════════════════════════════════════════════════╗');
+      print('║ [USER SERVICE] getConnectedFamilyDevices()            ║');
+      print('╚════════════════════════════════════════════════════════╝');
+
+      print('🔍 Fetching connected devices for: $tunanetraUid');
+
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(tunanetraUid)
+          .collection('connected_family_devices')
+          .orderBy('lastSeen', descending: true)
+          .get();
+
+      print('📱 Found ${snapshot.docs.length} connected device(s)');
+
+      final devices = snapshot.docs.map((doc) {
+        final device = FamilyDevice.fromMap(doc.data());
+        print('   - ${device.deviceName ?? "Unknown"} (${device.deviceType}) | Last seen: ${device.lastSeen.toIso8601String()}');
+        return device;
+      }).toList();
+
+      return devices;
+    } catch (e) {
+      print('❌ Error fetching connected devices: $e');
+      return [];
+    }
+  }
+
+  /// Get stream untuk monitor devices (real-time)
+  Stream<List<FamilyDevice>> getConnectedFamilyDevicesStream(
+    String tunanetraUid,
+  ) {
+    return _firestore
+        .collection('users')
+        .doc(tunanetraUid)
+        .collection('connected_family_devices')
+        .orderBy('lastSeen', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => FamilyDevice.fromMap(doc.data()))
+            .toList());
+  }
+
+  /// Disconnect/remove device
+  Future<void> removeConnectedDevice(
+    String tunanetraUid,
+    String deviceId,
+  ) async {
+    try {
+      print('🗑️  Removing device: $deviceId');
+
+      await _firestore
+          .collection('users')
+          .doc(tunanetraUid)
+          .collection('connected_family_devices')
+          .doc(deviceId)
+          .delete();
+
+      print('✅ Device removed: $deviceId');
+    } catch (e) {
+      print('❌ Error removing device: $e');
+      throw Exception('Gagal menghapus device: $e');
+    }
+  }
+
+  /// Update device name
+  Future<void> updateDeviceName(
+    String tunanetraUid,
+    String deviceId,
+    String newName,
+  ) async {
+    try {
+      await _firestore
+          .collection('users')
+          .doc(tunanetraUid)
+          .collection('connected_family_devices')
+          .doc(deviceId)
+          .update({'deviceName': newName});
+
+      print('✅ Device name updated: $newName');
+    } catch (e) {
+      print('❌ Error updating device name: $e');
+      throw Exception('Gagal mengubah nama device: $e');
     }
   }
 }

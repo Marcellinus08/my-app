@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import 'tunanetra_profile_screen.dart';
-import 'emergency_contacts_screen.dart';
+import 'connected_family_accounts_screen.dart';
 
 class TunaNetraSettingsScreen extends StatefulWidget {
   const TunaNetraSettingsScreen({super.key});
@@ -333,88 +333,6 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                     ),
                     const SizedBox(height: 20),
                     
-                    // Emergency Contacts
-                    _buildSectionTitle('Kontak Darurat'),
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.white,
-                            Colors.white.withOpacity(0.95),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.error.withOpacity(0.08),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                        border: Border.all(
-                          color: AppColors.error.withOpacity(0.1),
-                          width: 1,
-                        ),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.all(20),
-                        leading: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.error,
-                                AppColors.error.withOpacity(0.8),
-                              ],
-                            ),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.phone_rounded,
-                            size: 28,
-                            color: Colors.white,
-                          ),
-                        ),
-                        title: Text(
-                          'Kelola Kontak Darurat',
-                          style: AppTextStyles.bodyLarge.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(
-                            'Tambah/Edit kontak darurat',
-                            style: AppTextStyles.bodyMedium.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ),
-                        trailing: ShaderMask(
-                          shaderCallback: (bounds) => LinearGradient(
-                            colors: [
-                              AppColors.error,
-                              AppColors.error.withOpacity(0.7),
-                            ],
-                          ).createShader(bounds),
-                          child: const Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            size: 20,
-                            color: Colors.white,
-                          ),
-                        ),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const EmergencyContactsScreen(),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    
                     // Account
                     _buildSectionTitle('Akun'),
                     Container(
@@ -473,6 +391,54 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => const TunaNetraProfileScreen(),
+                                ),
+                              );
+                            },
+                          ),
+                          Divider(
+                            height: 1,
+                            indent: 20,
+                            endIndent: 20,
+                            color: AppColors.textSecondary.withOpacity(0.1),
+                          ),
+                          ListTile(
+                            contentPadding: const EdgeInsets.all(20),
+                            leading: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [
+                                    AppColors.primary,
+                                    AppColors.primary.withOpacity(0.8),
+                                  ],
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.people_rounded,
+                                size: 28,
+                                color: Colors.white,
+                              ),
+                            ),
+                            title: Text(
+                              'Akun Keluarga Terhubung',
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            trailing: ShaderMask(
+                              shaderCallback: (bounds) => AppColors.primaryGradient.createShader(bounds),
+                              child: const Icon(
+                                Icons.arrow_forward_ios_rounded,
+                                size: 20,
+                                color: Colors.white,
+                              ),
+                            ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const ConnectedFamilyAccountsScreen(),
                                 ),
                               );
                             },

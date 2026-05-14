@@ -174,7 +174,22 @@ class EmergencySosScreen extends StatelessWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Koordinat disalin')));
+    ).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Koordinat berhasil disalin',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        elevation: 2,
+      ),
+    );
   }
 
   Future<void> _silenceAlarm(BuildContext context) async {
@@ -187,7 +202,22 @@ class EmergencySosScreen extends StatelessWidget {
     if (!context.mounted) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('SOS disenyapkan')));
+    ).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'SOS berhasil dimatikan',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        backgroundColor: Colors.blue,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        elevation: 2,
+      ),
+    );
     await Future<void>.delayed(const Duration(milliseconds: 250));
     SystemNavigator.pop();
   }
@@ -221,7 +251,20 @@ class EmergencySosScreen extends StatelessWidget {
     if (resolvedIds.isEmpty) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('SOS aktif tidak ditemukan')),
+        const SnackBar(
+          content: Text(
+            'Tidak ada SOS aktif yang ditemukan',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          elevation: 2,
+        ),
       );
       return;
     }
@@ -231,7 +274,20 @@ class EmergencySosScreen extends StatelessWidget {
 
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('SOS ditandai sudah ditangani')),
+      const SnackBar(
+        content: Text(
+          'SOS ditandai sebagai ditangani',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        backgroundColor: Colors.green,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        elevation: 2,
+      ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 350));
     SystemNavigator.pop();

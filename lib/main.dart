@@ -20,6 +20,7 @@ import 'screens/family/family_history_screen.dart';
 import 'screens/family/family_members_list_screen.dart';
 import 'screens/family/family_member_detail_screen.dart';
 import 'screens/family/emergency_sos_screen.dart';
+import 'screens/family/family_manage_places_screen.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -236,6 +237,8 @@ class MyApp extends StatelessWidget {
                   as Map<String, dynamic>?;
           return EmergencySosScreen(sosData: args ?? const {});
         },
+        AppRoutes.familyManagePlaces: (context) =>
+            const FamilyManagePlacesScreen(),
         // TODO: Add familySettings
       },
     );

@@ -10,6 +10,7 @@ class PlaceModel {
   final String description;
   final String category;
   final String address;
+  final String visibility;
 
   PlaceModel({
     required this.id,
@@ -19,21 +20,36 @@ class PlaceModel {
     required this.description,
     required this.category,
     required this.address,
+    this.visibility = 'public',
   });
 
   /// Convert Firestore document to PlaceModel
   factory PlaceModel.fromFirestore(Map<String, dynamic> data, String docId) {
-    // Handle GeoPoint from Firestore
-    GeoPoint geoPoint = data['location'] as GeoPoint;
-    
+    final location = data['location'];
+    final latValue = data['lat'];
+    final lngValue = data['lng'];
+
+    double latitude;
+    double longitude;
+    if (location is GeoPoint) {
+      latitude = location.latitude;
+      longitude = location.longitude;
+    } else if (latValue is num && lngValue is num) {
+      latitude = latValue.toDouble();
+      longitude = lngValue.toDouble();
+    } else {
+      throw FormatException('Koordinat tempat tidak valid: $docId');
+    }
+
     return PlaceModel(
       id: docId,
       name: data['name'] ?? 'Unknown Place',
-      latitude: geoPoint.latitude,
-      longitude: geoPoint.longitude,
-      description: data['description'] ?? '',
+      latitude: latitude,
+      longitude: longitude,
+      description: data['description'] ?? data['address'] ?? '',
       category: data['category'] ?? 'other',
       address: data['address'] ?? '',
+      visibility: data['visibility']?.toString() ?? 'public',
     );
   }
 
@@ -45,15 +61,19 @@ class PlaceModel {
       'description': description,
       'category': category,
       'address': address,
+      'visibility': visibility,
     };
   }
+
+  bool get isPrivate => visibility == 'private';
 
   /// Calculate distance from current position (in kilometers)
   double getDistanceFromPosition(double userLat, double userLng) {
     const double earthRadius = 6371; // Radius of the earth in km
     final double dLat = _degreesToRadians(latitude - userLat);
     final double dLng = _degreesToRadians(longitude - userLng);
-    final double a = (math.sin(dLat / 2) * math.sin(dLat / 2)) +
+    final double a =
+        (math.sin(dLat / 2) * math.sin(dLat / 2)) +
         (math.cos(_degreesToRadians(userLat)) *
             math.cos(_degreesToRadians(latitude)) *
             math.sin(dLng / 2) *

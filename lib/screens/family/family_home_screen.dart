@@ -12,6 +12,7 @@ import '../../services/notification_service.dart';
 import '../../services/user_service.dart';
 import '../../utils/constants.dart';
 import 'family_history_screen.dart';
+import 'family_manage_places_screen.dart';
 import 'family_settings_screen.dart';
 
 class FamilyHomeScreen extends StatefulWidget {
@@ -265,8 +266,18 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   void _onAddUserPressed() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Fitur tambah pengguna akan datang'),
-        backgroundColor: Color(0xFFEC4899),
+        content: Text(
+          'Fitur ini sedang dikembangkan',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        backgroundColor: Colors.blue,
+        behavior: SnackBarBehavior.floating,
+        margin: EdgeInsets.all(16),
+        elevation: 2,
       ),
     );
   }
@@ -281,8 +292,18 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     if (userId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Lokasi SOS belum tersedia'),
+          content: Text(
+            'Lokasi SOS belum tersedia',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          elevation: 2,
         ),
       );
       return;
@@ -318,17 +339,37 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('SOS ditandai sudah ditangani'),
+          content: Text(
+            'SOS ditandai sebagai ditangani',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          elevation: 2,
         ),
       );
     } catch (e) {
       debugPrint('[FamilyHome] Resolve SOS failed: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal menandai SOS: $e'),
-          backgroundColor: AppColors.error,
+        const SnackBar(
+          content: Text(
+            'Gagal menandai SOS',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          backgroundColor: Color(0xFFDC2626),
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          elevation: 2,
         ),
       );
     }
@@ -566,15 +607,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [const Color(0xFFEC4899), const Color(0xFFDB2777)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  gradient: AppColors.primaryGradient,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFFEC4899).withOpacity(0.3),
+                      color: AppColors.primary.withOpacity(0.3),
                       blurRadius: 15,
                       offset: const Offset(0, 8),
                     ),
@@ -1171,55 +1208,65 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                   // Action Button
                   Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (ctx) => FamilyHistoryScreen(
-                                targetUid: user['uid'],
-                                familyId: _resolvedFamilyId,
-                              ),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            gradient: AppColors.primaryGradient,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.2),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.map_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Lihat Detail Lokasi',
-                                style: AppTextStyles.bodyMedium.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
+                    child: Row(
+                      children: [
+                        _buildManagePlacesButton(user),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (ctx) => FamilyHistoryScreen(
+                                      targetUid: user['uid'],
+                                      familyId: _resolvedFamilyId,
+                                    ),
+                                  ),
+                                );
+                              },
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: AppColors.primaryGradient,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.primary.withOpacity(0.2),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.map_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Lihat Detail Lokasi',
+                                      style: AppTextStyles.bodyMedium.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
                   ),
                 ],
@@ -1227,6 +1274,49 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           );
         }),
+      ),
+    );
+  }
+
+  Widget _buildManagePlacesButton(Map<String, dynamic> user) {
+    return Tooltip(
+      message: 'Kelola tempat',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => FamilyManagePlacesScreen(
+                  ownerUid: user['uid'] as String?,
+                  ownerName: user['name'] as String?,
+                ),
+              ),
+            );
+          },
+          child: Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.18),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: const Icon(
+              Icons.add_location_alt_rounded,
+              color: Colors.white,
+              size: 24,
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/place_model.dart';
 
 /// Service untuk mengelola data tempat/destinasi dari Firestore
@@ -12,31 +13,96 @@ class PlacesService {
   PlacesService._internal();
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final String _collectionName = 'places';
 
-  /// Get all places
+  /// Get public admin places and private places owned by current tuna netra user.
   Future<List<PlaceModel>> getAllPlaces() async {
     try {
-      print('[PLACES] Fetching all places...');
-      final QuerySnapshot snapshot = await _db.collection(_collectionName).get();
+      final currentUid = _auth.currentUser?.uid;
+      print(
+        '[PLACES] Fetching public places and private places for $currentUid',
+      );
+      final places = <PlaceModel>[];
+      final seenIds = <String>{};
+      final publicSnapshot = await _db
+          .collection(_collectionName)
+          .where('visibility', isEqualTo: 'public')
+          .get();
 
-      if (snapshot.docs.isEmpty) {
-        print('[PLACES] No places found in database');
-        return [];
+      _addPlacesFromSnapshot(publicSnapshot, places, seenIds);
+
+      try {
+        final legacyPublicSnapshot = await _db
+            .collection(_collectionName)
+            .where('visibility', isNull: true)
+            .get();
+        _addPlacesFromSnapshot(legacyPublicSnapshot, places, seenIds);
+      } catch (e) {
+        print('[PLACES] Legacy public places query skipped: $e');
       }
 
-      final places = snapshot.docs
-          .map((doc) => PlaceModel.fromFirestore(
-                doc.data() as Map<String, dynamic>,
-                doc.id,
-              ))
-          .toList();
+      if (places.isEmpty) {
+        try {
+          final allSnapshot = await _db.collection(_collectionName).get();
+          _addPlacesFromSnapshot(
+            allSnapshot,
+            places,
+            seenIds,
+            currentUid: currentUid,
+          );
+        } catch (e) {
+          print('[PLACES] All places fallback query skipped: $e');
+        }
+      }
+
+      if (currentUid != null) {
+        final privateSnapshot = await _db
+            .collection(_collectionName)
+            .where('visibility', isEqualTo: 'private')
+            .where('ownerUid', isEqualTo: currentUid)
+            .get();
+
+        _addPlacesFromSnapshot(privateSnapshot, places, seenIds);
+      }
+
+      places.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
 
       print('[PLACES] ✅ Fetched ${places.length} places');
       return places;
     } catch (e) {
       print('[PLACES] ❌ Error fetching all places: $e');
       rethrow;
+    }
+  }
+
+  void _addPlacesFromSnapshot(
+    QuerySnapshot snapshot,
+    List<PlaceModel> places,
+    Set<String> seenIds, {
+    String? currentUid,
+  }) {
+    for (final doc in snapshot.docs) {
+      if (!seenIds.add(doc.id)) continue;
+
+      final data = doc.data() as Map<String, dynamic>;
+      if (currentUid != null) {
+        final visibility = data['visibility']?.toString();
+        final ownerUid = data['ownerUid']?.toString();
+        final isPublicPlace = visibility == null || visibility == 'public';
+        final isMyPrivatePlace =
+            visibility == 'private' && ownerUid == currentUid;
+
+        if (!isPublicPlace && !isMyPrivatePlace) continue;
+      }
+
+      try {
+        places.add(PlaceModel.fromFirestore(data, doc.id));
+      } catch (e) {
+        print('[PLACES] Skipping invalid place ${doc.id}: $e');
+      }
     }
   }
 
@@ -50,10 +116,12 @@ class PlacesService {
           .get();
 
       final places = snapshot.docs
-          .map((doc) => PlaceModel.fromFirestore(
-                doc.data() as Map<String, dynamic>,
-                doc.id,
-              ))
+          .map(
+            (doc) => PlaceModel.fromFirestore(
+              doc.data() as Map<String, dynamic>,
+              doc.id,
+            ),
+          )
           .toList();
 
       print('[PLACES] ✅ Found ${places.length} places in category: $category');
@@ -68,8 +136,10 @@ class PlacesService {
   Future<PlaceModel?> getPlaceById(String placeId) async {
     try {
       print('[PLACES] Fetching place by ID: $placeId');
-      final DocumentSnapshot doc =
-          await _db.collection(_collectionName).doc(placeId).get();
+      final DocumentSnapshot doc = await _db
+          .collection(_collectionName)
+          .doc(placeId)
+          .get();
 
       if (!doc.exists) {
         print('[PLACES] ⚠️ Place not found: $placeId');
@@ -100,10 +170,12 @@ class PlacesService {
           .get();
 
       final places = snapshot.docs
-          .map((doc) => PlaceModel.fromFirestore(
-                doc.data() as Map<String, dynamic>,
-                doc.id,
-              ))
+          .map(
+            (doc) => PlaceModel.fromFirestore(
+              doc.data() as Map<String, dynamic>,
+              doc.id,
+            ),
+          )
           .toList();
 
       print('[PLACES] ✅ Found ${places.length} results for: $query');
@@ -125,10 +197,12 @@ class PlacesService {
           .get();
 
       final places = snapshot.docs
-          .map((doc) => PlaceModel.fromFirestore(
-                doc.data() as Map<String, dynamic>,
-                doc.id,
-              ))
+          .map(
+            (doc) => PlaceModel.fromFirestore(
+              doc.data() as Map<String, dynamic>,
+              doc.id,
+            ),
+          )
           .toList();
 
       print('[PLACES] ✅ Found ${places.length} top rated places');
@@ -185,8 +259,9 @@ class PlacesService {
   Future<List<String>> getAvailableCategories() async {
     try {
       print('[PLACES] Fetching available categories...');
-      final QuerySnapshot snapshot =
-          await _db.collection(_collectionName).get();
+      final QuerySnapshot snapshot = await _db
+          .collection(_collectionName)
+          .get();
 
       final categories = <String>{};
       for (var doc in snapshot.docs) {

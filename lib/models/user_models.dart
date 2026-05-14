@@ -153,3 +153,59 @@ class FamilyUser {
     );
   }
 }
+
+/// Model untuk Device yang digunakan Keluarga untuk monitoring
+class FamilyDevice {
+  final String deviceId;
+  final String familyUid;
+  final String familyName;
+  final String? deviceName;
+  final String deviceType; // 'android', 'ios', 'web'
+  final DateTime firstConnectedAt;
+  final DateTime lastSeen;
+
+  FamilyDevice({
+    required this.deviceId,
+    required this.familyUid,
+    required this.familyName,
+    this.deviceName,
+    required this.deviceType,
+    required this.firstConnectedAt,
+    required this.lastSeen,
+  });
+
+  /// Convert to Firestore map
+  Map<String, dynamic> toMap() {
+    return {
+      'deviceId': deviceId,
+      'familyUid': familyUid,
+      'familyName': familyName,
+      'deviceName': deviceName ?? '',
+      'deviceType': deviceType,
+      'firstConnectedAt': firstConnectedAt.toIso8601String(),
+      'lastSeen': lastSeen.toIso8601String(),
+    };
+  }
+
+  /// Create from Firestore map
+  factory FamilyDevice.fromMap(Map<String, dynamic> map) {
+    DateTime parseDateTime(dynamic value) {
+      if (value is String) {
+        return DateTime.parse(value);
+      } else if (value is DateTime) {
+        return value;
+      }
+      return DateTime.now();
+    }
+
+    return FamilyDevice(
+      deviceId: map['deviceId'] ?? '',
+      familyUid: map['familyUid'] ?? '',
+      familyName: map['familyName'] ?? 'Unknown',
+      deviceName: (map['deviceName'] as String?)?.isEmpty ?? true ? null : map['deviceName'],
+      deviceType: map['deviceType'] ?? 'unknown',
+      firstConnectedAt: parseDateTime(map['firstConnectedAt']),
+      lastSeen: parseDateTime(map['lastSeen']),
+    );
+  }
+}

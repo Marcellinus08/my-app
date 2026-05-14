@@ -324,7 +324,6 @@ class _NavigationScreenState extends State<NavigationScreen>
         accuracy: position.accuracy,
       ),
     );
-
   }
 
   void _applyPredictedMotionStep() {
@@ -393,7 +392,6 @@ class _NavigationScreenState extends State<NavigationScreen>
         accuracy: _lastKnownGpsPosition?.accuracy ?? 0.0,
       ),
     );
-
   }
 
   int _findClosestRoutePointIndex(
@@ -777,25 +775,25 @@ class _NavigationScreenState extends State<NavigationScreen>
       _liveTrackingService.startNavigationTracking(
         destinationName: _selectedPlace?.name,
         onPosition: (Position position) {
-            print(
-              '[NAVIGATION] 📍 Navigation position: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy.toStringAsFixed(1)}m)',
-            );
+          print(
+            '[NAVIGATION] 📍 Navigation position: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy.toStringAsFixed(1)}m)',
+          );
 
-            if (mounted) {
-              _onGpsPositionUpdate(position);
+          if (mounted) {
+            _onGpsPositionUpdate(position);
 
-              // Load route on first GPS location to ensure accuracy
-              if (!hasLoadedRouteOnceFromStreaming && _selectedPlace != null) {
-                print(
-                  '[NAVIGATION] Loading route with real GPS location from streaming...',
-                );
-                _loadRoute();
-                hasLoadedRouteOnceFromStreaming = true;
-              }
+            // Load route on first GPS location to ensure accuracy
+            if (!hasLoadedRouteOnceFromStreaming && _selectedPlace != null) {
+              print(
+                '[NAVIGATION] Loading route with real GPS location from streaming...',
+              );
+              _loadRoute();
+              hasLoadedRouteOnceFromStreaming = true;
             }
-          },
+          }
+        },
         onError: (e) {
-            print('[NAVIGATION] ❌ Location stream error during navigation: $e');
+          print('[NAVIGATION] ❌ Location stream error during navigation: $e');
         },
       ),
     );
@@ -898,10 +896,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     );
   }
 
-  Future<void> _addTripEvent({
-    required String type,
-    LatLng? location,
-  }) async {
+  Future<void> _addTripEvent({required String type, LatLng? location}) async {
     final tripId = _currentTripId;
     if (tripId == null) return;
 
@@ -2036,6 +2031,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                         itemCount: _places.length,
                         itemBuilder: (context, index) {
                           final place = _places[index];
+                          final isPrivatePlace = place.isPrivate;
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 12),
                             child: Material(
@@ -2064,21 +2060,32 @@ class _NavigationScreenState extends State<NavigationScreen>
                                   padding: const EdgeInsets.all(16),
                                   decoration: BoxDecoration(
                                     gradient: LinearGradient(
-                                      colors: [
-                                        Colors.white,
-                                        Colors.white.withOpacity(0.95),
-                                      ],
+                                      colors: isPrivatePlace
+                                          ? [
+                                              AppColors.primary,
+                                              const Color(0xFF1565C0),
+                                            ]
+                                          : [
+                                              Colors.white,
+                                              Colors.white.withOpacity(0.95),
+                                            ],
                                     ),
                                     borderRadius: BorderRadius.circular(16),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.08),
+                                        color: isPrivatePlace
+                                            ? AppColors.primary.withOpacity(
+                                                0.24,
+                                              )
+                                            : Colors.black.withOpacity(0.08),
                                         blurRadius: 15,
                                         offset: const Offset(0, 8),
                                       ),
                                     ],
                                     border: Border.all(
-                                      color: AppColors.primary.withOpacity(0.1),
+                                      color: isPrivatePlace
+                                          ? Colors.white.withOpacity(0.28)
+                                          : AppColors.primary.withOpacity(0.1),
                                       width: 1,
                                     ),
                                   ),
@@ -2088,14 +2095,27 @@ class _NavigationScreenState extends State<NavigationScreen>
                                       Container(
                                         padding: const EdgeInsets.all(14),
                                         decoration: BoxDecoration(
-                                          gradient: AppColors.primaryGradient,
+                                          gradient: isPrivatePlace
+                                              ? LinearGradient(
+                                                  colors: [
+                                                    Colors.white,
+                                                    Colors.white.withOpacity(
+                                                      0.92,
+                                                    ),
+                                                  ],
+                                                )
+                                              : AppColors.primaryGradient,
                                           borderRadius: BorderRadius.circular(
                                             14,
                                           ),
                                           boxShadow: [
                                             BoxShadow(
-                                              color: AppColors.primary
-                                                  .withOpacity(0.3),
+                                              color: isPrivatePlace
+                                                  ? Colors.black.withOpacity(
+                                                      0.12,
+                                                    )
+                                                  : AppColors.primary
+                                                        .withOpacity(0.3),
                                               blurRadius: 12,
                                               offset: const Offset(0, 6),
                                             ),
@@ -2103,7 +2123,9 @@ class _NavigationScreenState extends State<NavigationScreen>
                                         ),
                                         child: Icon(
                                           _getCategoryIcon(place.category),
-                                          color: Colors.white,
+                                          color: isPrivatePlace
+                                              ? AppColors.primary
+                                              : Colors.white,
                                           size: 28,
                                         ),
                                       ),
@@ -2120,6 +2142,9 @@ class _NavigationScreenState extends State<NavigationScreen>
                                                   .copyWith(
                                                     fontSize: 16,
                                                     fontWeight: FontWeight.w700,
+                                                    color: isPrivatePlace
+                                                        ? Colors.white
+                                                        : AppColors.textPrimary,
                                                   ),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
@@ -2129,8 +2154,11 @@ class _NavigationScreenState extends State<NavigationScreen>
                                               place.address,
                                               style: AppTextStyles.bodySmall
                                                   .copyWith(
-                                                    color:
-                                                        AppColors.textSecondary,
+                                                    color: isPrivatePlace
+                                                        ? Colors.white
+                                                              .withOpacity(0.82)
+                                                        : AppColors
+                                                              .textSecondary,
                                                     fontSize: 13,
                                                   ),
                                               maxLines: 2,
@@ -2140,7 +2168,9 @@ class _NavigationScreenState extends State<NavigationScreen>
                                             Text(
                                               place.category.toUpperCase(),
                                               style: TextStyle(
-                                                color: AppColors.primary,
+                                                color: isPrivatePlace
+                                                    ? Colors.white
+                                                    : AppColors.primary,
                                                 fontSize: 12,
                                                 fontWeight: FontWeight.w600,
                                               ),
@@ -2153,16 +2183,20 @@ class _NavigationScreenState extends State<NavigationScreen>
                                       Container(
                                         padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
-                                          color: AppColors.primary.withOpacity(
-                                            0.1,
-                                          ),
+                                          color: isPrivatePlace
+                                              ? Colors.white.withOpacity(0.16)
+                                              : AppColors.primary.withOpacity(
+                                                  0.1,
+                                                ),
                                           borderRadius: BorderRadius.circular(
                                             10,
                                           ),
                                         ),
                                         child: Icon(
                                           Icons.arrow_forward_rounded,
-                                          color: AppColors.primary,
+                                          color: isPrivatePlace
+                                              ? Colors.white
+                                              : AppColors.primary,
                                           size: 20,
                                         ),
                                       ),

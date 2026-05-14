@@ -77,30 +77,61 @@ class _LoginScreenState extends State<LoginScreen> {
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('⏳ Email belum diverifikasi\n\nCek inbox Anda untuk link verifikasi'),
+            content: const Text(
+              'Email belum diverifikasi. Periksa inbox Anda untuk link verifikasi',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 5),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            elevation: 2,
             action: SnackBarAction(
               label: 'Kirim Ulang',
+              textColor: Colors.white,
               onPressed: () async {
                 try {
                   await _authService.resendVerificationEmail();
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('✅ Email verifikasi dikirim ulang'),
+                        content: Text(
+                          'Email verifikasi berhasil dikirim ulang',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                         backgroundColor: Colors.green,
                         duration: Duration(seconds: 3),
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.all(16),
+                        elevation: 2,
                       ),
                     );
                   }
                 } catch (e) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('❌ Gagal kirim ulang: $e'),
+                      const SnackBar(
+                        content: Text(
+                          'Gagal mengirim ulang email verifikasi',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                         backgroundColor: Colors.red,
-                        duration: const Duration(seconds: 3),
+                        duration: Duration(seconds: 3),
+                        behavior: SnackBarBehavior.floating,
+                        margin: EdgeInsets.all(16),
+                        elevation: 2,
                       ),
                     );
                   }
@@ -117,9 +148,19 @@ class _LoginScreenState extends State<LoginScreen> {
         print('✅ Email verified - proceeding with login');
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Login berhasil!'),
+            content: Text(
+              'Anda berhasil masuk',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.all(16),
+            elevation: 2,
           ),
         );
       }
@@ -160,9 +201,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('❌ $errorMessage'),
+            content: Text(
+              errorMessage,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.all(16),
+            elevation: 2,
           ),
         );
       }

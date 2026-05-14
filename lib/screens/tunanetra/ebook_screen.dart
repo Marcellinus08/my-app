@@ -153,9 +153,19 @@ class _EbookScreenState extends State<EbookScreen> {
                           onTap: () {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('Membuka "${book['title']}"...'),
+                                content: const Text(
+                                  'Membuka buku...',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                                 backgroundColor: AppColors.primary,
                                 duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                                margin: const EdgeInsets.all(16),
+                                elevation: 2,
                               ),
                             );
                           },

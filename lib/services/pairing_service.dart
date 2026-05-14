@@ -66,29 +66,126 @@ class PairingService {
   }
 
   /// Link family ke tunanetra user (setelah verifikasi)
+  /// [fallbackName], [fallbackEmail], [fallbackPhone] = data fallback jika Firestore belum updated
   Future<void> linkFamilyToUser(
     String familyUid,
     String tunaNetraUid,
-    String pairingCode,
-  ) async {
+    String pairingCode, {
+    String? fallbackName,
+    String? fallbackEmail,
+    String? fallbackPhone,
+  }) async {
     try {
+      print('🔗 [PAIRING] Starting linkFamilyToUser');
+      print('   Family UID: $familyUid');
+      print('   TunaNetra UID: $tunaNetraUid');
+      print('   Fallback data provided: ${fallbackName != null}');
+
       // Ensure family document has pairing link fields (merge to avoid not-found error).
       await _firestore.collection('users').doc(familyUid).set({
         'pairedUserUid': tunaNetraUid,
         'linkedAt': DateTime.now(),
       }, SetOptions(merge: true));
 
-      // Update tunanetra document dengan family uid (opsional, bisa di subcollection)
-      await _firestore
-          .collection('users')
-          .doc(tunaNetraUid)
-          .collection('family_members')
-          .doc(familyUid)
-          .set({
-            'uid': familyUid,
-            'name': '', // Will be updated when family data available
-            'linkedAt': DateTime.now(),
-          });
+      // Get family data dengan retry logic
+      DocumentSnapshot<Map<String, dynamic>>? familyDoc;
+      Map<String, dynamic>? familyData;
+      
+      // Try to get from Firestore dengan retry jika kosong
+      for (int retry = 0; retry < 3; retry++) {
+        familyDoc = await _firestore.collection('users').doc(familyUid).get();
+        familyData = familyDoc.data();
+        
+        print('📦 Family data retrieval attempt ${retry + 1}:');
+        print('   Email: ${familyData?['email']}');
+        print('   Name: ${familyData?['name']}');
+        print('   Phone: ${familyData?['phoneNumber']}');
+        
+        // Jika nama sudah ada, stop retry
+        if ((familyData?['name'] as String?)?.isNotEmpty ?? false) {
+          print('   ✅ Data found, proceeding');
+          break;
+        }
+        
+        // Jika masih kosong dan ada fallback, gunakan fallback
+        final isEmpty = (familyData?['name'] as String?)?.isEmpty ?? true;
+        if (retry < 2 && isEmpty) {
+          print('   ⏳ Data kosong, waiting before retry...');
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+      }
+      
+      // Gunakan data dari Firestore, atau fallback jika kosong
+      final email = (familyData?['email'] as String?)?.isNotEmpty ?? false
+          ? familyData!['email'] as String
+          : (fallbackEmail ?? '');
+          
+      final name = (familyData?['name'] as String?)?.isNotEmpty ?? false
+          ? familyData!['name'] as String
+          : (fallbackName ?? '');
+          
+      final phone = (familyData?['phoneNumber'] as String?)?.isNotEmpty ?? false
+          ? familyData!['phoneNumber'] as String
+          : (fallbackPhone ?? '');
+
+      print('📋 Final data to save:');
+      print('   Name: $name (from ${(familyData?['name'] as String?)?.isNotEmpty ?? false ? "Firestore" : "fallback"})');
+      print('   Email: $email');
+      print('   Phone: $phone');
+      
+      if (name.isNotEmpty || email.isNotEmpty) {
+        final familyInfo = {
+          'uid': familyUid,
+          'email': email,
+          'name': name,
+          'phone': phone,
+          'status': 'Aktif',
+          'connectedAt': DateTime.now(),
+        };
+
+        print('💾 Saving to connectedFamilies array');
+
+        // Add to connectedFamilies array in tunanetra user's document
+        await _firestore
+            .collection('users')
+            .doc(tunaNetraUid)
+            .update({
+          'connectedFamilies': FieldValue.arrayUnion([familyInfo]),
+        }).catchError((e) {
+          print('⚠️  Update failed, trying merge set: $e');
+          // If document doesn't exist or array doesn't exist, create it
+          if (e.toString().contains('FAILED_PRECONDITION') || 
+              e.toString().contains('not-found')) {
+            return _firestore
+                .collection('users')
+                .doc(tunaNetraUid)
+                .set({
+              'connectedFamilies': [familyInfo],
+            }, SetOptions(merge: true));
+          }
+          throw e;
+        });
+
+        print('💾 Saving to family_members subcollection');
+
+        // Update tunanetra document dengan family uid (subcollection)
+        await _firestore
+            .collection('users')
+            .doc(tunaNetraUid)
+            .collection('family_members')
+            .doc(familyUid)
+            .set({
+              'uid': familyUid,
+              'email': email,
+              'name': name,
+              'phone': phone,
+              'linkedAt': DateTime.now(),
+            });
+
+        print('✅ Data saved to subcollection');
+      } else {
+        print('⚠️  No valid name or email to save');
+      }
 
       print('✅ Family linked to user successfully');
     } catch (e) {

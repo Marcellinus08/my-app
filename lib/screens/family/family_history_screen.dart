@@ -899,8 +899,18 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Koordinat tidak tersedia'),
+          content: Text(
+            'Koordinat belum tersedia',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
           backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          elevation: 2,
         ),
       );
       return;

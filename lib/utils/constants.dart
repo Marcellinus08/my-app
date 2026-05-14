@@ -153,5 +153,6 @@ class AppRoutes {
   static const String familyHome = '/family/home';
   static const String familyMonitoring = '/family/monitoring';
   static const String familySettings = '/family/settings';
+  static const String familyManagePlaces = '/family/manage-places';
   static const String sosFullScreen = '/sos-fullscreen';
 }
