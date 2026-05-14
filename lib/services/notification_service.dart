@@ -16,9 +16,17 @@ class NotificationService {
 
   static final NotificationService instance = NotificationService._();
 
-  static const String sosEmergencyChannelId = 'sos_emergency_channel_v4';
+  static const String sosFullScreenChannelId = 'sos_fullscreen_channel_v1';
+  static const String sosFullScreenChannelName = 'SOS Full Screen Emergency';
+  static const String sosFullScreenChannelDescription =
+      'Notifikasi SOS layar penuh';
+  static const String sosEmergencyChannelId = 'sos_emergency_channel_v3';
   static const String sosEmergencyChannelName = 'SOS Emergency';
   static const String sosEmergencyChannelDescription = 'Notifikasi darurat SOS';
+  static const String sosSilentChannelId = 'sos_silent_channel_v1';
+  static const String sosSilentChannelName = 'SOS Silent';
+  static const String sosSilentChannelDescription =
+      'Notifikasi SOS tanpa suara dan getar';
   static const String sosCustomSoundResourceName = 'sos_alert';
   static const int sosEmergencyNotificationId = 8801;
   static const Duration sosAlarmRepeatInterval = Duration(seconds: 5);
@@ -42,6 +50,9 @@ class NotificationService {
   GlobalKey<NavigatorState>? _navigatorKey;
   Timer? _sosAlarmTimer;
   Map<String, dynamic>? _activeSosData;
+  Map<String, dynamic>? _initialSosPayload;
+  Map<String, dynamic>? _initialSosMonitoringPayload;
+  bool _fullScreenIntentAllowed = true;
   bool _messageHandlersInitialized = false;
   bool _localNotificationsInitialized = false;
 
@@ -49,6 +60,20 @@ class NotificationService {
     if (!useCustomSosSound) return null;
     return const RawResourceAndroidNotificationSound(
       sosCustomSoundResourceName,
+    );
+  }
+
+  static AndroidNotificationChannel _buildSosFullScreenAndroidChannel() {
+    return AndroidNotificationChannel(
+      sosFullScreenChannelId,
+      sosFullScreenChannelName,
+      description: sosFullScreenChannelDescription,
+      importance: Importance.max,
+      playSound: true,
+      sound: _sosNotificationSound,
+      enableVibration: true,
+      vibrationPattern: _sosVibrationPattern,
+      audioAttributesUsage: AudioAttributesUsage.alarm,
     );
   }
 
@@ -66,17 +91,41 @@ class NotificationService {
     );
   }
 
-  static NotificationDetails _buildSosNotificationDetails() {
+  static AndroidNotificationChannel _buildSosSilentAndroidChannel() {
+    return const AndroidNotificationChannel(
+      sosSilentChannelId,
+      sosSilentChannelName,
+      description: sosSilentChannelDescription,
+      importance: Importance.max,
+      playSound: false,
+      enableVibration: false,
+    );
+  }
+
+  static NotificationDetails _buildSosNotificationDetails({
+    bool fullScreenIntent = false,
+    bool useFullScreenChannel = false,
+  }) {
+    final channelId = useFullScreenChannel
+        ? sosFullScreenChannelId
+        : sosEmergencyChannelId;
+    final channelName = useFullScreenChannel
+        ? sosFullScreenChannelName
+        : sosEmergencyChannelName;
+    final channelDescription = useFullScreenChannel
+        ? sosFullScreenChannelDescription
+        : sosEmergencyChannelDescription;
+
     return NotificationDetails(
       android: AndroidNotificationDetails(
-        sosEmergencyChannelId,
-        sosEmergencyChannelName,
-        channelDescription: sosEmergencyChannelDescription,
+        channelId,
+        channelName,
+        channelDescription: channelDescription,
         importance: Importance.max,
         priority: Priority.max,
         category: AndroidNotificationCategory.alarm,
         visibility: NotificationVisibility.public,
-        fullScreenIntent: false,
+        fullScreenIntent: fullScreenIntent,
         enableVibration: true,
         vibrationPattern: _sosVibrationPattern,
         playSound: true,
@@ -88,6 +137,25 @@ class NotificationService {
       ),
     );
   }
+
+  static const NotificationDetails _sosSilentNotificationDetails =
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          sosSilentChannelId,
+          sosSilentChannelName,
+          channelDescription: sosSilentChannelDescription,
+          importance: Importance.max,
+          priority: Priority.max,
+          category: AndroidNotificationCategory.alarm,
+          visibility: NotificationVisibility.public,
+          fullScreenIntent: false,
+          enableVibration: false,
+          playSound: false,
+          onlyAlertOnce: true,
+          ongoing: true,
+          autoCancel: false,
+        ),
+      );
 
   static void _debugSosSoundChoice() {
     if (useCustomSosSound) {
@@ -121,8 +189,9 @@ class NotificationService {
       debugPrint('[NotificationService] FCM FOREGROUND');
       debugPrint('[NotificationService] payload data: ${message.data}');
       if (_isSosMessage(message)) {
-        debugPrint('[NotificationService] foreground SOS received');
-        showSosLocalNotification(Map<String, dynamic>.from(message.data));
+        debugPrint('SOS FCM received');
+        final data = Map<String, dynamic>.from(message.data);
+        showSosLocalNotification(data);
         handleSosNotification(message);
       }
     });
@@ -131,7 +200,7 @@ class NotificationService {
       debugPrint('[NotificationService] FCM CLICK BACKGROUND');
       debugPrint('[NotificationService] payload data: ${message.data}');
       if (_isSosMessage(message)) {
-        debugPrint('[NotificationService] notification opened');
+        debugPrint('full-screen notification clicked');
         _scheduleSosNavigationFromData(Map<String, dynamic>.from(message.data));
       }
     });
@@ -140,7 +209,7 @@ class NotificationService {
       debugPrint('[NotificationService] FCM CLICK TERMINATED');
       debugPrint('[NotificationService] payload data: ${message?.data}');
       if (message != null && _isSosMessage(message)) {
-        debugPrint('[NotificationService] initial message opened');
+        debugPrint('full-screen notification clicked');
         _scheduleSosNavigationFromData(
           Map<String, dynamic>.from(message.data),
           delay: const Duration(milliseconds: 700),
@@ -212,6 +281,22 @@ class NotificationService {
     debugPrint(
       '[NotificationService] Android notification permission: $androidGranted',
     );
+
+    try {
+      final fullScreenGranted = await androidImplementation
+          ?.requestFullScreenIntentPermission();
+      if (fullScreenGranted == false) {
+        _fullScreenIntentAllowed = false;
+      }
+      debugPrint(
+        '[NotificationService] Android full-screen intent permission: '
+        '$fullScreenGranted',
+      );
+    } catch (e) {
+      debugPrint(
+        '[NotificationService] full-screen intent permission check failed: $e',
+      );
+    }
   }
 
   Future<void> saveFcmToken(String token) async {
@@ -289,7 +374,7 @@ class NotificationService {
       return;
     }
 
-    debugPrint('Creating SOS emergency channel v4');
+    debugPrint('Creating SOS full-screen and fallback channels');
 
     const initializationSettingsAndroid = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
@@ -307,13 +392,27 @@ class NotificationService {
       },
     );
 
-    final androidChannel = _buildSosAndroidChannel();
+    final fullScreenAndroidChannel = _buildSosFullScreenAndroidChannel();
+    final fallbackAndroidChannel = _buildSosAndroidChannel();
+    final silentAndroidChannel = _buildSosSilentAndroidChannel();
 
     await _localNotifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >()
-        ?.createNotificationChannel(androidChannel);
+        ?.createNotificationChannel(fullScreenAndroidChannel);
+
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(fallbackAndroidChannel);
+
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(silentAndroidChannel);
 
     _localNotificationsInitialized = true;
     _debugSosSoundChoice();
@@ -334,17 +433,71 @@ class NotificationService {
     if (details?.didNotificationLaunchApp == true && payload != null) {
       debugPrint('[NotificationService] local notification launch details');
       debugPrint('[NotificationService] local payload: $payload');
-      _handleLocalNotificationPayload(
-        payload,
-        delay: const Duration(milliseconds: 700),
-      );
+      final data = parseNotificationPayload(payload);
+      if (data == null || data['type'] != 'sos') return;
+      debugPrint('full-screen notification clicked');
+      final openMode = data['openMode']?.toString();
+      if (openMode == 'monitoring') {
+        _initialSosMonitoringPayload = _buildSosPayload(
+          data,
+          openMode: 'monitoring',
+        );
+        return;
+      }
+
+      _initialSosPayload = _buildSosPayload(data, openMode: 'fullscreen');
     }
+  }
+
+  Map<String, dynamic>? takeInitialSosPayload() {
+    final payload = _initialSosPayload;
+    _initialSosPayload = null;
+    return payload;
+  }
+
+  Map<String, dynamic>? takeInitialSosMonitoringPayload() {
+    final payload = _initialSosMonitoringPayload;
+    _initialSosMonitoringPayload = null;
+    return payload;
   }
 
   Future<void> showSosLocalNotification(Map<String, dynamic> data) async {
     await createSosEmergencyChannel();
     await _showSosLocalNotificationFromData(data);
     _startSosAlarmLoop(data);
+  }
+
+  Future<void> showSosFullScreenNotification(Map<String, dynamic> data) async {
+    if (kIsWeb) return;
+
+    debugPrint('showing full-screen SOS notification');
+    await createSosEmergencyChannel();
+
+    if (!_fullScreenIntentAllowed) {
+      debugPrint('fallback notification used');
+      await _showSosLocalNotificationFromData(data);
+      _startSosAlarmLoop(data);
+      return;
+    }
+
+    try {
+      await _showSosNotificationFromData(
+        data,
+        details: _buildSosNotificationDetails(
+          fullScreenIntent: true,
+          useFullScreenChannel: true,
+        ),
+        openMode: 'fullscreen',
+      );
+      _startSosAlarmLoop(data);
+    } catch (e) {
+      debugPrint(
+        '[NotificationService] full-screen SOS notification failed: $e',
+      );
+      debugPrint('fallback notification used');
+      await _showSosLocalNotificationFromData(data);
+      _startSosAlarmLoop(data);
+    }
   }
 
   static Future<void> showBackgroundSosLocalNotification(
@@ -355,6 +508,55 @@ class NotificationService {
     await showBackgroundSosLocalNotificationFromData(
       Map<String, dynamic>.from(message.data),
     );
+  }
+
+  static Future<void> showBackgroundSosFullScreenNotification(
+    RemoteMessage message,
+  ) async {
+    await showSosFullScreenNotificationFromData(
+      Map<String, dynamic>.from(message.data),
+    );
+  }
+
+  static Future<void> showSosFullScreenNotificationFromData(
+    Map<String, dynamic> data,
+  ) async {
+    if (kIsWeb) return;
+    if (data['type'] != 'sos') return;
+
+    debugPrint('SOS FCM received');
+    debugPrint('showing full-screen SOS notification');
+
+    final plugin = FlutterLocalNotificationsPlugin();
+    const initializationSettingsAndroid = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
+    const initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+    );
+    await plugin.initialize(initializationSettings);
+
+    await _createSosChannelsForPlugin(plugin);
+
+    try {
+      await _showSosNotificationWithPlugin(
+        plugin: plugin,
+        data: data,
+        details: _buildSosNotificationDetails(
+          fullScreenIntent: true,
+          useFullScreenChannel: true,
+        ),
+        openMode: 'fullscreen',
+      );
+    } catch (e) {
+      debugPrint('[NotificationService] background full-screen failed: $e');
+      debugPrint('fallback notification used');
+      await _showSosNotificationWithPlugin(
+        plugin: plugin,
+        data: data,
+        details: _buildSosNotificationDetails(),
+      );
+    }
   }
 
   static Future<void> showBackgroundSosLocalNotificationFromData(
@@ -374,27 +576,12 @@ class NotificationService {
     );
     await plugin.initialize(initializationSettings);
 
-    final androidChannel = _buildSosAndroidChannel();
+    await _createSosChannelsForPlugin(plugin);
 
-    debugPrint('Creating SOS emergency channel v4');
-
-    await plugin
-        .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin
-        >()
-        ?.createNotificationChannel(androidChannel);
-    _debugSosSoundChoice();
-    debugPrint('SOS channel created with sound and vibration');
-
-    final title = _sosNotificationTitle;
-    final body = _sosNotificationBody(data);
-
-    await plugin.show(
-      sosEmergencyNotificationId,
-      title,
-      body,
-      _buildSosNotificationDetails(),
-      payload: jsonEncode(data),
+    await _showSosNotificationWithPlugin(
+      plugin: plugin,
+      data: data,
+      details: _buildSosNotificationDetails(),
     );
 
     debugPrint('Showing SOS notification with sound and vibration');
@@ -406,6 +593,17 @@ class NotificationService {
   ) async {
     if (kIsWeb) return;
 
+    await _showSosNotificationFromData(
+      data,
+      details: _buildSosNotificationDetails(),
+    );
+  }
+
+  Future<void> _showSosNotificationFromData(
+    Map<String, dynamic> data, {
+    required NotificationDetails details,
+    String openMode = 'monitoring',
+  }) async {
     final title = _sosNotificationTitle;
     final body = _sosNotificationBody(data);
 
@@ -415,11 +613,50 @@ class NotificationService {
       sosEmergencyNotificationId,
       title,
       body,
-      _buildSosNotificationDetails(),
-      payload: jsonEncode(data),
+      details,
+      payload: jsonEncode(_buildSosPayload(data, openMode: openMode)),
     );
 
     debugPrint('SOS local notification shown');
+  }
+
+  static Future<void> _createSosChannelsForPlugin(
+    FlutterLocalNotificationsPlugin plugin,
+  ) async {
+    debugPrint('Creating SOS full-screen and fallback channels');
+
+    final androidImplementation = plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+
+    await androidImplementation?.createNotificationChannel(
+      _buildSosFullScreenAndroidChannel(),
+    );
+    await androidImplementation?.createNotificationChannel(
+      _buildSosAndroidChannel(),
+    );
+    await androidImplementation?.createNotificationChannel(
+      _buildSosSilentAndroidChannel(),
+    );
+
+    _debugSosSoundChoice();
+    debugPrint('SOS channel created with sound and vibration');
+  }
+
+  static Future<void> _showSosNotificationWithPlugin({
+    required FlutterLocalNotificationsPlugin plugin,
+    required Map<String, dynamic> data,
+    required NotificationDetails details,
+    String openMode = 'monitoring',
+  }) async {
+    await plugin.show(
+      sosEmergencyNotificationId,
+      _sosNotificationTitle,
+      _sosNotificationBody(data),
+      details,
+      payload: jsonEncode(_buildSosPayload(data, openMode: openMode)),
+    );
   }
 
   Future<void> handleSosNotification(RemoteMessage message) async {
@@ -469,15 +706,6 @@ class NotificationService {
       Map<String, dynamic>.from(message.data),
       remainingRetries: 8,
     );
-  }
-
-  void _scheduleSosNavigationFromData(
-    Map<String, dynamic> data, {
-    Duration delay = const Duration(milliseconds: 150),
-  }) {
-    Future.delayed(delay, () {
-      _navigateToFamilyMonitoringFromData(data, remainingRetries: 12);
-    });
   }
 
   void _navigateToFamilyMonitoringFromData(
@@ -538,7 +766,57 @@ class NotificationService {
     final data = parseNotificationPayload(payload);
     if (data == null || data['type'] != 'sos') return;
 
+    debugPrint('full-screen notification clicked');
+    final openMode = data['openMode']?.toString();
+    if (openMode == 'fullscreen') {
+      _scheduleSosFullScreenNavigation(data, delay: delay);
+      return;
+    }
+
     _scheduleSosNavigationFromData(data, delay: delay);
+  }
+
+  void _scheduleSosNavigationFromData(
+    Map<String, dynamic> data, {
+    Duration delay = const Duration(milliseconds: 150),
+  }) {
+    Future.delayed(delay, () {
+      _navigateToFamilyMonitoringFromData(data, remainingRetries: 12);
+    });
+  }
+
+  void _scheduleSosFullScreenNavigation(
+    Map<String, dynamic> data, {
+    Duration delay = const Duration(milliseconds: 150),
+  }) {
+    Future.delayed(delay, () {
+      _navigateToSosFullScreen(data, remainingRetries: 12);
+    });
+  }
+
+  void _navigateToSosFullScreen(
+    Map<String, dynamic> data, {
+    required int remainingRetries,
+  }) {
+    final navigator = _navigatorKey?.currentState;
+    if (navigator == null) {
+      debugPrint('[NotificationService] Navigator null for SOS full-screen');
+      if (remainingRetries > 0) {
+        Future.delayed(const Duration(milliseconds: 350), () {
+          _navigateToSosFullScreen(
+            data,
+            remainingRetries: remainingRetries - 1,
+          );
+        });
+      }
+      return;
+    }
+
+    debugPrint('SOS full-screen opened');
+    navigator.pushNamed(
+      AppRoutes.sosFullScreen,
+      arguments: _buildSosPayload(data),
+    );
   }
 
   void _startSosAlarmLoop(Map<String, dynamic> data) {
@@ -579,11 +857,37 @@ class NotificationService {
 
     if (cancelNotification && !kIsWeb) {
       _localNotifications.cancel(sosEmergencyNotificationId);
+      _localNotifications.cancelAll();
     }
 
     if (hadActiveAlarm) {
       debugPrint('[NotificationService] SOS alarm loop stopped');
     }
+  }
+
+  Future<void> silenceSosNotification(
+    Map<String, dynamic> data, {
+    required bool sosResolved,
+  }) async {
+    if (kIsWeb) return;
+
+    debugPrint('[NotificationService] SOS notification silenced');
+    stopSosAlarmLoop(cancelNotification: false);
+    await createSosEmergencyChannel();
+    await _localNotifications.cancelAll();
+
+    if (sosResolved) {
+      debugPrint(
+        '[NotificationService] SOS already resolved, notification removed',
+      );
+      return;
+    }
+
+    await _showSosNotificationFromData(
+      data,
+      details: _sosSilentNotificationDetails,
+    );
+    debugPrint('[NotificationService] Silent SOS notification shown');
   }
 
   void _listenActiveSosStatus(Map<String, dynamic> data) {
@@ -669,6 +973,32 @@ class NotificationService {
     if (value == null) return null;
     final text = value.toString().trim();
     return text.isEmpty ? null : text;
+  }
+
+  static Map<String, dynamic> _buildSosPayload(
+    Map<String, dynamic> data, {
+    String openMode = 'monitoring',
+  }) {
+    return <String, dynamic>{
+      'type': _readStringFromMap(data, 'type') ?? 'sos',
+      'openMode': openMode,
+      'userId': _readStringFromMap(data, 'userId'),
+      'familyUid':
+          _readStringFromMap(data, 'familyUid') ??
+          _readStringFromMap(data, 'familyId'),
+      'userName': _readStringFromMap(data, 'userName'),
+      'lat': _readStringFromMap(data, 'lat'),
+      'lng': _readStringFromMap(data, 'lng'),
+      'batteryLevel': _readStringFromMap(data, 'batteryLevel'),
+      'currentTripId': _readStringFromMap(data, 'currentTripId'),
+      'sosId':
+          _readStringFromMap(data, 'sosId') ??
+          _readStringFromMap(data, 'alertId') ??
+          _readStringFromMap(data, 'id'),
+      'createdAt':
+          _readStringFromMap(data, 'createdAt') ??
+          _readStringFromMap(data, 'timestamp'),
+    };
   }
 
   static String get _sosNotificationTitle => '🚨 SOS Darurat';

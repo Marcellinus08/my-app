@@ -19,6 +19,7 @@ import 'screens/family/family_home_screen.dart';
 import 'screens/family/family_history_screen.dart';
 import 'screens/family/family_members_list_screen.dart';
 import 'screens/family/family_member_detail_screen.dart';
+import 'screens/family/emergency_sos_screen.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -29,7 +30,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('[MAIN] background payload data: ${message.data}');
 
   if (message.data['type'] == 'sos') {
-    await NotificationService.showBackgroundSosLocalNotification(message);
+    await NotificationService.showBackgroundSosFullScreenNotification(message);
   }
 }
 
@@ -70,8 +71,17 @@ void main() async {
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   await NotificationService.instance.initialize(navigatorKey: appNavigatorKey);
+  final initialSosPayload = NotificationService.instance
+      .takeInitialSosPayload();
+  final initialSosMonitoringPayload = NotificationService.instance
+      .takeInitialSosMonitoringPayload();
 
-  runApp(const MyApp());
+  runApp(
+    MyApp(
+      initialSosPayload: initialSosPayload,
+      initialSosMonitoringPayload: initialSosMonitoringPayload,
+    ),
+  );
 }
 
 /// Test Firebase Auth connection
@@ -88,7 +98,14 @@ Future<bool> _testAuthConnection() async {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final Map<String, dynamic>? initialSosPayload;
+  final Map<String, dynamic>? initialSosMonitoringPayload;
+
+  const MyApp({
+    super.key,
+    this.initialSosPayload,
+    this.initialSosMonitoringPayload,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -129,7 +146,48 @@ class MyApp extends StatelessWidget {
       ),
 
       // Routes
-      initialRoute: AppRoutes.splash,
+      initialRoute: initialSosPayload != null
+          ? AppRoutes.sosFullScreen
+          : initialSosMonitoringPayload != null
+          ? AppRoutes.familyMonitoring
+          : AppRoutes.splash,
+      onGenerateInitialRoutes: (initialRoute) {
+        if (initialSosPayload != null) {
+          return [
+            MaterialPageRoute(
+              settings: RouteSettings(
+                name: AppRoutes.sosFullScreen,
+                arguments: initialSosPayload,
+              ),
+              builder: (_) => EmergencySosScreen(sosData: initialSosPayload!),
+            ),
+          ];
+        }
+
+        if (initialSosMonitoringPayload != null) {
+          final args = _sosMonitoringArgs(initialSosMonitoringPayload!);
+          return [
+            MaterialPageRoute(
+              settings: RouteSettings(
+                name: AppRoutes.familyMonitoring,
+                arguments: args,
+              ),
+              builder: (_) => FamilyHistoryScreen(
+                targetUid: args['targetUid'] as String? ?? '',
+                familyId: args['familyId'] as String? ?? '',
+                initialSosData: _extractSosRouteData(args),
+              ),
+            ),
+          ];
+        }
+
+        return [
+          MaterialPageRoute(
+            settings: const RouteSettings(name: AppRoutes.splash),
+            builder: (_) => const SplashScreen(),
+          ),
+        ];
+      },
       routes: {
         AppRoutes.splash: (context) => const SplashScreen(),
         AppRoutes.login: (context) => const LoginScreen(),
@@ -172,6 +230,12 @@ class MyApp extends StatelessWidget {
             initialSosData: _extractSosRouteData(args),
           );
         },
+        AppRoutes.sosFullScreen: (context) {
+          final args =
+              ModalRoute.of(context)?.settings.arguments
+                  as Map<String, dynamic>?;
+          return EmergencySosScreen(sosData: args ?? const {});
+        },
         // TODO: Add familySettings
       },
     );
@@ -201,4 +265,24 @@ Map<String, dynamic>? _extractSosRouteData(Map<String, dynamic>? args) {
   }
 
   return null;
+}
+
+Map<String, dynamic> _sosMonitoringArgs(Map<String, dynamic> payload) {
+  final userId = payload['userId']?.toString() ?? '';
+  final familyUid = payload['familyUid']?.toString() ?? '';
+
+  return {
+    'fromSos': true,
+    'userId': userId,
+    'targetUid': userId,
+    'familyUid': familyUid,
+    'familyId': familyUid,
+    'lat': payload['lat'],
+    'lng': payload['lng'],
+    'batteryLevel': payload['batteryLevel'],
+    'currentTripId': payload['currentTripId'],
+    'userName': payload['userName'] ?? 'Pengguna',
+    'sosId': payload['sosId'],
+    'sosData': payload,
+  };
 }
