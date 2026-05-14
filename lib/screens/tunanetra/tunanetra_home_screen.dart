@@ -1,11 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math' as math;
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/live_tracking_service.dart';
+import '../../services/pairing_service.dart';
 import '../../services/sos_service.dart';
-import '../../services/user_service.dart';
 import '../../services/weather_service.dart';
 
 class TunaNetraHomeScreen extends StatefulWidget {
@@ -15,7 +17,7 @@ class TunaNetraHomeScreen extends StatefulWidget {
   State<TunaNetraHomeScreen> createState() => _TunaNetraHomeScreenState();
 }
 
-class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen> 
+class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   bool _isSmartcaneConnected = true;
   double _smartcaneBattery = 85;
@@ -24,8 +26,13 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   bool _isLoadingWeather = true;
   bool _isSendingSos = false;
   final LiveTrackingService _liveTrackingService = LiveTrackingService();
+  final PairingService _pairingService = PairingService();
   final SosService _sosService = SosService();
-  
+  StreamSubscription<User?>? _authStateSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _pairingRequestSub;
+  final Set<String> _shownPairingRequestIds = {};
+  bool _isPairingDialogOpen = false;
+
   late AnimationController _fadeController;
   late AnimationController _rotationController;
   late Animation<double> _fadeAnimation;
@@ -39,6 +46,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _initializeAnimations();
     _firestore = FirebaseFirestore.instance;
     _setupUserNameStream();
+    _subscribeToPairingRequests();
     _loadWeather();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _liveTrackingService.startHomeLocationTracking();
@@ -55,25 +63,23 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   void _setupUserNameStream() {
     final authService = AuthService();
     final uid = authService.currentUserId;
-    
+
     print('🔍 Home Screen - User UID: $uid');
-    
+
     if (uid != null) {
-      _userNameStream = _firestore
-          .collection('users')
-          .doc(uid)
-          .snapshots()
-          .map((snapshot) {
-        if (snapshot.exists) {
-          final data = snapshot.data() as Map<String, dynamic>?;
-          final name = data?['name'] as String? ?? 'Pengguna';
-          print('📝 User name updated: $name');
-          return name;
-        }
-        print('⚠️ User document does not exist');
-        return 'Pengguna';
-      });
-      
+      _userNameStream = _firestore.collection('users').doc(uid).snapshots().map(
+        (snapshot) {
+          if (snapshot.exists) {
+            final data = snapshot.data();
+            final name = data?['name'] as String? ?? 'Pengguna';
+            print('📝 User name updated: $name');
+            return name;
+          }
+          print('⚠️ User document does not exist');
+          return 'Pengguna';
+        },
+      );
+
       // Subscribe to stream changes
       _userNameStream.listen((newName) {
         if (mounted) {
@@ -92,7 +98,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     try {
       final weatherService = WeatherService();
       final weather = await weatherService.getWeatherByLocation();
-      
+
       if (mounted) {
         setState(() {
           _weatherData = weather;
@@ -131,9 +137,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       duration: const Duration(seconds: 25),
     )..repeat();
 
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _fadeController, curve: Curves.easeOut));
 
     _fadeController.forward();
   }
@@ -221,6 +228,121 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     }
   }
 
+  void _subscribeToPairingRequests() {
+    final currentUid = AuthService().currentUserId;
+    if (currentUid != null && currentUid.isNotEmpty) {
+      _startPairingRequestListener(currentUid);
+    }
+
+    _authStateSub?.cancel();
+    _authStateSub = AuthService().authStateChanges.listen((user) {
+      final uid = user?.uid;
+      if (uid == null || uid.isEmpty) {
+        _pairingRequestSub?.cancel();
+        _pairingRequestSub = null;
+        return;
+      }
+
+      _startPairingRequestListener(uid);
+    });
+  }
+
+  void _startPairingRequestListener(String uid) {
+    _pairingRequestSub?.cancel();
+    _pairingRequestSub = _pairingService
+        .watchPendingRequestsForTunaNetra(uid)
+        .listen(
+          (snapshot) {
+            if (!mounted || _isPairingDialogOpen) return;
+
+            for (final doc in snapshot.docs) {
+              if (_shownPairingRequestIds.contains(doc.id)) continue;
+              _shownPairingRequestIds.add(doc.id);
+              _showPairingRequestDialog(doc.id, doc.data());
+              break;
+            }
+          },
+          onError: (error) {
+            debugPrint(
+              '[TunaNetraHome] Pairing request listener error: $error',
+            );
+          },
+        );
+  }
+
+  Future<void> _showPairingRequestDialog(
+    String requestId,
+    Map<String, dynamic> request,
+  ) async {
+    _isPairingDialogOpen = true;
+    final familyName = (request['familyName'] as String?)?.trim();
+    final familyEmail = (request['familyEmail'] as String?)?.trim();
+    final displayName = familyName?.isNotEmpty == true
+        ? familyName!
+        : (familyEmail?.isNotEmpty == true ? familyEmail! : 'Keluarga');
+
+    final accepted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          'Konfirmasi Keluarga',
+          style: AppTextStyles.heading3.copyWith(fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          '$displayName ingin terhubung dan memonitor akun Anda.',
+          style: AppTextStyles.bodyLarge,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Tolak'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.check_rounded, size: 18),
+            label: const Text('Terima'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || accepted == null) {
+      _isPairingDialogOpen = false;
+      return;
+    }
+
+    try {
+      await _pairingService.respondToPairingRequest(
+        requestId: requestId,
+        accepted: accepted,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            accepted
+                ? 'Keluarga berhasil terhubung'
+                : 'Permintaan keluarga ditolak',
+          ),
+          backgroundColor: accepted ? Colors.green : Colors.orange,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('Exception: ', '')),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      _isPairingDialogOpen = false;
+    }
+  }
+
   String _formatSosError(Object error) {
     return error.toString().replaceAll('Exception: ', '');
   }
@@ -246,15 +368,21 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
               return AnimatedBuilder(
                 animation: _rotationController,
                 builder: (context, child) {
-                  final angle = _rotationController.value * 2 * math.pi + (index * math.pi / 2);
+                  final angle =
+                      _rotationController.value * 2 * math.pi +
+                      (index * math.pi / 2);
                   final size = 120.0 + (index * 40);
                   final distance = 150.0 + (index * 30);
-                  
+
                   return Positioned(
-                    left: MediaQuery.of(context).size.width / 2 + 
-                          math.cos(angle) * distance - size / 2,
-                    top: MediaQuery.of(context).size.height / 3 + 
-                         math.sin(angle) * distance - size / 2,
+                    left:
+                        MediaQuery.of(context).size.width / 2 +
+                        math.cos(angle) * distance -
+                        size / 2,
+                    top:
+                        MediaQuery.of(context).size.height / 3 +
+                        math.sin(angle) * distance -
+                        size / 2,
                     child: Container(
                       width: size,
                       height: size,
@@ -272,12 +400,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                 },
               );
             }),
-            
+
             // Main content with fade animation
-            FadeTransition(
-              opacity: _fadeAnimation,
-              child: _buildMainContent(),
-            ),
+            FadeTransition(opacity: _fadeAnimation, child: _buildMainContent()),
           ],
         ),
       ),
@@ -294,10 +419,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF0D47A1),
-                  const Color(0xFF1565C0),
-                ],
+                colors: [const Color(0xFF0D47A1), const Color(0xFF1565C0)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -358,7 +480,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                         )
                       else if (_weatherData != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(6),
@@ -422,191 +547,197 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                       const SizedBox(height: 2),
                       // Modern Battery Icon with Fill
                       Container(
-                      width: 52,
-                      height: 60,
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.8),
-                          width: 2,
+                        width: 52,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.8),
+                            width: 2,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Stack(
-                        children: [
-                          // Battery top bump
-                          Positioned(
-                            top: -4,
-                            left: 0,
-                            right: 0,
-                            child: Container(
-                              height: 4,
-                              margin: const EdgeInsets.symmetric(horizontal: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.8),
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(2),
-                                  topRight: Radius.circular(2),
+                        child: Stack(
+                          children: [
+                            // Battery top bump
+                            Positioned(
+                              top: -4,
+                              left: 0,
+                              right: 0,
+                              child: Container(
+                                height: 4,
+                                margin: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.8),
+                                  borderRadius: const BorderRadius.only(
+                                    topLeft: Radius.circular(2),
+                                    topRight: Radius.circular(2),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          // Battery fill with gradient
-                          Container(
-                            width: double.infinity,
-                            height: double.infinity,
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Stack(
-                              children: [
-                                // Background
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.05),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                ),
-                                // Fill based on battery level
-                                Align(
-                                  alignment: Alignment.bottomCenter,
-                                  child: Container(
-                                    width: double.infinity,
-                                    height: (_smartcaneBattery / 100) * 60,
+                            // Battery fill with gradient
+                            Container(
+                              width: double.infinity,
+                              height: double.infinity,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Stack(
+                                children: [
+                                  // Background
+                                  Container(
                                     decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.bottomCenter,
-                                        end: Alignment.topCenter,
-                                        colors: [
-                                          _getBatteryColor(),
-                                          _getBatteryColor().withOpacity(0.6),
-                                        ],
-                                      ),
+                                      color: Colors.white.withOpacity(0.05),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                   ),
-                                ),
-                                // Percentage text overlay
-                                Center(
-                                  child: Text(
-                                    '${_smartcaneBattery.toInt()}%',
-                                    style: AppTextStyles.heading2.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w900,
-                                      shadows: [
-                                        Shadow(
-                                          color: Colors.black.withOpacity(0.3),
-                                          blurRadius: 3,
+                                  // Fill based on battery level
+                                  Align(
+                                    alignment: Alignment.bottomCenter,
+                                    child: Container(
+                                      width: double.infinity,
+                                      height: (_smartcaneBattery / 100) * 60,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.bottomCenter,
+                                          end: Alignment.topCenter,
+                                          colors: [
+                                            _getBatteryColor(),
+                                            _getBatteryColor().withOpacity(0.6),
+                                          ],
                                         ),
-                                      ],
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                  // Percentage text overlay
+                                  Center(
+                                    child: Text(
+                                      '${_smartcaneBattery.toInt()}%',
+                                      style: AppTextStyles.heading2.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w900,
+                                        shadows: [
+                                          Shadow(
+                                            color: Colors.black.withOpacity(
+                                              0.3,
+                                            ),
+                                            blurRadius: 3,
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 6),
-                    // Status text below
-                    Text(
-                      _isSmartcaneConnected ? 'Terhubung' : 'Offline',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: _isSmartcaneConnected
-                            ? Colors.green.withOpacity(0.9)
-                            : Colors.orange.withOpacity(0.9),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(height: 6),
+                      // Status text below
+                      Text(
+                        _isSmartcaneConnected ? 'Terhubung' : 'Offline',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: _isSmartcaneConnected
+                              ? Colors.green.withOpacity(0.9)
+                              : Colors.orange.withOpacity(0.9),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 2),
-                  ],
-                ),
+                      const SizedBox(height: 2),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
-              
-              // Main Content
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
+
+          // Main Content
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
                     children: [
-                      GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 16,
-                        mainAxisSpacing: 16,
-                        children: [
-                          _ModernMenuCard(
-                            icon: Icons.map_rounded,
-                            title: 'Navigasi',
-                            gradient: AppColors.primaryGradient,
-                            onTap: _navigateToNavigation,
-                            onHover: () {},
-                          ),
-                          _ModernMenuCard(
-                            icon: Icons.bluetooth_rounded,
-                            title: 'Bluetooth',
-                            gradient: AppColors.successGradient,
-                            onTap: _navigateToBluetooth,
-                            onHover: () {},
-                          ),
-                          _ModernMenuCard(
-                            icon: Icons.book_rounded,
-                            title: 'Buku Panduan',
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
-                            ),
-                            onTap: _navigateToEbook,
-                            onHover: () {},
-                          ),
-                          _ModernMenuCard(
-                            icon: Icons.accessibility_new_rounded,
-                            title: 'SmartCane',
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFEC4899), Color(0xFFDB2777)],
-                            ),
-                            onTap: _navigateToSmartcane,
-                            onHover: () {},
-                          ),
-                          _ModernMenuCard(
-                            icon: Icons.settings_rounded,
-                            title: 'Pengaturan',
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF64748B), Color(0xFF475569)],
-                            ),
-                            onTap: _navigateToSettings,
-                            onHover: () {},
-                          ),
-                          _ModernMenuCard(
-                            icon: Icons.warning_rounded,
-                            title: 'Darurat',
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
-                            ),
-                            onTap: _triggerEmergency,
-                            onHover: () {},
-                          ),
-                        ],
+                      _ModernMenuCard(
+                        icon: Icons.map_rounded,
+                        title: 'Navigasi',
+                        gradient: AppColors.primaryGradient,
+                        onTap: _navigateToNavigation,
+                        onHover: () {},
+                      ),
+                      _ModernMenuCard(
+                        icon: Icons.bluetooth_rounded,
+                        title: 'Bluetooth',
+                        gradient: AppColors.successGradient,
+                        onTap: _navigateToBluetooth,
+                        onHover: () {},
+                      ),
+                      _ModernMenuCard(
+                        icon: Icons.book_rounded,
+                        title: 'Buku Panduan',
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
+                        ),
+                        onTap: _navigateToEbook,
+                        onHover: () {},
+                      ),
+                      _ModernMenuCard(
+                        icon: Icons.accessibility_new_rounded,
+                        title: 'SmartCane',
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFEC4899), Color(0xFFDB2777)],
+                        ),
+                        onTap: _navigateToSmartcane,
+                        onHover: () {},
+                      ),
+                      _ModernMenuCard(
+                        icon: Icons.settings_rounded,
+                        title: 'Pengaturan',
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF64748B), Color(0xFF475569)],
+                        ),
+                        onTap: _navigateToSettings,
+                        onHover: () {},
+                      ),
+                      _ModernMenuCard(
+                        icon: Icons.warning_rounded,
+                        title: 'Darurat',
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
+                        ),
+                        onTap: _triggerEmergency,
+                        onHover: () {},
                       ),
                     ],
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
-        );
+        ],
+      ),
+    );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _liveTrackingService.stopHomeLocationTracking();
+    _authStateSub?.cancel();
+    _pairingRequestSub?.cancel();
     _fadeController.dispose();
     _rotationController.dispose();
     super.dispose();
@@ -641,10 +772,7 @@ class _ModernMenuCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                Colors.white,
-                Colors.white.withOpacity(0.95),
-              ],
+              colors: [Colors.white, Colors.white.withOpacity(0.95)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),

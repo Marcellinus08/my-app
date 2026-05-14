@@ -306,6 +306,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
 
       print('\n✅ [PENGGUNA REGISTRATION] COMPLETE\n');
+    } on PairingException catch (e) {
+      if (mounted) {
+        _closeVerificationDialogIfOpen();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ ${e.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
       print('\n❌ [UI] REGISTRATION FAILED');
       print('Error: $e\n');
@@ -397,30 +407,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
         throw Exception('Kode pairing tidak valid atau sudah tidak tersedia');
       }
 
-      final tunaNetraUid = verifiedPairingInfo['uid'] as String;
+      final targetName =
+          verifiedPairingInfo['name'] ??
+          pairedUserInfo['name'] ??
+          'pengguna TunaNetra';
 
       print('🔄 [Keluarga] Saving Keluarga data...');
       final familyName = _familyNameController2.text.trim();
       final familyPhone = _familyPhoneController2.text.trim();
-      
+
       await _userService.saveFamilyUser(
         uid: user.uid,
         email: email,
         name: familyName,
         phoneNumber: familyPhone,
         pairingCode: pairingCode,
-        pairedUserUid: tunaNetraUid,
+        pairedUserUid: '',
         isEmailVerified: true,
       );
 
-      print('🔄 [Keluarga] Linking family to Pengguna...');
-      await _pairingService.linkFamilyToUser(
-        user.uid,
-        tunaNetraUid,
-        pairingCode,
-        fallbackName: familyName,
-        fallbackEmail: email,
-        fallbackPhone: familyPhone,
+      print('🔄 [Keluarga] Sending pairing request to Pengguna...');
+      await _pairingService.createPairingRequest(
+        familyUid: user.uid,
+        pairingCode: pairingCode,
       );
 
       print('✅ Registration complete!');
@@ -429,7 +438,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '✅ Registrasi berhasil!\nTerhubung dengan: ${pairedUserInfo['name']}',
+              'Registrasi berhasil. Permintaan koneksi terkirim ke $targetName.',
             ),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 4),
@@ -437,7 +446,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
 
         await Future.delayed(const Duration(milliseconds: 500));
+        if (!mounted) return;
         Navigator.pushReplacementNamed(context, AppRoutes.login);
+      }
+    } on PairingException catch (e) {
+      if (mounted) {
+        _closeVerificationDialogIfOpen();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ ${e.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -936,10 +956,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
             icon: Icons.lock_rounded,
             isPassword: true,
             validator: (value) {
-              if (value == null || value.isEmpty)
-                return 'Password harus diisi';
-              if (value.length < 8)
-                return 'Password minimal 8 karakter';
+              if (value == null || value.isEmpty) return 'Password harus diisi';
+              if (value.length < 8) return 'Password minimal 8 karakter';
               return null;
             },
             semanticLabel: 'Password untuk akun keluarga',
@@ -952,8 +970,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             label: 'Nama Lengkap',
             icon: Icons.person_rounded,
             validator: (value) {
-              if (value == null || value.isEmpty)
-                return 'Nama harus diisi';
+              if (value == null || value.isEmpty) return 'Nama harus diisi';
               return null;
             },
             semanticLabel: 'Nama lengkap keluarga',
@@ -967,8 +984,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             icon: Icons.phone_rounded,
             keyboardType: TextInputType.phone,
             validator: (value) {
-              if (value == null || value.isEmpty)
-                return 'Nomor HP harus diisi';
+              if (value == null || value.isEmpty) return 'Nomor HP harus diisi';
               if (!RegExp(r'^(\+62|0)[0-9]{9,12}$').hasMatch(value)) {
                 return 'Format nomor HP tidak valid';
               }

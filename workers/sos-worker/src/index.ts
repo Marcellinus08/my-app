@@ -530,12 +530,14 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
   const userId = getRequiredString(data.userId);
   const familyUid = getRequiredString(data.familyUid);
   const userName = getRequiredString(data.userName);
+  const title = '\u{1F6A8} SOS Darurat';
+  const body = `${userName} membutuhkan bantuan segera`;
 
   return {
     data: {
       type: 'sos',
-      title: '\u{1F6A8} SOS Darurat',
-      body: `${userName} membutuhkan bantuan segera`,
+      title,
+      body,
       userId,
       familyUid,
       userName,
@@ -547,6 +549,22 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
     },
     android: {
       priority: 'HIGH',
+    },
+    webpush: {
+      headers: {
+        Urgency: 'high',
+      },
+      notification: {
+        title,
+        body,
+        icon: '/icons/Icon-192.png',
+        badge: '/icons/Icon-192.png',
+        requireInteraction: true,
+        tag: `sos-${getOptionalString(data.sosId) ?? userId}`,
+      },
+      fcmOptions: {
+        link: '/#/family/home',
+      },
     },
   };
 }
@@ -726,12 +744,42 @@ async function isFamilyPairedWithUser(
     accessToken,
   );
   const userType = readFirestoreStringField(document, 'userType');
-  const pairedUserUid = readFirestoreStringField(document, 'pairedUserUid');
+  const isFamilyUser =
+    userType === 'family' || userType === 'UserType.family';
+  if (!isFamilyUser) {
+    return false;
+  }
 
-  return (
-    (userType === 'family' || userType === 'UserType.family') &&
-    pairedUserUid === tunaNetraUid
+  const pairedUserUid = readFirestoreStringField(document, 'pairedUserUid');
+  if (pairedUserUid === tunaNetraUid) {
+    return true;
+  }
+
+  const pairedUserUids = readFirestoreStringArrayField(
+    document,
+    'pairedUserUids',
   );
+  if (pairedUserUids.includes(tunaNetraUid)) {
+    return true;
+  }
+
+  const tunaNetraDocument = await getFirestoreDocument(
+    env,
+    `users/${tunaNetraUid}`,
+    accessToken,
+  );
+  const connectedFamilyUids = readConnectedFamilyUids(tunaNetraDocument);
+  if (connectedFamilyUids.includes(familyUid)) {
+    return true;
+  }
+
+  const familyMemberDocument = await getFirestoreDocument(
+    env,
+    `users/${tunaNetraUid}/family_members/${familyUid}`,
+    accessToken,
+  );
+
+  return familyMemberDocument !== null;
 }
 
 async function getFirestoreDocument(
@@ -1065,6 +1113,67 @@ function readFirestoreStringField(
 
   const value = field.stringValue.trim();
   return value.length > 0 ? value : null;
+}
+
+function readFirestoreStringArrayField(
+  document: unknown,
+  fieldName: string,
+): string[] {
+  if (!isRecord(document) || !isRecord(document.fields)) {
+    return [];
+  }
+
+  const field = document.fields[fieldName];
+  if (!isRecord(field) || !isRecord(field.arrayValue)) {
+    return [];
+  }
+
+  const values = field.arrayValue.values;
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values
+    .map((value) =>
+      isRecord(value) && typeof value.stringValue === 'string'
+        ? value.stringValue.trim()
+        : '',
+    )
+    .filter((value) => value.length > 0);
+}
+
+function readConnectedFamilyUids(document: unknown): string[] {
+  if (!isRecord(document) || !isRecord(document.fields)) {
+    return [];
+  }
+
+  const field = document.fields.connectedFamilies;
+  if (!isRecord(field) || !isRecord(field.arrayValue)) {
+    return [];
+  }
+
+  const values = field.arrayValue.values;
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values
+    .map((value) => {
+      if (!isRecord(value) || !isRecord(value.mapValue)) {
+        return '';
+      }
+
+      const fields = value.mapValue.fields;
+      if (!isRecord(fields)) {
+        return '';
+      }
+
+      const uid = fields.uid;
+      return isRecord(uid) && typeof uid.stringValue === 'string'
+        ? uid.stringValue.trim()
+        : '';
+    })
+    .filter((value) => value.length > 0);
 }
 
 async function readJsonOrText(response: Response): Promise<unknown> {

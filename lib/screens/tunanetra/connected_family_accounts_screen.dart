@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../utils/constants.dart';
 import '../../services/connected_family_service.dart';
+import '../../services/pairing_service.dart';
 
 class ConnectedFamilyAccountsScreen extends StatefulWidget {
   const ConnectedFamilyAccountsScreen({super.key});
@@ -15,6 +16,7 @@ class ConnectedFamilyAccountsScreen extends StatefulWidget {
 class _ConnectedFamilyAccountsScreenState
     extends State<ConnectedFamilyAccountsScreen> {
   final ConnectedFamilyService _familyService = ConnectedFamilyService();
+  final PairingService _pairingService = PairingService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
@@ -116,7 +118,7 @@ class _ConnectedFamilyAccountsScreenState
                   ],
                 ),
               ),
-              
+
               // Family Accounts List
               Expanded(
                 child: StreamBuilder<List<Map<String, dynamic>>>(
@@ -156,7 +158,8 @@ class _ConnectedFamilyAccountsScreenState
 
                           if (subSnapshot.hasError) {
                             return _buildErrorState(
-                                subSnapshot.error.toString());
+                              subSnapshot.error.toString(),
+                            );
                           }
 
                           final familyDocs = subSnapshot.data?.docs ?? [];
@@ -166,8 +169,7 @@ class _ConnectedFamilyAccountsScreenState
                           }
 
                           return ListView.builder(
-                            padding:
-                                const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                             itemCount: familyDocs.length,
                             itemBuilder: (context, index) {
                               final familyData =
@@ -274,10 +276,7 @@ class _ConnectedFamilyAccountsScreenState
               offset: const Offset(0, 8),
             ),
           ],
-          border: Border.all(
-            color: AppColors.error.withOpacity(0.1),
-            width: 1,
-          ),
+          border: Border.all(color: AppColors.error.withOpacity(0.1), width: 1),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -333,10 +332,7 @@ class _ConnectedFamilyAccountsScreenState
             offset: const Offset(0, 8),
           ),
         ],
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.1),
-          width: 1,
-        ),
+        border: Border.all(color: AppColors.primary.withOpacity(0.1), width: 1),
       ),
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -365,9 +361,10 @@ class _ConnectedFamilyAccountsScreenState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        family['name']?.isNotEmpty == true 
-                            ? family['name'] 
-                            : (family['email']?.split('@')[0] ?? 'Nama Keluarga'),
+                        family['name']?.isNotEmpty == true
+                            ? family['name']
+                            : (family['email']?.split('@')[0] ??
+                                  'Nama Keluarga'),
                         style: AppTextStyles.bodyLarge.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -405,13 +402,6 @@ class _ConnectedFamilyAccountsScreenState
               label: 'Terhubung sejak',
               value: _formatDate(family['connectedAt']),
             ),
-            const SizedBox(height: 12),
-            _buildInfoRow(
-              icon: Icons.location_on_rounded,
-              label: 'Status',
-              value: family['status'] ?? 'Aktif',
-              valueColor: AppColors.success,
-            ),
             const SizedBox(height: 20),
 
             // Remove button
@@ -422,9 +412,10 @@ class _ConnectedFamilyAccountsScreenState
                 icon: const Icon(Icons.delete_outline_rounded),
                 label: const Text('Hapus Koneksi'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.error.withOpacity(0.1),
-                  foregroundColor: AppColors.error,
-                  elevation: 0,
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white,
+                  elevation: 2,
+                  shadowColor: AppColors.error.withOpacity(0.28),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -452,11 +443,7 @@ class _ConnectedFamilyAccountsScreenState
             color: AppColors.primary.withOpacity(0.1),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: AppColors.primary,
-          ),
+          child: Icon(icon, size: 18, color: AppColors.primary),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -487,7 +474,7 @@ class _ConnectedFamilyAccountsScreenState
 
   String _formatDate(dynamic timestamp) {
     if (timestamp == null) return '-';
-    
+
     try {
       DateTime date;
       if (timestamp is Timestamp) {
@@ -508,15 +495,10 @@ class _ConnectedFamilyAccountsScreenState
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: ShaderMask(
           shaderCallback: (bounds) => LinearGradient(
-            colors: [
-              AppColors.error,
-              AppColors.error.withOpacity(0.8),
-            ],
+            colors: [AppColors.error, AppColors.error.withOpacity(0.8)],
           ).createShader(bounds),
           child: const Text(
             'Hapus Koneksi',
@@ -548,10 +530,7 @@ class _ConnectedFamilyAccountsScreenState
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  AppColors.error,
-                  AppColors.error.withOpacity(0.8),
-                ],
+                colors: [AppColors.error, AppColors.error.withOpacity(0.8)],
               ),
               borderRadius: BorderRadius.circular(12),
             ),
@@ -563,16 +542,17 @@ class _ConnectedFamilyAccountsScreenState
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.transparent,
                 shadowColor: Colors.transparent,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 14,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
               child: const Text(
                 'HAPUS',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           ),
@@ -586,10 +566,22 @@ class _ConnectedFamilyAccountsScreenState
       final families = await _familyService.getConnectedFamilies();
       if (index >= 0 && index < families.length) {
         final familyUid = families[index]['uid'];
-        await _familyService.removeConnectedFamily(familyUid);
-        
-        // Also remove from subcollection if exists
         final userId = _auth.currentUser?.uid;
+
+        // 1. Remove from tunanetra side
+        await _familyService.removeConnectedFamily(familyUid);
+
+        // 2. Also remove from family member's side (pairedUserUids)
+        if (userId != null) {
+          try {
+            await _pairingService.removePairedUser(familyUid, userId);
+            print('✅ Removed tunanetra from family member\'s paired users');
+          } catch (e) {
+            print('⚠️ Could not remove from family side: $e');
+          }
+        }
+
+        // 3. Also remove from subcollection if exists
         if (userId != null) {
           await _firestore
               .collection('users')
@@ -598,8 +590,8 @@ class _ConnectedFamilyAccountsScreenState
               .doc(familyUid)
               .delete()
               .catchError((e) {
-            print('Note: Could not delete from subcollection: $e');
-          });
+                print('Note: Could not delete from subcollection: $e');
+              });
         }
 
         if (mounted) {
@@ -637,15 +629,17 @@ class _ConnectedFamilyAccountsScreenState
 
       if (snapshot.docs.length <= 1) return;
 
-      print('🔍 Found ${snapshot.docs.length} family members - checking for duplicates...');
+      print(
+        '🔍 Found ${snapshot.docs.length} family members - checking for duplicates...',
+      );
 
       // Group by email to find duplicates
       final Map<String, List<String>> duplicateMap = {};
-      
+
       for (var doc in snapshot.docs) {
         final data = doc.data() as Map<String, dynamic>;
         final email = data['email'] ?? '';
-        
+
         if (email.isNotEmpty) {
           if (!duplicateMap.containsKey(email)) {
             duplicateMap[email] = [];
@@ -659,7 +653,7 @@ class _ConnectedFamilyAccountsScreenState
       for (final entry in duplicateMap.entries) {
         if (entry.value.length > 1) {
           print('⚠️  Found ${entry.value.length} entries for ${entry.key}');
-          
+
           // Delete all except the first
           for (int i = 1; i < entry.value.length; i++) {
             await _firestore
@@ -668,7 +662,7 @@ class _ConnectedFamilyAccountsScreenState
                 .collection('family_members')
                 .doc(entry.value[i])
                 .delete();
-            
+
             deletedCount++;
             print('   🗑️  Deleted duplicate: ${entry.value[i]}');
           }

@@ -792,6 +792,16 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   }
 
   Future<String?> getPairedUserUid() async {
+    final targetUid = widget.targetUid.trim();
+    if (targetUid.isNotEmpty) {
+      return targetUid;
+    }
+
+    final initialSosUserId = _readSosString(widget.initialSosData?['userId']);
+    if (initialSosUserId != null) {
+      return initialSosUserId;
+    }
+
     final currentUser = _auth.currentUser;
     if (currentUser == null) return null;
 
@@ -805,6 +815,16 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     if (pairedUid is String && pairedUid.isNotEmpty) {
       return pairedUid;
     }
+
+    final pairedUids = data['pairedUserUids'];
+    if (pairedUids is List) {
+      for (final uid in pairedUids) {
+        if (uid is String && uid.trim().isNotEmpty) {
+          return uid.trim();
+        }
+      }
+    }
+
     return null;
   }
 
@@ -1153,8 +1173,16 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     final lng = _parseDouble(liveData?['lng']);
     final heading = _parseDouble(liveData?['heading']) ?? 0.0;
     final isGpsActive = isGpsActiveTracking(liveData);
-    final hasLocation = lat != null && lng != null && isGpsActive;
-    final center = hasLocation ? LatLng(lat, lng) : _fallbackCenter;
+    final hasLiveLocation = lat != null && lng != null && isGpsActive;
+    final initialSosPoint = _parseLatLng(
+      widget.initialSosData?['lat'],
+      widget.initialSosData?['lng'],
+    );
+    final hasSosLocation = initialSosPoint != null;
+    final hasLocation = hasLiveLocation || hasSosLocation;
+    final center = hasLiveLocation
+        ? LatLng(lat, lng)
+        : initialSosPoint ?? _fallbackCenter;
 
     if (!_hasCenteredMap && hasLocation) {
       _hasCenteredMap = true;
@@ -1173,7 +1201,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         center: center,
         heading: heading,
         hasLocation: hasLocation,
-        isGpsActive: isGpsActive,
+        isGpsActive: isGpsActive || hasSosLocation,
       );
     }
 
@@ -1202,7 +1230,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
               : activeRoute.first,
           heading: heading,
           hasLocation: hasLocation,
-          isGpsActive: isGpsActive,
+          isGpsActive: isGpsActive || hasSosLocation,
           activeRoute: activeRoute,
           destination: destination,
         );

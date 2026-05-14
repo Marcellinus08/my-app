@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:math';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
+import '../../services/pairing_service.dart';
 import '../../services/user_service.dart';
 import '../../models/user_models.dart';
 
@@ -15,11 +16,12 @@ class TunaNetraProfileScreen extends StatefulWidget {
 class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
   late AuthService _authService;
   late UserService _userService;
-  
+  final PairingService _pairingService = PairingService();
+
   TunaNetraUser? _user;
   bool _isLoading = true;
   bool _isEditing = false;
-  
+
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _phoneController;
@@ -122,7 +124,10 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
   String _generatePairingCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final random = Random();
-    return List.generate(8, (index) => chars[random.nextInt(chars.length)]).join();
+    return List.generate(
+      8,
+      (index) => chars[random.nextInt(chars.length)],
+    ).join();
   }
 
   /// Regenerate pairing code
@@ -147,10 +152,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                 final uid = _authService.currentUserId;
                 if (uid != null) {
                   final newCode = _generatePairingCode();
-                  await _userService.updateTunaNetraUser(
-                    uid,
-                    pairingCode: newCode,
-                  );
+                  await _pairingService.savePairingCode(uid, newCode);
 
                   if (mounted) {
                     setState(() {
@@ -186,10 +188,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                 }
               }
             },
-            child: const Text(
-              'Lanjutkan',
-              style: TextStyle(color: Colors.red),
-            ),
+            child: const Text('Lanjutkan', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -256,7 +255,9 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
-                          _isEditing ? Icons.close_rounded : Icons.arrow_back_rounded,
+                          _isEditing
+                              ? Icons.close_rounded
+                              : Icons.arrow_back_rounded,
                           color: Colors.white,
                           size: 24,
                         ),
@@ -281,7 +282,9 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            _isEditing ? 'Ubah data pribadi' : 'Kelola informasi akun',
+                            _isEditing
+                                ? 'Ubah data pribadi'
+                                : 'Kelola informasi akun',
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.textSecondary,
                             ),
@@ -295,106 +298,100 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
               // Content
               Expanded(
                 child: _isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(),
-                      )
+                    ? const Center(child: CircularProgressIndicator())
                     : _user == null
-                        ? Center(
-                            child: Text(
-                              'User data tidak ditemukan',
-                              style: AppTextStyles.bodyLarge,
-                            ),
-                          )
-                        : ListView(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                            children: [
-                              // User Info Card
-                              if (!_isEditing)
-                                _buildInfoCard()
-                              else
-                                _buildEditForm(),
-                              const SizedBox(height: 20),
-                              // Action Button
-                              if (!_isEditing)
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() => _isEditing = true);
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      gradient: AppColors.primaryGradient,
-                                      borderRadius: BorderRadius.circular(16),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppColors.primary.withOpacity(0.3),
-                                          blurRadius: 15,
-                                          offset: const Offset(0, 8),
-                                        ),
-                                      ],
+                    ? Center(
+                        child: Text(
+                          'User data tidak ditemukan',
+                          style: AppTextStyles.bodyLarge,
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                        children: [
+                          // User Info Card
+                          if (!_isEditing)
+                            _buildInfoCard()
+                          else
+                            _buildEditForm(),
+                          const SizedBox(height: 20),
+                          // Action Button
+                          if (!_isEditing)
+                            GestureDetector(
+                              onTap: () {
+                                setState(() => _isEditing = true);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: AppColors.primaryGradient,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.primary.withOpacity(0.3),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 8),
                                     ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(
-                                          Icons.edit_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Edit Profil',
-                                          style: AppTextStyles.bodyLarge
-                                              .copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                              else
-                                GestureDetector(
-                                  onTap: _saveUserData,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      gradient: AppColors.primaryGradient,
-                                      borderRadius: BorderRadius.circular(16),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppColors.primary.withOpacity(0.3),
-                                          blurRadius: 15,
-                                          offset: const Offset(0, 8),
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(
-                                          Icons.check_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Simpan Perubahan',
-                                          style: AppTextStyles.bodyLarge
-                                              .copyWith(
-                                            color: Colors.white,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                  ],
                                 ),
-                            ],
-                          ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.edit_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Edit Profil',
+                                      style: AppTextStyles.bodyLarge.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else
+                            GestureDetector(
+                              onTap: _saveUserData,
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  gradient: AppColors.primaryGradient,
+                                  borderRadius: BorderRadius.circular(16),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.primary.withOpacity(0.3),
+                                      blurRadius: 15,
+                                      offset: const Offset(0, 8),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.check_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Simpan Perubahan',
+                                      style: AppTextStyles.bodyLarge.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
               ),
             ],
           ),
@@ -420,10 +417,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
             offset: const Offset(0, 8),
           ),
         ],
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.1),
-          width: 1,
-        ),
+        border: Border.all(color: AppColors.primary.withOpacity(0.1), width: 1),
       ),
       child: Column(
         children: [
@@ -434,10 +428,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
             color: AppColors.primary,
           ),
           const SizedBox(height: 16),
-          Divider(
-            color: AppColors.textSecondary.withOpacity(0.1),
-            height: 1,
-          ),
+          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
           const SizedBox(height: 16),
           _buildInfoRow(
             icon: Icons.email_rounded,
@@ -446,10 +437,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
             color: AppColors.accent,
           ),
           const SizedBox(height: 16),
-          Divider(
-            color: AppColors.textSecondary.withOpacity(0.1),
-            height: 1,
-          ),
+          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
           const SizedBox(height: 16),
           _buildInfoRow(
             icon: Icons.phone_rounded,
@@ -458,10 +446,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
             color: AppColors.success,
           ),
           const SizedBox(height: 16),
-          Divider(
-            color: AppColors.textSecondary.withOpacity(0.1),
-            height: 1,
-          ),
+          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
           const SizedBox(height: 16),
           _buildPairingCodeRow(),
         ],
@@ -579,10 +564,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
             offset: const Offset(0, 8),
           ),
         ],
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.1),
-          width: 1,
-        ),
+        border: Border.all(color: AppColors.primary.withOpacity(0.1), width: 1),
       ),
       child: Column(
         children: [
@@ -639,22 +621,15 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
             prefixIcon: Icon(icon, color: AppColors.primary),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: AppColors.primary.withOpacity(0.3),
-              ),
+              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: AppColors.primary.withOpacity(0.3),
-              ),
+              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: AppColors.primary,
-                width: 2,
-              ),
+              borderSide: const BorderSide(color: AppColors.primary, width: 2),
             ),
             filled: true,
             fillColor: Colors.white,

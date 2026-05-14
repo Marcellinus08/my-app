@@ -130,7 +130,6 @@ class ConnectedFamilyService {
             'email': familyEmail,
             'name': familyName,
             'phone': familyPhone,
-            'status': connectedFamilies[i]['status'] ?? 'Aktif',
             'connectedAt': connectedFamilies[i]['connectedAt'] ?? Timestamp.now(),
           };
           break;

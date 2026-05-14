@@ -9,6 +9,7 @@ import '../../services/family_location_service.dart';
 import '../../services/analytics_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/pairing_service.dart';
 import '../../services/user_service.dart';
 import '../../utils/constants.dart';
 import 'family_history_screen.dart';
@@ -36,6 +37,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     with TickerProviderStateMixin {
   final FamilyLocationService _locationService = FamilyLocationService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final PairingService _pairingService = PairingService();
 
   // List of monitored users
   List<Map<String, dynamic>> _monitoredUsers = [];
@@ -46,11 +48,17 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   _liveTrackingSubscriptions = {};
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _activeSosSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _pairingRequestSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _familyDocSub;
   DocumentSnapshot<Map<String, dynamic>>? _activeSosDoc;
   Map<String, dynamic>? _activeSosData;
+  final Set<String> _handledPairingRequestIds = {};
+  String? _lastNotifiedSosId;
+  bool _hasLoadedFamilyDocSnapshot = false;
 
   String _familyName = 'Keluarga';
   bool _isLoadingUsers = true;
+  bool _isSubmittingPairingRequest = false;
   String _resolvedFamilyId = '';
 
   // Debug info
@@ -70,6 +78,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     AnalyticsService().logScreenView(screenName: 'FamilyHome');
     NotificationService.instance.initializeForFamilyUser();
     _loadMonitoredUsers();
+    _subscribeToFamilyConnectionChanges();
+    _subscribeToPairingRequestUpdates();
     _subscribeToActiveSos();
     _liveTrackingFreshnessTimer = Timer.periodic(const Duration(seconds: 1), (
       _,
@@ -104,9 +114,13 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
 
   Future<void> _loadMonitoredUsers() async {
     try {
-      print('\n╔════════════════════════════════════════════════════════╗');
-      print('║ [FAMILY HOME] Loading Monitored Users (by Family ID)  ║');
-      print('╚════════════════════════════════════════════════════════╝');
+      print(
+        '\nΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù',
+      );
+      print('Γòæ [FAMILY HOME] Loading Monitored Users (by Family ID)  Γòæ');
+      print(
+        'ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥',
+      );
 
       final resolvedFamilyId = widget.familyId.trim().isNotEmpty
           ? widget.familyId.trim()
@@ -125,6 +139,26 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       );
 
       if (mounted) {
+        final activeUids = users
+            .map((user) => user['uid'])
+            .whereType<String>()
+            .where((uid) => uid.isNotEmpty)
+            .toSet();
+
+        for (final uid in _subscriptions.keys.toList()) {
+          if (!activeUids.contains(uid)) {
+            _subscriptions.remove(uid)?.cancel();
+            _latestLocations.remove(uid);
+          }
+        }
+
+        for (final uid in _liveTrackingSubscriptions.keys.toList()) {
+          if (!activeUids.contains(uid)) {
+            _liveTrackingSubscriptions.remove(uid)?.cancel();
+            _liveTrackingData.remove(uid);
+          }
+        }
+
         setState(() {
           _monitoredUsers = users;
           _isLoadingUsers = false;
@@ -146,9 +180,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         }
       }
 
-      print('✅ Monitoring users loaded: ${users.length}');
+      print('Γ£à Monitoring users loaded: ${users.length}');
     } catch (e) {
-      print('❌ Error loading monitored users: $e');
+      print('Γ¥î Error loading monitored users: $e');
       if (mounted) {
         setState(() {
           _isLoadingUsers = false;
@@ -217,18 +251,85 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         .listen(
           (snapshot) {
             if (!mounted) return;
-            setState(() {
-              if (snapshot.docs.isEmpty) {
-                _activeSosDoc = null;
-                _activeSosData = null;
-              } else {
-                _activeSosDoc = snapshot.docs.first;
-                _activeSosData = snapshot.docs.first.data();
+            DocumentSnapshot<Map<String, dynamic>>? activeDoc;
+            Map<String, dynamic>? activeData;
+
+            if (snapshot.docs.isNotEmpty) {
+              activeDoc = snapshot.docs.first;
+              final docData = activeDoc.data();
+              if (docData != null) {
+                activeData = {
+                  ...docData,
+                  'type': 'sos',
+                  'sosId': activeDoc.id,
+                  'familyUid': familyId,
+                };
               }
+            }
+
+            setState(() {
+              _activeSosDoc = activeDoc;
+              _activeSosData = activeData;
             });
+
+            if (activeDoc != null && activeData != null) {
+              _notifyActiveSos(activeDoc.id, activeData);
+            } else {
+              _lastNotifiedSosId = null;
+            }
           },
           onError: (Object error) {
             debugPrint('[FamilyHome] Active SOS listener error: $error');
+          },
+        );
+  }
+
+  void _notifyActiveSos(String sosId, Map<String, dynamic> data) {
+    if (_lastNotifiedSosId == sosId) return;
+    _lastNotifiedSosId = sosId;
+
+    NotificationService.instance.showSosFullScreenNotification(data);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final userName = _readString(data['userName']) ?? 'Pengguna';
+      _showSnackBar(
+        'SOS Darurat: $userName membutuhkan bantuan segera.',
+        AppColors.error,
+      );
+    });
+  }
+
+  void _subscribeToFamilyConnectionChanges() {
+    final familyId = widget.familyId.trim().isNotEmpty
+        ? widget.familyId.trim()
+        : (AuthService().currentUserId ?? '');
+
+    if (familyId.isEmpty) {
+      debugPrint(
+        '[FamilyHome] Skip family connection listener, familyId empty',
+      );
+      return;
+    }
+
+    _familyDocSub?.cancel();
+    _familyDocSub = _firestore
+        .collection('users')
+        .doc(familyId)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
+
+            if (!_hasLoadedFamilyDocSnapshot) {
+              _hasLoadedFamilyDocSnapshot = true;
+              return;
+            }
+
+            _loadMonitoredUsers();
+          },
+          onError: (error) {
+            debugPrint('[FamilyHome] Family connection listener error: $error');
           },
         );
   }
@@ -263,20 +364,168 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     }
   }
 
-  void _onAddUserPressed() {
+  Future<void> _onAddUserPressed() async {
+    final controller = TextEditingController();
+
+    final pairingCode = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            'Tambah Pengguna',
+            style: AppTextStyles.heading3.copyWith(fontWeight: FontWeight.w800),
+          ),
+          content: TextField(
+            controller: controller,
+            textCapitalization: TextCapitalization.characters,
+            decoration: InputDecoration(
+              labelText: 'Kode Pairing',
+              hintText: 'Masukkan kode dari TunaNetra',
+              prefixIcon: const Icon(Icons.vpn_key_rounded),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            onSubmitted: (_) {
+              Navigator.pop(dialogContext, controller.text.trim());
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(dialogContext, controller.text.trim());
+              },
+              icon: const Icon(Icons.send_rounded, size: 18),
+              label: const Text('Kirim'),
+            ),
+          ],
+        );
+      },
+    );
+
+    controller.dispose();
+
+    if (pairingCode == null) return;
+    final normalizedCode = pairingCode.toUpperCase().trim();
+    if (normalizedCode.length < 4) {
+      _showSnackBar('Kode pairing belum valid', Colors.orange);
+      return;
+    }
+
+    await _sendPairingRequest(normalizedCode);
+  }
+
+  void _subscribeToPairingRequestUpdates() {
+    final familyId = widget.familyId.trim().isNotEmpty
+        ? widget.familyId.trim()
+        : (AuthService().currentUserId ?? '');
+
+    if (familyId.isEmpty) return;
+
+    _pairingRequestSub?.cancel();
+    _pairingRequestSub = _firestore
+        .collection('pairing_requests')
+        .where('familyUid', isEqualTo: familyId)
+        .snapshots()
+        .listen(
+          (snapshot) {
+            if (!mounted) return;
+
+            for (final change in snapshot.docChanges) {
+              if (change.type != DocumentChangeType.modified) continue;
+
+              final doc = change.doc;
+              if (_handledPairingRequestIds.contains(doc.id)) continue;
+              final data = doc.data();
+              if (data == null) continue;
+              final status = data['status'] as String?;
+
+              if (status == 'accepted') {
+                _handledPairingRequestIds.add(doc.id);
+                _loadMonitoredUsers();
+                _showSnackBar(
+                  'Permintaan diterima. Pengguna terhubung.',
+                  Colors.green,
+                );
+              } else if (status == 'rejected') {
+                _handledPairingRequestIds.add(doc.id);
+                _showSnackBar('Permintaan koneksi ditolak.', Colors.orange);
+              }
+            }
+          },
+          onError: (error) {
+            debugPrint('[FamilyHome] Pairing request listener error: $error');
+          },
+        );
+  }
+
+  Future<void> _sendPairingRequest(String pairingCode) async {
+    if (_isSubmittingPairingRequest) return;
+
+    final familyId = _resolvedFamilyId.isNotEmpty
+        ? _resolvedFamilyId
+        : (widget.familyId.trim().isNotEmpty
+              ? widget.familyId.trim()
+              : (AuthService().currentUserId ?? ''));
+
+    if (familyId.isEmpty) {
+      _showSnackBar('Akun keluarga belum terdeteksi', Colors.red);
+      return;
+    }
+
+    setState(() {
+      _isSubmittingPairingRequest = true;
+    });
+
+    try {
+      await _pairingService.createPairingRequest(
+        familyUid: familyId,
+        pairingCode: pairingCode,
+      );
+      if (!mounted) return;
+      _showSnackBar(
+        'Permintaan terkirim. Menunggu konfirmasi TunaNetra.',
+        Colors.green,
+      );
+    } on PairingException catch (e) {
+      if (!mounted) return;
+      _showSnackBar(e.message, const Color(0xFFDC2626));
+    } catch (e) {
+      if (!mounted) return;
+      _showSnackBar(
+        'Terjadi kendala saat mengirim permintaan. Silakan coba lagi.',
+        const Color(0xFFDC2626),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmittingPairingRequest = false;
+        });
+      }
+    }
+  }
+
+  void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
+      SnackBar(
         content: Text(
-          'Fitur ini sedang dikembangkan',
-          style: TextStyle(
+          message,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
         ),
-        backgroundColor: Colors.blue,
+        backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(16),
+        margin: const EdgeInsets.all(16),
         elevation: 2,
       ),
     );
@@ -416,6 +665,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       sub?.cancel();
     }
     _activeSosSubscription?.cancel();
+    _pairingRequestSub?.cancel();
+    _familyDocSub?.cancel();
     _liveTrackingFreshnessTimer?.cancel();
     _rotationController.dispose();
     _fadeController.dispose();
@@ -583,6 +834,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           ),
 
+          if (_activeSosData != null) _buildActiveSosBanner(),
+
           // Monitored Users List
           Expanded(
             child: _isLoadingUsers
@@ -602,7 +855,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           Container(
             padding: const EdgeInsets.all(20),
             child: GestureDetector(
-              onTap: _onAddUserPressed,
+              onTap: _isSubmittingPairingRequest ? null : _onAddUserPressed,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 16),
@@ -627,7 +880,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      'Tambah Pengguna',
+                      _isSubmittingPairingRequest
+                          ? 'Mengirim Permintaan...'
+                          : 'Tambah Pengguna',
                       style: AppTextStyles.bodyLarge.copyWith(
                         color: Colors.white,
                         fontWeight: FontWeight.w700,
@@ -716,124 +971,118 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Widget _buildEmptyState() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(40),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 100,
-            height: 100,
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: Container(
+            padding: const EdgeInsets.all(28),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.people_outline_rounded,
-              size: 50,
-              color: AppColors.primary.withOpacity(0.5),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            'Belum Ada Pengguna',
-            style: AppTextStyles.heading3.copyWith(
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Tambahkan pengguna TunaNetra yang ingin Anda monitoring',
-            style: AppTextStyles.bodyMedium.copyWith(
-              color: AppColors.textSecondary,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 30),
-
-          // Debug Info Section
-          if (_debugErrorMessage != null)
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.05),
-                border: Border.all(color: Colors.red.withOpacity(0.3)),
-                borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              border: Border.all(
+                color: AppColors.primary.withOpacity(0.08),
+                width: 1,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '🔍 DEBUG INFO',
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: Colors.red,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F172A).withOpacity(0.06),
+                  blurRadius: 28,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 88,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.08),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.people_outline_rounded,
+                    size: 44,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  'Belum ada pengguna terhubung',
+                  style: AppTextStyles.heading3.copyWith(
+                    color: AppColors.textPrimary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Setelah akun keluarga terhubung, kartu monitoring akan tampil otomatis di sini.',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.45,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceLight,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.06),
                     ),
                   ),
-                  const SizedBox(height: 10),
-
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.red.withOpacity(0.3)),
-                    ),
-                    child: Text(
-                      _debugErrorMessage ?? '',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.red,
-                        fontSize: 11,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.add_circle_outline_rounded,
+                          color: AppColors.primary,
+                          size: 22,
+                        ),
                       ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Pastikan di Firestore:',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 10,
-                            color: Colors.amber[700],
-                          ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Siapkan koneksi baru',
+                              style: AppTextStyles.bodyLarge.copyWith(
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Tekan tombol Tambah Pengguna untuk menghubungkan akun TunaNetra ke keluarga.',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textSecondary,
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '1. Family user (uid: ${_resolvedFamilyId.isNotEmpty ? _resolvedFamilyId : "[kosong]"})\n'
-                          '   memiliki field:\n'
-                          '   - pairedUserUid: "[tunanetra_uid]"\n'
-                          '   ATAU\n'
-                          '   - pairedUserUids: ["uid1", "uid2"]\n\n'
-                          '2. TunaNetra user harus\n'
-                          '   memiliki:\n'
-                          '   - userType: "tunanetra"\n'
-                          '   - name, email, dll\n\n'
-                          '3. Cek Console (flutter logs)\n'
-                          '   untuk detail lengkap',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            fontSize: 9,
-                            color: Colors.amber[900],
-                            height: 1.4,
-                            fontFamily: 'monospace',
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-        ],
+          ),
+        ),
       ),
     );
   }

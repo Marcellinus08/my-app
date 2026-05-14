@@ -352,7 +352,7 @@ class UserService {
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [USER SERVICE] getTunaNetraUsersByPairingCode()       ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       // Normalize pairing code (uppercase untuk konsistensi)
       final normalizedCode = familyPairingCode.toUpperCase().trim();
       print('🔍 Input pairing code: "$familyPairingCode"');
@@ -363,7 +363,7 @@ class UserService {
       print('   Collection: users');
       print('   Where: userType == "tunanetra"');
       print('   Where: pairingCode == "$normalizedCode"');
-      
+
       final snapshot = await _firestore
           .collection('users')
           .where('userType', isEqualTo: 'tunanetra')
@@ -375,12 +375,12 @@ class UserService {
 
       final users = snapshot.docs.map((doc) {
         final data = doc.data();
-        
+
         print('\n📄 Processing document: ${doc.id}');
         print('   Name: ${data['name']}');
         print('   Email: ${data['email']}');
         print('   PairingCode from DB: "${data['pairingCode']}"');
-        
+
         // Parse createdAt
         DateTime createdAt = DateTime.now();
         if (data['createdAt'] != null) {
@@ -390,7 +390,7 @@ class UserService {
             createdAt = data['createdAt'] as DateTime;
           }
         }
-        
+
         return {
           'uid': doc.id,
           'name': data['name'] ?? 'Unknown',
@@ -403,13 +403,15 @@ class UserService {
         };
       }).toList();
 
-      print('\n✅ Found ${users.length} TunaNetra users with pairing code: $normalizedCode');
+      print(
+        '\n✅ Found ${users.length} TunaNetra users with pairing code: $normalizedCode',
+      );
       if (users.isNotEmpty) {
         for (int i = 0; i < users.length; i++) {
           print('   ${i + 1}. ${users[i]['name']} (${users[i]['uid']})');
         }
       }
-      
+
       return users;
     } catch (e) {
       print('❌ Error getting TunaNetra users by pairing code: $e');
@@ -428,7 +430,7 @@ class UserService {
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [USER SERVICE] getTunaNetraUsersByFamilyId()          ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       print('🔍 Step 1: Fetch family user document');
       print('   Family ID: $familyId');
 
@@ -450,22 +452,27 @@ class UserService {
 
       // Ambil pairedUserUid atau pairedUserUids
       print('\n🔍 Step 2: Get paired user UIDs');
-      
+
       final pairedUserUids = <String>[];
-      
+      final seenPairedUserUids = <String>{};
+
       // Support single pairedUserUid
       if (familyData['pairedUserUid'] is String) {
         final uid = familyData['pairedUserUid'] as String;
-        if (uid.isNotEmpty) {
+        if (uid.isNotEmpty && seenPairedUserUids.add(uid)) {
           pairedUserUids.add(uid);
           print('   Found single pairedUserUid: $uid');
         }
       }
-      
+
       // Support array pairedUserUids
       if (familyData['pairedUserUids'] is List) {
         final uids = List<String>.from(familyData['pairedUserUids'] as List);
-        pairedUserUids.addAll(uids);
+        for (final uid in uids) {
+          if (uid.isNotEmpty && seenPairedUserUids.add(uid)) {
+            pairedUserUids.add(uid);
+          }
+        }
         print('   Found ${uids.length} pairedUserUids: ${uids.join(", ")}');
       }
 
@@ -484,16 +491,30 @@ class UserService {
         final uid = pairedUserUids[i];
         print('\n   Fetching user ${i + 1}/${pairedUserUids.length}: $uid');
 
-        final userDoc = await _firestore
-            .collection('users')
-            .doc(uid)
-            .get();
+        final userDoc = await _firestore.collection('users').doc(uid).get();
 
         if (userDoc.exists) {
           final userData = userDoc.data() as Map<String, dynamic>;
-          
+
           // Verify it's tunanetra user
           if (userData['userType'] == 'tunanetra') {
+            final connectedFamiliesRaw = userData['connectedFamilies'];
+            final isStillConnected =
+                connectedFamiliesRaw is List &&
+                connectedFamiliesRaw.any((family) {
+                  if (family is Map) {
+                    return family['uid'] == familyId;
+                  }
+                  return false;
+                });
+
+            if (!isStillConnected) {
+              print(
+                '      ⚠️ Skip user karena connectedFamilies sudah tidak berisi family ini',
+              );
+              continue;
+            }
+
             print('      ✅ Valid TunaNetra user: ${userData['name']}');
 
             // Parse createdAt
@@ -702,7 +723,9 @@ class UserService {
 
       final devices = snapshot.docs.map((doc) {
         final device = FamilyDevice.fromMap(doc.data());
-        print('   - ${device.deviceName ?? "Unknown"} (${device.deviceType}) | Last seen: ${device.lastSeen.toIso8601String()}');
+        print(
+          '   - ${device.deviceName ?? "Unknown"} (${device.deviceType}) | Last seen: ${device.lastSeen.toIso8601String()}',
+        );
         return device;
       }).toList();
 
@@ -723,9 +746,11 @@ class UserService {
         .collection('connected_family_devices')
         .orderBy('lastSeen', descending: true)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => FamilyDevice.fromMap(doc.data()))
-            .toList());
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => FamilyDevice.fromMap(doc.data()))
+              .toList(),
+        );
   }
 
   /// Disconnect/remove device

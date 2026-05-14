@@ -118,10 +118,6 @@ class SosService {
           );
           debugPrint('[SosService] Worker response body: ${response.body}');
 
-          if (response.statusCode == 401 || response.statusCode == 403) {
-            throw Exception('Sesi tidak valid. Silakan login ulang.');
-          }
-
           final responseBody = _decodeJsonObject(response.body);
           final success =
               response.statusCode == 200 && responseBody?['success'] == true;
@@ -137,9 +133,6 @@ class SosService {
             );
           }
         } catch (e) {
-          if (e.toString().contains('Sesi tidak valid. Silakan login ulang.')) {
-            rethrow;
-          }
           failedCount += 1;
           debugPrint('[SosService] SOS error for familyUid=$familyUid: $e');
         }
@@ -151,7 +144,10 @@ class SosService {
       );
 
       if (successCount == 0) {
-        throw Exception('SOS gagal dikirim ke semua keluarga');
+        debugPrint(
+          '[SosService] SOS alert already saved, but push delivery failed '
+          'for every family device.',
+        );
       }
     } catch (e) {
       debugPrint('[SosService] sendSosAlert failed: $e');
@@ -160,21 +156,66 @@ class SosService {
   }
 
   Future<List<String>> getConnectedFamilyUids(String tunaNetraUid) async {
-    final snapshot = await _firestore
+    final familyUids = <String>{};
+
+    final tunaDoc = await _firestore
         .collection('users')
-        .where('userType', whereIn: ['family', 'UserType.family'])
-        .where('pairedUserUid', isEqualTo: tunaNetraUid)
+        .doc(tunaNetraUid)
+        .get();
+    final tunaData = tunaDoc.data() ?? {};
+
+    final connectedFamilies = tunaData['connectedFamilies'];
+    if (connectedFamilies is List) {
+      for (final family in connectedFamilies) {
+        if (family is Map) {
+          final uid = _readString(family['uid']);
+          if (uid != null) {
+            familyUids.add(uid);
+          }
+        }
+      }
+    }
+
+    final familyMembersSnapshot = await _firestore
+        .collection('users')
+        .doc(tunaNetraUid)
+        .collection('family_members')
         .get();
 
-    final familyUids = <String>[];
-    for (final doc in snapshot.docs) {
+    for (final doc in familyMembersSnapshot.docs) {
       final uid = _readString(doc.data()['uid']) ?? doc.id;
       if (uid.isNotEmpty) {
         familyUids.add(uid);
       }
     }
 
-    return familyUids.toSet().toList();
+    final pairedArraySnapshot = await _firestore
+        .collection('users')
+        .where('userType', whereIn: ['family', 'UserType.family'])
+        .where('pairedUserUids', arrayContains: tunaNetraUid)
+        .get();
+
+    for (final doc in pairedArraySnapshot.docs) {
+      final uid = _readString(doc.data()['uid']) ?? doc.id;
+      if (uid.isNotEmpty) {
+        familyUids.add(uid);
+      }
+    }
+
+    final legacySnapshot = await _firestore
+        .collection('users')
+        .where('userType', whereIn: ['family', 'UserType.family'])
+        .where('pairedUserUid', isEqualTo: tunaNetraUid)
+        .get();
+
+    for (final doc in legacySnapshot.docs) {
+      final uid = _readString(doc.data()['uid']) ?? doc.id;
+      if (uid.isNotEmpty) {
+        familyUids.add(uid);
+      }
+    }
+
+    return familyUids.toList();
   }
 
   Future<Map<String, dynamic>?> getTunaNetraProfile(String uid) async {
