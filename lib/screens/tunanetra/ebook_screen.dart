@@ -12,25 +12,29 @@ class _EbookScreenState extends State<EbookScreen> {
   final List<Map<String, dynamic>> _books = [
     {
       'title': 'Panduan Navigasi',
-      'description': 'Panduan lengkap menggunakan fitur navigasi untuk perjalanan sehari-hari',
+      'description':
+          'Panduan lengkap menggunakan fitur navigasi untuk perjalanan sehari-hari',
       'icon': Icons.map_rounded,
       'pages': 24,
     },
     {
       'title': 'Koneksi Bluetooth',
-      'description': 'Cara menghubungkan dan menggunakan perangkat via Bluetooth',
+      'description':
+          'Cara menghubungkan dan menggunakan perangkat via Bluetooth',
       'icon': Icons.bluetooth_rounded,
       'pages': 18,
     },
     {
-      'title': 'SmartCane Guide',
-      'description': 'Tutorial lengkap penggunaan SmartCane untuk mobilitas lebih baik',
+      'title': 'Panduan SmartCane',
+      'description':
+          'Tutorial lengkap penggunaan SmartCane untuk mobilitas lebih baik',
       'icon': Icons.accessibility_new_rounded,
       'pages': 32,
     },
     {
       'title': 'Tips & Trik',
-      'description': 'Kumpulan tips berguna untuk pengalaman pengguna yang optimal',
+      'description':
+          'Kumpulan tips berguna untuk pengalaman pengguna yang optimal',
       'icon': Icons.lightbulb_rounded,
       'pages': 15,
     },
@@ -41,7 +45,7 @@ class _EbookScreenState extends State<EbookScreen> {
       'pages': 20,
     },
     {
-      'title': 'FAQ & Troubleshooting',
+      'title': 'Tanya Jawab & Pemecahan Masalah',
       'description': 'Jawaban untuk pertanyaan umum dan solusi masalah teknis',
       'icon': Icons.help_rounded,
       'pages': 28,
@@ -137,11 +141,14 @@ class _EbookScreenState extends State<EbookScreen> {
                   ],
                 ),
               ),
-              
+
               // Books List
               Expanded(
                 child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   itemCount: _books.length,
                   itemBuilder: (context, index) {
                     final book = _books[index];
@@ -163,9 +170,6 @@ class _EbookScreenState extends State<EbookScreen> {
                                 ),
                                 backgroundColor: AppColors.primary,
                                 duration: const Duration(seconds: 2),
-                                behavior: SnackBarBehavior.floating,
-                                margin: const EdgeInsets.all(16),
-                                elevation: 2,
                               ),
                             );
                           },
@@ -202,7 +206,9 @@ class _EbookScreenState extends State<EbookScreen> {
                                     borderRadius: BorderRadius.circular(14),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: AppColors.primary.withOpacity(0.3),
+                                        color: AppColors.primary.withOpacity(
+                                          0.3,
+                                        ),
                                         blurRadius: 12,
                                         offset: const Offset(0, 6),
                                       ),
@@ -218,7 +224,8 @@ class _EbookScreenState extends State<EbookScreen> {
                                 // Book Details
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         book['title'],

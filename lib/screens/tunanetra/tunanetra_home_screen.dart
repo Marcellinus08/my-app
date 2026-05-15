@@ -19,8 +19,6 @@ class TunaNetraHomeScreen extends StatefulWidget {
 
 class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver {
-  bool _isSmartcaneConnected = true;
-  double _smartcaneBattery = 85;
   String _userName = 'Pengguna';
   WeatherData? _weatherData;
   bool _isLoadingWeather = true;
@@ -97,8 +95,14 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   Future<void> _loadWeather() async {
     try {
       final weatherService = WeatherService();
-      final weather = await weatherService.getWeatherByLocation();
+      final cachedWeather = await weatherService.getCachedWeather();
+      if (mounted && cachedWeather != null) {
+        setState(() {
+          _weatherData = cachedWeather;
+        });
+      }
 
+      final weather = await weatherService.getWeatherByLocation();
       if (mounted) {
         setState(() {
           _weatherData = weather;
@@ -112,17 +116,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           _isLoadingWeather = false;
         });
       }
-    }
-  }
-
-  /// Get battery color based on level
-  Color _getBatteryColor() {
-    if (_smartcaneBattery >= 50) {
-      return Colors.green;
-    } else if (_smartcaneBattery >= 20) {
-      return Colors.amber;
-    } else {
-      return Colors.red;
     }
   }
 
@@ -151,19 +144,32 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   }
 
   void _navigateToBluetooth() {
-    Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
+    _showComingSoonSnackBar();
+    // Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
   }
 
   void _navigateToEbook() {
-    Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
+    _showComingSoonSnackBar();
+    // Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
   }
 
   void _navigateToSmartcane() {
-    Navigator.pushNamed(context, AppRoutes.tunaNetraSmartcane);
+    _showComingSoonSnackBar();
+    // Navigator.pushNamed(context, AppRoutes.tunaNetraSmartcane);
   }
 
   void _navigateToSettings() {
     Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
+  }
+
+  void _showComingSoonSnackBar() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Fitur ini akan segera hadir'),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 3),
+      ),
+    );
   }
 
   Future<void> _triggerEmergency() async {
@@ -433,7 +439,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
               ],
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // Left: Greeting + Name + Weather
                 Expanded(
@@ -449,20 +455,101 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        _userName,
-                        style: AppTextStyles.heading1.copyWith(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
+                      SizedBox(
+                        width: double.infinity,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _userName,
+                            maxLines: 1,
+                            style: AppTextStyles.heading1.copyWith(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.visible,
                       ),
                       const SizedBox(height: 6),
                       // Weather Info
-                      if (_isLoadingWeather)
+                      if (_weatherData != null)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '${WeatherService.getWeatherEmoji(_weatherData!.weatherCondition)} ${_weatherData!.temperature.toStringAsFixed(1)}°C',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '|',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.white.withOpacity(0.5),
+                                      fontSize: 9,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${_weatherData!.humidity}%',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.white.withOpacity(0.8),
+                                      fontSize: 9,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '|',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.white.withOpacity(0.5),
+                                      fontSize: 9,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${_weatherData!.windSpeed.toStringAsFixed(0)} km/h',
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.white.withOpacity(0.8),
+                                      fontSize: 9,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (_isLoadingWeather)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.5,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white.withOpacity(0.6),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        )
+                      else if (_isLoadingWeather)
                         SizedBox(
                           height: 18,
                           child: Center(
@@ -477,74 +564,18 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                               ),
                             ),
                           ),
-                        )
-                      else if (_weatherData != null)
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                '${WeatherService.getWeatherEmoji(_weatherData!.weatherCondition)} ${_weatherData!.temperature.toStringAsFixed(1)}°C',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '|',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.white.withOpacity(0.5),
-                                  fontSize: 9,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${_weatherData!.humidity}%',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.white.withOpacity(0.8),
-                                  fontSize: 9,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '|',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.white.withOpacity(0.5),
-                                  fontSize: 9,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${_weatherData!.windSpeed.toStringAsFixed(0)} km/h',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.white.withOpacity(0.8),
-                                  fontSize: 9,
-                                ),
-                              ),
-                            ],
-                          ),
                         ),
                     ],
                   ),
                 ),
                 const SizedBox(width: 12),
                 // Right: Battery Indicator
-                Expanded(
+                SizedBox(
+                  width: 52,
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      const SizedBox(height: 2),
                       // Modern Battery Icon with Fill
                       Container(
                         width: 52,
@@ -593,32 +624,24 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                   ),
-                                  // Fill based on battery level
+                                  // Placeholder until SmartCane battery data is available.
                                   Align(
                                     alignment: Alignment.bottomCenter,
                                     child: Container(
                                       width: double.infinity,
-                                      height: (_smartcaneBattery / 100) * 60,
+                                      height: 60,
                                       decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.bottomCenter,
-                                          end: Alignment.topCenter,
-                                          colors: [
-                                            _getBatteryColor(),
-                                            _getBatteryColor().withOpacity(0.6),
-                                          ],
-                                        ),
+                                        color: Colors.white.withOpacity(0.14),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                     ),
                                   ),
-                                  // Percentage text overlay
                                   Center(
                                     child: Text(
-                                      '${_smartcaneBattery.toInt()}%',
+                                      '?',
                                       style: AppTextStyles.heading2.copyWith(
                                         color: Colors.white,
-                                        fontSize: 14,
+                                        fontSize: 26,
                                         fontWeight: FontWeight.w900,
                                         shadows: [
                                           Shadow(
@@ -637,20 +660,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                           ],
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      // Status text below
-                      Text(
-                        _isSmartcaneConnected ? 'Terhubung' : 'Offline',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: _isSmartcaneConnected
-                              ? Colors.green.withOpacity(0.9)
-                              : Colors.orange.withOpacity(0.9),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 2),
                     ],
                   ),
                 ),
@@ -714,7 +723,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                       ),
                       _ModernMenuCard(
                         icon: Icons.warning_rounded,
-                        title: 'Darurat',
+                        title: 'SOS',
                         gradient: const LinearGradient(
                           colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
                         ),

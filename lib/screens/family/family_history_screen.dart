@@ -229,7 +229,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Pantau kondisi user secara cepat',
+                        'Pantau kondisi pengguna',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.textSecondary,
                         ),
@@ -661,7 +661,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            'Detail Tuna Netra',
+                            'Detail Pengguna',
                             style: AppTextStyles.heading2.copyWith(
                               fontSize: 20,
                               fontWeight: FontWeight.w800,
@@ -669,7 +669,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Data diambil langsung dari live_tracking.',
+                            'Data aktivitas saat ini',
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.textSecondary,
                               height: 1.5,
@@ -928,8 +928,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
             ),
           ),
           backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.all(16),
           elevation: 2,
         ),
       );
@@ -1455,7 +1453,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                 Expanded(
                   child: _buildSosActionButton(
                     icon: Icons.copy_rounded,
-                    label: 'Copy Koordinat',
+                    label: 'Salin Koordinat',
                     foregroundColor: Colors.white,
                     backgroundColor: Colors.white.withOpacity(0.14),
                     borderColor: Colors.white.withOpacity(0.65),
@@ -1764,7 +1762,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                      'Pantau realtime & riwayat perjalanan',
+                                      'Pantau aktivitas pengguna',
                                       style: AppTextStyles.bodySmall.copyWith(
                                         color: AppColors.textSecondary,
                                       ),

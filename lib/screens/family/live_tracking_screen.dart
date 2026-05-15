@@ -187,7 +187,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Live Tracking'),
+        title: const Text('Pelacakan Langsung'),
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
@@ -231,8 +231,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
           final displaySpeed = isNavigationActive && speed != null
               ? '${speed.toStringAsFixed(1)} m/s'
               : '-';
-          final displayHeading =
-              isNavigationActive ? '${heading.toStringAsFixed(0)} deg' : '-';
+            final displayHeading =
+              isNavigationActive ? '${heading.toStringAsFixed(0)}°' : '-';
           final displayAccuracy = isNavigationActive && accuracy != null
               ? '${accuracy.toStringAsFixed(1)} m'
               : '-';
@@ -251,16 +251,14 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'GPS: $gpsStatusText',
-                    ),
-                    Text('Destination: $displayDestination'),
+                    Text('GPS: $gpsStatusText'),
+                    Text('Tujuan: $displayDestination'),
                     Text('Navigasi: $navigationText'),
-                    Text('Speed: $displaySpeed'),
-                    Text('Heading: $displayHeading'),
-                    Text('Accuracy: $displayAccuracy'),
-                    Text('Battery: $displayBattery'),
-                    Text('Last Update: $displayLastUpdate'),
+                    Text('Kecepatan: $displaySpeed'),
+                    Text('Arah: $displayHeading'),
+                    Text('Akurasi: $displayAccuracy'),
+                    Text('Baterai: $displayBattery'),
+                    Text('Terakhir diperbarui: $displayLastUpdate'),
                   ],
                 ),
               ),

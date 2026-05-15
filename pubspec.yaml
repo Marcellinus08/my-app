@@ -54,6 +54,7 @@ dependencies:
   # HTTP & API
   http: ^1.2.2
   dio: ^5.7.0
+  shared_preferences: ^2.2.1
   
   # Firebase (untuk auth & monitoring)
   firebase_core: ^3.10.0

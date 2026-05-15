@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 class WeatherData {
@@ -16,12 +18,58 @@ class WeatherData {
     required this.weatherCondition,
     required this.locationName,
   });
+
+  factory WeatherData.fromJson(Map<String, dynamic> json) {
+    return WeatherData(
+      temperature: (json['temperature'] as num).toDouble(),
+      humidity: json['humidity'] as int,
+      windSpeed: (json['windSpeed'] as num).toDouble(),
+      weatherCondition: json['weatherCondition'] as String,
+      locationName: json['locationName'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'temperature': temperature,
+      'humidity': humidity,
+      'windSpeed': windSpeed,
+      'weatherCondition': weatherCondition,
+      'locationName': locationName,
+    };
+  }
 }
 
 class WeatherService {
   static const String _openMeteoUrl = 'https://api.open-meteo.com/v1/forecast';
   static const String _reverseGeoUrl =
       'https://nominatim.openstreetmap.org/reverse';
+  static const String _cachedWeatherKey = 'cached_weather_data';
+
+  String? _cachedLocationName;
+
+  /// Get cached weather if available
+  Future<WeatherData?> getCachedWeather() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final jsonString = prefs.getString(_cachedWeatherKey);
+      if (jsonString == null) return null;
+      final data = jsonDecode(jsonString) as Map<String, dynamic>;
+      return WeatherData.fromJson(data);
+    } catch (e) {
+      print('[WEATHER] Error loading cached weather: $e');
+      return null;
+    }
+  }
+
+  Future<void> _cacheWeather(WeatherData weatherData) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cachedWeatherKey, jsonEncode(weatherData.toJson()));
+    } catch (e) {
+      print('[WEATHER] Error saving cached weather: $e');
+    }
+  }
 
   /// Get current weather based on user's GPS location
   Future<WeatherData?> getWeatherByLocation() async {
@@ -38,13 +86,13 @@ class WeatherService {
         print('[WEATHER] Permission after request: $permission');
         if (permission == LocationPermission.denied) {
           print('[WEATHER] Location permission denied');
-          return _getMockWeather();
+          return await getCachedWeather() ?? _getMockWeather();
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
         print('[WEATHER] Location permission permanently denied');
-        return _getMockWeather();
+        return await getCachedWeather() ?? _getMockWeather();
       }
 
       print('[WEATHER] Getting current position...');
@@ -56,22 +104,34 @@ class WeatherService {
 
       print('[WEATHER] Got location: ${position.latitude}, ${position.longitude}');
 
-      // Get location name from coordinates
-      final locationName =
-          await _getLocationName(position.latitude, position.longitude);
+      // Start reverse geocoding in the background so weather can render first.
+      unawaited(
+        _getLocationName(position.latitude, position.longitude)
+            .then((locationName) {
+          _cachedLocationName = locationName;
+        }).catchError((error) {
+          print('[WEATHER] Background location lookup failed: $error');
+        }),
+      );
 
-      // Fetch weather data from Open-Meteo
+      // Fetch weather data immediately from coordinates without waiting
+      // for reverse geocoding, so the header can show faster.
       final weatherData = await _fetchWeather(
         position.latitude,
         position.longitude,
-        locationName,
+        _cachedLocationName ?? 'Lokasi Saat Ini',
       );
 
-      return weatherData ?? _getMockWeather();
+      if (weatherData != null) {
+        unawaited(_cacheWeather(weatherData));
+        return weatherData;
+      }
+
+      return await getCachedWeather() ?? _getMockWeather();
     } catch (e) {
       print('[WEATHER] Error getting weather: $e');
-      // Return mock data for development
-      return _getMockWeather();
+      final cached = await getCachedWeather();
+      return cached ?? _getMockWeather();
     }
   }
 

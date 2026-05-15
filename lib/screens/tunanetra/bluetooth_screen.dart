@@ -17,7 +17,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   @override
   void initState() {
     super.initState();
-    
+
     // Listen to connection state
     _bluetoothService.connectionStateStream.listen((connected) {
       if (mounted) {
@@ -28,13 +28,13 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
 
   Future<void> _scanDevices() async {
     setState(() => _isScanning = true);
-    
+
     // Simulate scanning
     await Future.delayed(const Duration(seconds: 3));
-    
+
     if (mounted) {
       setState(() => _isScanning = false);
-      
+
       _showDeviceDialog();
     }
   }
@@ -48,8 +48,15 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.bluetooth, size: 40, color: AppColors.primary),
-              title: const Text('Smart Cane #1234', style: AppTextStyles.bodyLarge),
+              leading: const Icon(
+                Icons.bluetooth,
+                size: 40,
+                color: AppColors.primary,
+              ),
+              title: const Text(
+                'Tongkat Pintar #1234',
+                style: AppTextStyles.bodyLarge,
+              ),
               subtitle: const Text('Tongkat Pintar'),
               onTap: () {
                 Navigator.pop(context);
@@ -71,7 +78,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   void _connectDevice() async {
     // Simulate connection
     await Future.delayed(const Duration(seconds: 2));
-    
+
     if (mounted) {
       setState(() => _isConnected = true);
     }
@@ -79,7 +86,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
 
   void _disconnect() async {
     await _bluetoothService.disconnect();
-    
+
     if (mounted) {
       setState(() => _isConnected = false);
     }
@@ -153,7 +160,9 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 2),
                             child: ShaderMask(
-                              shaderCallback: (bounds) => AppColors.successGradient.createShader(bounds),
+                              shaderCallback: (bounds) => AppColors
+                                  .successGradient
+                                  .createShader(bounds),
                               child: Text(
                                 'Bluetooth',
                                 style: AppTextStyles.heading2.copyWith(
@@ -178,7 +187,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                   ],
                 ),
               ),
-              
+
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -198,17 +207,21 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                           borderRadius: BorderRadius.circular(28),
                           boxShadow: [
                             BoxShadow(
-                              color: (_isConnected 
-                                  ? AppColors.success 
-                                  : AppColors.textSecondary).withOpacity(0.15),
+                              color:
+                                  (_isConnected
+                                          ? AppColors.success
+                                          : AppColors.textSecondary)
+                                      .withOpacity(0.15),
                               blurRadius: 30,
                               offset: const Offset(0, 15),
                             ),
                           ],
                           border: Border.all(
-                            color: (_isConnected 
-                                ? AppColors.primary 
-                                : AppColors.textSecondary).withOpacity(0.2),
+                            color:
+                                (_isConnected
+                                        ? AppColors.primary
+                                        : AppColors.textSecondary)
+                                    .withOpacity(0.2),
                             width: 1.5,
                           ),
                         ),
@@ -221,24 +234,30 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                                     ? AppColors.primaryGradient
                                     : LinearGradient(
                                         colors: [
-                                          AppColors.textSecondary.withOpacity(0.7),
-                                          AppColors.textSecondary.withOpacity(0.5),
+                                          AppColors.textSecondary.withOpacity(
+                                            0.7,
+                                          ),
+                                          AppColors.textSecondary.withOpacity(
+                                            0.5,
+                                          ),
                                         ],
                                       ),
                                 borderRadius: BorderRadius.circular(22),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: (_isConnected
-                                        ? AppColors.primary
-                                        : AppColors.textSecondary).withOpacity(0.3),
+                                    color:
+                                        (_isConnected
+                                                ? AppColors.primary
+                                                : AppColors.textSecondary)
+                                            .withOpacity(0.3),
                                     blurRadius: 20,
                                     offset: const Offset(0, 8),
                                   ),
                                 ],
                               ),
                               child: Icon(
-                                _isConnected 
-                                    ? Icons.bluetooth_connected_rounded 
+                                _isConnected
+                                    ? Icons.bluetooth_connected_rounded
                                     : Icons.bluetooth_disabled_rounded,
                                 size: 70,
                                 color: Colors.white,
@@ -246,14 +265,17 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                             ),
                             const SizedBox(height: 24),
                             ShaderMask(
-                              shaderCallback: (bounds) => (_isConnected
-                                  ? AppColors.primaryGradient
-                                  : LinearGradient(
-                                      colors: [
-                                        AppColors.textSecondary,
-                                        AppColors.textSecondary.withOpacity(0.7),
-                                      ],
-                                    )).createShader(bounds),
+                              shaderCallback: (bounds) =>
+                                  (_isConnected
+                                          ? AppColors.primaryGradient
+                                          : LinearGradient(
+                                              colors: [
+                                                AppColors.textSecondary,
+                                                AppColors.textSecondary
+                                                    .withOpacity(0.7),
+                                              ],
+                                            ))
+                                      .createShader(bounds),
                               child: Text(
                                 _isConnected ? 'Terhubung' : 'Tidak Terhubung',
                                 style: AppTextStyles.heading2.copyWith(
@@ -266,13 +288,16 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                             if (_isConnected) ...[
                               const SizedBox(height: 16),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppColors.primary.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(14),
                                 ),
                                 child: Text(
-                                  'Smart Cane #1234',
+                                  'Tongkat Pintar #1234',
                                   style: AppTextStyles.bodyLarge.copyWith(
                                     color: AppColors.primary,
                                     fontWeight: FontWeight.w600,
@@ -284,7 +309,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                         ),
                       ),
                       const SizedBox(height: 30),
-                      
+
                       // Action Buttons
                       if (!_isConnected) ...[
                         Container(
@@ -335,7 +360,11 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                                 : Row(
                                     mainAxisAlignment: MainAxisAlignment.center,
                                     children: [
-                                      const Icon(Icons.search_rounded, size: 28, color: Colors.white),
+                                      const Icon(
+                                        Icons.search_rounded,
+                                        size: 28,
+                                        color: Colors.white,
+                                      ),
                                       const SizedBox(width: 12),
                                       Text(
                                         'PINDAI PERANGKAT',
@@ -378,7 +407,11 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                const Icon(Icons.bluetooth_disabled_rounded, size: 28, color: Colors.white),
+                                const Icon(
+                                  Icons.bluetooth_disabled_rounded,
+                                  size: 28,
+                                  color: Colors.white,
+                                ),
                                 const SizedBox(width: 12),
                                 Text(
                                   'PUTUSKAN KONEKSI',
@@ -391,9 +424,9 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                           ),
                         ),
                       ],
-                      
+
                       const SizedBox(height: 30),
-                      
+
                       // Info Card with glassmorphism
                       Container(
                         padding: const EdgeInsets.all(24),
@@ -448,34 +481,35 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
                             ...[
                               '• Pastikan Bluetooth aktif di perangkat Anda',
                               '• Nyalakan tongkat pintar',
-                              '• Tongkat harus dalam jangkauan (max 10 meter)',
+                              '• Tongkat harus dalam jangkauan (maksimal 10 meter)',
                               '• Koneksi akan otomatis tersambung saat Anda dekat',
-                            ].map((text) => Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    margin: const EdgeInsets.only(top: 8),
-                                    width: 6,
-                                    height: 6,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.info,
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      text.substring(2),
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        height: 1.6,
+                            ].map(
+                              (text) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      margin: const EdgeInsets.only(top: 8),
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.info,
+                                        shape: BoxShape.circle,
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        text.substring(2),
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(height: 1.6),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            )),
+                            ),
                           ],
                         ),
                       ),

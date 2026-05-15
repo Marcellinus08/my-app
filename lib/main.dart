@@ -144,6 +144,9 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ),
+        snackBarTheme: const SnackBarThemeData(
+          behavior: SnackBarBehavior.fixed,
+        ),
       ),
 
       // Routes

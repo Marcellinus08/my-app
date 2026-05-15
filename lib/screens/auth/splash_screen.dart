@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:math' as math;
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 
@@ -14,14 +13,11 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen> 
     with TickerProviderStateMixin {
   late AnimationController _mainController;
-  late AnimationController _rotationController;
   late AnimationController _pulseController;
-  late AnimationController _waveController;
   
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<Offset> _slideAnimation;
-  late Animation<double> _rotationAnimation;
   late Animation<double> _pulseAnimation;
 
   @override
@@ -34,23 +30,11 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 2000),
     );
 
-    // Rotation controller for circles
-    _rotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 20),
-    )..repeat();
-
     // Pulse controller for icon
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     )..repeat(reverse: true);
-
-    // Wave controller for loading
-    _waveController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat();
     
     // Start animations
     _mainController.forward();
@@ -81,9 +65,6 @@ class _SplashScreenState extends State<SplashScreen>
         curve: const Interval(0.3, 0.8, curve: Curves.easeOutCubic),
       ),
     );
-
-    // Rotation animation for decorative elements
-    _rotationAnimation = Tween<double>(begin: 0, end: 2 * math.pi).animate(_rotationController);
 
     // Pulse animation
     _pulseAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
@@ -129,9 +110,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _mainController.dispose();
-    _rotationController.dispose();
     _pulseController.dispose();
-    _waveController.dispose();
     super.dispose();
   }
 
@@ -207,28 +186,16 @@ class _SplashScreenState extends State<SplashScreen>
                   
                   const SizedBox(height: 100),
                   
-                  // Simple Yet Attractive Loading Indicator
+                  // Simple default loading indicator
                   FadeTransition(
                     opacity: _fadeAnimation,
-                    child: RotationTransition(
-                      turns: _rotationAnimation,
-                      child: Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            width: 3,
-                            color: Colors.white,
-                          ),
-                          gradient: const SweepGradient(
-                            colors: [
-                              Colors.white,
-                              Color(0xFF42A5F5),
-                              Colors.white,
-                            ],
-                            stops: [0.0, 0.5, 1.0],
-                          ),
+                    child: const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Colors.white,
                         ),
                       ),
                     ),

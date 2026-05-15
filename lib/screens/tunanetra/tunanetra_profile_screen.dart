@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'package:intl/intl.dart';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/pairing_service.dart';
@@ -50,7 +51,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
             if (user != null) {
               _nameController.text = user.name;
               _emailController.text = user.email;
-              _phoneController.text = user.phoneNumber ?? '';
+              _phoneController.text = user.phoneNumber;
             }
           });
         }
@@ -112,7 +113,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Gagal menyimpan profil: $e'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -130,15 +131,19 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
     ).join();
   }
 
+  String _formatDate(DateTime value) {
+    return DateFormat('dd-MM-yyyy').format(value);
+  }
+
   /// Regenerate pairing code
   Future<void> _regeneratePairingCode() async {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Generate Pairing Code Baru?'),
+        title: const Text('Buat Kode Penghubung Baru?'),
         content: const Text(
-          'Kode pairing yang lama tidak akan bisa digunakan lagi. Lanjutkan?',
+          'Kode penghubung yang lama tidak akan bisa digunakan lagi. Lanjutkan?',
         ),
         actions: [
           TextButton(
@@ -170,7 +175,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
 
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Pairing code berhasil di-generate'),
+                        content: Text('Kode penghubung berhasil dibuat'),
                         backgroundColor: Colors.green,
                       ),
                     );
@@ -181,7 +186,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('Error: $e'),
+                      content: Text('Gagal membuat kode penghubung: $e'),
                       backgroundColor: Colors.redAccent,
                     ),
                   );
@@ -273,7 +278,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                             shaderCallback: (bounds) =>
                                 AppColors.primaryGradient.createShader(bounds),
                             child: Text(
-                              _isEditing ? 'Edit Profil' : 'Profil Saya',
+                              _isEditing ? 'Ubah Profil' : 'Profil Saya',
                               style: AppTextStyles.heading2.copyWith(
                                 color: Colors.white,
                                 fontSize: 26,
@@ -302,7 +307,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                     : _user == null
                     ? Center(
                         child: Text(
-                          'User data tidak ditemukan',
+                          'Data pengguna tidak ditemukan',
                           style: AppTextStyles.bodyLarge,
                         ),
                       )
@@ -344,7 +349,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
-                                      'Edit Profil',
+                                      'Ubah Profil',
                                       style: AppTextStyles.bodyLarge.copyWith(
                                         color: Colors.white,
                                         fontWeight: FontWeight.w600,
@@ -442,8 +447,28 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
           _buildInfoRow(
             icon: Icons.phone_rounded,
             label: 'No. Telepon',
-            value: _user!.phoneNumber ?? 'Belum diatur',
+            value: _user!.phoneNumber.isEmpty
+                ? 'Belum diatur'
+                : _user!.phoneNumber,
             color: AppColors.success,
+          ),
+          const SizedBox(height: 16),
+          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
+          const SizedBox(height: 16),
+          _buildInfoRow(
+            icon: Icons.badge_rounded,
+            label: 'Tipe',
+            value: 'Pengguna',
+            color: AppColors.warning,
+          ),
+          const SizedBox(height: 16),
+          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
+          const SizedBox(height: 16),
+          _buildInfoRow(
+            icon: Icons.calendar_today_rounded,
+            label: 'Bergabung',
+            value: _formatDate(_user!.createdAt),
+            color: AppColors.primary,
           ),
           const SizedBox(height: 16),
           Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
@@ -471,14 +496,16 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Kode Pairing',
+                'Kode Penghubung',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.textSecondary,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
-                _user!.pairingCode ?? 'Tidak ada kode',
+                _user!.pairingCode.isEmpty
+                    ? 'Tidak ada kode'
+                    : _user!.pairingCode,
                 style: AppTextStyles.bodyLarge.copyWith(
                   fontWeight: FontWeight.w600,
                   fontFamily: 'Courier',
@@ -534,10 +561,18 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                value,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  fontWeight: FontWeight.w600,
+              SizedBox(
+                width: double.infinity,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ),
             ],

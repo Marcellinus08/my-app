@@ -75,9 +75,7 @@ class _ConnectedFamilyAccountsScreenState
                       child: Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF64748B), Color(0xFF475569)],
-                          ),
+                          gradient: AppColors.primaryGradient,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -94,9 +92,8 @@ class _ConnectedFamilyAccountsScreenState
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           ShaderMask(
-                            shaderCallback: (bounds) => const LinearGradient(
-                              colors: [Color(0xFF64748B), Color(0xFF475569)],
-                            ).createShader(bounds),
+                            shaderCallback: (bounds) =>
+                                AppColors.primaryGradient.createShader(bounds),
                             child: Text(
                               'Akun Keluarga',
                               style: AppTextStyles.heading2.copyWith(
@@ -107,7 +104,7 @@ class _ConnectedFamilyAccountsScreenState
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Kelola keluarga yang terhubung',
+                            'Keluarga yang terhubung',
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.textSecondary,
                             ),
@@ -370,10 +367,18 @@ class _ConnectedFamilyAccountsScreenState
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        family['email'] ?? 'email@example.com',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textSecondary,
+                      SizedBox(
+                        width: double.infinity,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            family['email'] ?? 'email@example.com',
+                            maxLines: 1,
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -409,8 +414,8 @@ class _ConnectedFamilyAccountsScreenState
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: () => _showRemoveDialog(family, index),
-                icon: const Icon(Icons.delete_outline_rounded),
-                label: const Text('Hapus Koneksi'),
+                icon: const Icon(Icons.link_off_rounded),
+                label: const Text('Putuskan Koneksi'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.error,
                   foregroundColor: Colors.white,

@@ -268,6 +268,28 @@ class PairingService {
     required String tunaNetraUid,
   }) async {
     try {
+      final familyDoc = await _firestore
+          .collection('users')
+          .doc(familyUid)
+          .get();
+      final familyData = familyDoc.data() ?? {};
+      final pairedUserUids = <String>[];
+
+      if (familyData['pairedUserUids'] is List) {
+        pairedUserUids.addAll(
+          List<String>.from(familyData['pairedUserUids'] as List),
+        );
+      }
+
+      if (familyData['pairedUserUid'] is String &&
+          !pairedUserUids.contains(familyData['pairedUserUid'])) {
+        pairedUserUids.add(familyData['pairedUserUid'] as String);
+      }
+
+      if (pairedUserUids.contains(tunaNetraUid)) {
+        return true;
+      }
+
       final tunaDoc = await _firestore
           .collection('users')
           .doc(tunaNetraUid)
@@ -282,7 +304,12 @@ class PairingService {
           }
           return false;
         });
-        if (hasFamily) return true;
+        if (hasFamily) {
+          await _removeConnectedFamilyReference(
+            familyUid: familyUid,
+            tunaNetraUid: tunaNetraUid,
+          );
+        }
       }
 
       final memberDoc = await _firestore
@@ -424,6 +451,11 @@ class PairingService {
       print('   Phone: $phone');
 
       if (name.isNotEmpty || email.isNotEmpty) {
+        await _removeConnectedFamilyReference(
+          familyUid: familyUid,
+          tunaNetraUid: tunaNetraUid,
+        );
+
         final familyInfo = {
           'uid': familyUid,
           'email': email,
@@ -583,10 +615,39 @@ class PairingService {
           .doc(familyUid)
           .delete();
 
+      await _removeConnectedFamilyReference(
+        familyUid: familyUid,
+        tunaNetraUid: tunaNetraUid,
+      );
+
       print('✅ Paired user removed successfully');
     } catch (e) {
       print('❌ Error removing paired user: $e');
       throw Exception('Gagal menghapus pengguna: $e');
     }
+  }
+
+  Future<void> _removeConnectedFamilyReference({
+    required String familyUid,
+    required String tunaNetraUid,
+  }) async {
+    final tunaRef = _firestore.collection('users').doc(tunaNetraUid);
+    final tunaDoc = await tunaRef.get();
+    final tunaData = tunaDoc.data() ?? {};
+    final connectedFamilies = tunaData['connectedFamilies'];
+
+    if (connectedFamilies is! List) {
+      return;
+    }
+
+    final cleanedFamilies = connectedFamilies
+        .where((family) => family is! Map || family['uid'] != familyUid)
+        .toList();
+
+    if (cleanedFamilies.length == connectedFamilies.length) {
+      return;
+    }
+
+    await tunaRef.update({'connectedFamilies': cleanedFamilies});
   }
 }

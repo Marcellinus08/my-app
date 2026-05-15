@@ -169,8 +169,6 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
           ),
         ),
         backgroundColor: isError ? AppColors.error : AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
         elevation: 2,
       ),
     );
@@ -270,8 +268,8 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                       : _pairedUserUid == null || _pairedUserUid!.isEmpty
                       ? 'Belum ada pengguna terhubung'
                       : widget.ownerName == null || widget.ownerName!.isEmpty
-                      ? 'Tambah tujuan pribadi'
-                      : 'Tempat pribadi ${widget.ownerName}',
+                      ? 'Tambah tujuan privat'
+                      : 'Tempat privat pengguna',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -388,7 +386,7 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Tambah Tempat Pribadi',
+                          'Tambah Tempat Privat',
                           style: AppTextStyles.bodyLarge.copyWith(
                             fontWeight: FontWeight.w800,
                             color: AppColors.textPrimary,
@@ -426,11 +424,11 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                 textInputAction: TextInputAction.next,
                 style: _fieldTextStyle,
                 decoration: _inputDecoration(
-                  hintText: 'Address',
+                  hintText: 'Alamat',
                   prefixIcon: Icons.notes_rounded,
                 ),
                 validator: (value) => value == null || value.trim().isEmpty
-                    ? 'Address wajib diisi'
+                    ? 'Alamat wajib diisi'
                     : null,
               ),
               const SizedBox(height: 14),
@@ -467,7 +465,7 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                   hintText: 'Link Google Maps',
                   prefixIcon: Icons.link_rounded,
                   helperText:
-                      'Gunakan link Google Maps yang mengandung koordinat lokasi.',
+                      'Pastikan terdapat titik koordinat di link.',
                 ),
                 validator: (value) => value == null || value.trim().isEmpty
                     ? 'Link Google Maps wajib diisi'

@@ -89,7 +89,7 @@ class EmergencySosScreen extends StatelessWidget {
                 const SizedBox(height: 10),
                 _EmergencyButton(
                   icon: Icons.copy_rounded,
-                  label: 'Copy Koordinat',
+                  label: 'Salin Koordinat',
                   backgroundColor: const Color(0xFFFFEDD5),
                   foregroundColor: const Color(0xFF9A3412),
                   onPressed: () => _copyCoordinates(context),
@@ -185,8 +185,6 @@ class EmergencySosScreen extends StatelessWidget {
           ),
         ),
         backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(16),
         elevation: 2,
       ),
     );
@@ -213,8 +211,6 @@ class EmergencySosScreen extends StatelessWidget {
           ),
         ),
         backgroundColor: Colors.blue,
-        behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(16),
         elevation: 2,
       ),
     );
@@ -261,8 +257,6 @@ class EmergencySosScreen extends StatelessWidget {
             ),
           ),
           backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.all(16),
           elevation: 2,
         ),
       );
@@ -284,8 +278,6 @@ class EmergencySosScreen extends StatelessWidget {
           ),
         ),
         backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        margin: EdgeInsets.all(16),
         elevation: 2,
       ),
     );

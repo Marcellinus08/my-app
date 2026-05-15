@@ -417,7 +417,7 @@ class _FamilyMemberDetailScreenState extends State<FamilyMemberDetailScreen> {
                                               BorderRadius.circular(8),
                                         ),
                                         child: Text(
-                                          'Pengguna TunaNe tra',
+                                          'Pengguna TunaNetra',
                                           style: AppTextStyles.bodySmall
                                               .copyWith(
                                             color: Colors.white,

@@ -1,7 +1,4 @@
 {
-  "projects": {
-    "default": "smarthcane-11b47"
-  },
   "functions": [
     {
       "source": "functions",
@@ -14,5 +11,20 @@
         ".env"
       ]
     }
-  ]
+  ],
+  "hosting": {
+    "site": "teman-arah",
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
 }

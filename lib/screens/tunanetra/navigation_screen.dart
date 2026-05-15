@@ -685,7 +685,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Please enable Location Service'),
+            content: Text('Aktifkan layanan lokasi terlebih dahulu'),
             duration: Duration(seconds: 3),
           ),
         );
@@ -708,7 +708,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Location permission is required'),
+            content: Text('Izin lokasi diperlukan'),
             duration: Duration(seconds: 3),
           ),
         );
@@ -1281,7 +1281,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                             ),
                           ),
                           Text(
-                            'Ke ${_selectedPlace?.name ?? 'Destinasi'}',
+                            'Ke ${_selectedPlace?.name ?? 'Tujuan'}',
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.textSecondary,
                             ),
@@ -2440,64 +2440,9 @@ class _NavigationScreenState extends State<NavigationScreen>
             ),
           ),
 
-          if (_isNavigating && _isLocationReady)
-            Positioned(
-              top: fusionBadgeTop,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: _getFusionStatusColor(),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.18),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _isUsingPredictedPosition
-                          ? Icons.auto_awesome_rounded
-                          : Icons.gps_fixed_rounded,
-                      color: Colors.white,
-                      size: 14,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      _getFusionStatusLabel(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                    const Spacer(),
-                    Text(
-                      'Tracking aktif',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
           if (_isOffRouteWarningVisible)
             Positioned(
-              top: fusionBadgeTop + 54,
+              top: fusionBadgeTop,
               left: 16,
               right: 16,
               child: Container(
@@ -2929,7 +2874,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
-                                        'Rute ke ${_selectedPlace?.name ?? "Destinasi"}',
+                                        'Rute ke ${_selectedPlace?.name ?? "Tujuan"}',
                                         style: AppTextStyles.bodyLarge.copyWith(
                                           fontWeight: FontWeight.w700,
                                           fontSize: 15,
@@ -2957,7 +2902,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                                           ),
                                           const SizedBox(width: 12),
                                           Text(
-                                            '${_routeDurationMinutes.toStringAsFixed(0).split(".")[0]} min',
+                                            '${_routeDurationMinutes.toStringAsFixed(0).split(".")[0]} menit',
                                             style: const TextStyle(
                                               color: Colors.green,
                                               fontWeight: FontWeight.w600,

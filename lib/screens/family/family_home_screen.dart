@@ -43,6 +43,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   List<Map<String, dynamic>> _monitoredUsers = [];
   Map<String, FamilyLocation?> _latestLocations = {};
   Map<String, StreamSubscription<FamilyLocation>?> _subscriptions = {};
+  Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?>
+  _userProfileSubscriptions = {};
   Map<String, Map<String, dynamic>?> _liveTrackingData = {};
   Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?>
   _liveTrackingSubscriptions = {};
@@ -152,6 +154,12 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           }
         }
 
+        for (final uid in _userProfileSubscriptions.keys.toList()) {
+          if (!activeUids.contains(uid)) {
+            _userProfileSubscriptions.remove(uid)?.cancel();
+          }
+        }
+
         for (final uid in _liveTrackingSubscriptions.keys.toList()) {
           if (!activeUids.contains(uid)) {
             _liveTrackingSubscriptions.remove(uid)?.cancel();
@@ -176,6 +184,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         final uid = user['uid'] as String?;
         if (uid != null && uid.isNotEmpty) {
           _subscribeToUserLocation(uid);
+          _subscribeToUserProfile(uid);
           _subscribeToLiveTracking(uid);
         }
       }
@@ -227,6 +236,56 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         });
 
     _liveTrackingSubscriptions[uid] = sub;
+  }
+
+  void _subscribeToUserProfile(String uid) {
+    if (_userProfileSubscriptions[uid] != null) {
+      _userProfileSubscriptions[uid]?.cancel();
+    }
+
+    final sub = _firestore.collection('users').doc(uid).snapshots().listen((
+      snapshot,
+    ) {
+      if (!mounted || !snapshot.exists) return;
+
+      final data = snapshot.data();
+      if (data == null) return;
+
+      final newName = _readString(data['name']);
+      final newEmail = _readString(data['email']);
+      final newPhone = _readString(data['phoneNumber']);
+
+      if (newName == null && newEmail == null && newPhone == null) return;
+
+      var shouldUpdate = false;
+      final updatedUsers = _monitoredUsers.map((user) {
+        if ((user['uid'] as String?) != uid) return user;
+
+        final updatedUser = Map<String, dynamic>.from(user);
+        if (newName != null && updatedUser['name'] != newName) {
+          updatedUser['name'] = newName;
+          shouldUpdate = true;
+        }
+        if (newEmail != null && updatedUser['email'] != newEmail) {
+          updatedUser['email'] = newEmail;
+          shouldUpdate = true;
+        }
+        if (newPhone != null && updatedUser['phoneNumber'] != newPhone) {
+          updatedUser['phoneNumber'] = newPhone;
+          shouldUpdate = true;
+        }
+
+        return updatedUser;
+      }).toList();
+
+      if (!shouldUpdate) return;
+
+      setState(() {
+        _monitoredUsers = updatedUsers;
+      });
+    });
+
+    _userProfileSubscriptions[uid] = sub;
   }
 
   void _subscribeToActiveSos() {
@@ -320,6 +379,14 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         .listen(
           (snapshot) {
             if (!mounted) return;
+
+            final familyData = snapshot.data();
+            final familyName = _readString(familyData?['name']);
+            if (familyName != null && familyName != _familyName) {
+              setState(() {
+                _familyName = familyName;
+              });
+            }
 
             if (!_hasLoadedFamilyDocSnapshot) {
               _hasLoadedFamilyDocSnapshot = true;
@@ -524,8 +591,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           ),
         ),
         backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
         elevation: 2,
       ),
     );
@@ -550,8 +615,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           ),
           backgroundColor: Colors.orange,
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.all(16),
           elevation: 2,
         ),
       );
@@ -597,8 +660,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           ),
           backgroundColor: Colors.green,
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.all(16),
           elevation: 2,
         ),
       );
@@ -616,8 +677,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           ),
           backgroundColor: Color(0xFFDC2626),
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.all(16),
           elevation: 2,
         ),
       );
@@ -659,6 +718,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   @override
   void dispose() {
     for (var sub in _subscriptions.values) {
+      sub?.cancel();
+    }
+    for (var sub in _userProfileSubscriptions.values) {
       sub?.cancel();
     }
     for (var sub in _liveTrackingSubscriptions.values) {
@@ -776,16 +838,22 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        _familyName,
-                        style: AppTextStyles.heading1.copyWith(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
+                      SizedBox(
+                        width: double.infinity,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            _familyName,
+                            maxLines: 1,
+                            style: AppTextStyles.heading1.copyWith(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 6),
                       Text(
@@ -1200,7 +1268,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                user['name'] ?? 'Unknown',
+                                user['name'] ?? 'Pengguna',
                                 style: AppTextStyles.bodyLarge.copyWith(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 16,
@@ -1253,24 +1321,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                         if (batteryLevel != null)
                           _buildBatteryIndicator(batteryLevel)
                         else
-                          Container(
-                            width: 48,
-                            height: 60,
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: Colors.grey.withOpacity(0.3),
-                                width: 2,
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Center(
-                              child: Icon(
-                                Icons.battery_unknown_rounded,
-                                size: 20,
-                                color: Colors.grey,
-                              ),
-                            ),
-                          ),
+                          _buildUnknownBatteryIndicator(),
                       ],
                     ),
                   ),
@@ -1656,6 +1707,55 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildUnknownBatteryIndicator() {
+    return Container(
+      width: 48,
+      height: 60,
+      decoration: BoxDecoration(
+        border: Border.all(color: AppColors.primary.withOpacity(0.3), width: 2),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -4,
+            left: 0,
+            right: 0,
+            child: Container(
+              height: 3,
+              margin: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.3),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(2),
+                  topRight: Radius.circular(2),
+                ),
+              ),
+            ),
+          ),
+          Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(6),
+            ),
+          ),
+          Center(
+            child: Text(
+              '?',
+              style: AppTextStyles.heading2.copyWith(
+                color: AppColors.primary,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

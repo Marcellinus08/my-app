@@ -21,7 +21,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _userService = UserService();
 
   // Form Keys
-  final _pengunaFormKey = GlobalKey<FormState>();
+  final _penggunaFormKey = GlobalKey<FormState>();
   final _keluargaFormKey = GlobalKey<FormState>();
 
   // Controllers - Pengguna
@@ -156,12 +156,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   // ========== PENGGUNA REGISTRATION ==========
-  Future<void> _handlePengunaRegister() async {
+  Future<void> _handlePenggunaRegister() async {
     // Validate email format
     final emailValidation = _validateEmail(_userEmailController.text);
     if (emailValidation != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(emailValidation), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text(emailValidation),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.fixed,
+        ),
       );
       return;
     }
@@ -173,13 +177,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
         SnackBar(
           content: Text(passwordValidation),
           backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.fixed,
         ),
       );
       return;
     }
 
     // Validate other fields
-    if (!_pengunaFormKey.currentState!.validate()) {
+    if (!_penggunaFormKey.currentState!.validate()) {
       print('❌ [UI] Form validation failed - fields are empty or invalid');
       return;
     }
@@ -289,6 +294,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               style: const TextStyle(height: 1.4, fontSize: 12),
             ),
             backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.fixed,
             duration: const Duration(seconds: 3),
           ),
         );
@@ -313,6 +319,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           SnackBar(
             content: Text('❌ ${e.message}'),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.fixed,
           ),
         );
       }
@@ -331,6 +338,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           SnackBar(
             content: Text('❌ $errorMsg'),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.fixed,
             duration: const Duration(seconds: 5),
           ),
         );
@@ -441,6 +449,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               'Registrasi berhasil. Permintaan koneksi terkirim ke $targetName.',
             ),
             backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.fixed,
             duration: const Duration(seconds: 4),
           ),
         );
@@ -456,6 +465,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           SnackBar(
             content: Text('❌ ${e.message}'),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.fixed,
           ),
         );
       }
@@ -466,6 +476,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           SnackBar(
             content: Text('❌ ${e.toString().replaceAll("Exception: ", "")}'),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.fixed,
           ),
         );
       }
@@ -705,7 +716,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               children: [
                                 // Form
                                 _selectedUserType == UserType.tunanetra
-                                    ? _buildPengunaFormSimplified()
+                                    ? _buildPenggunaFormSimplified()
                                     : _buildKeluargaFormSimplified(),
 
                                 // Divider
@@ -790,9 +801,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _buildPengunaFormSimplified() {
+  Widget _buildPenggunaFormSimplified() {
     return Form(
-      key: _pengunaFormKey,
+      key: _penggunaFormKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -867,7 +878,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   ),
                 )
               : GestureDetector(
-                  onTap: _handlePengunaRegister,
+                  onTap: _handlePenggunaRegister,
                   child: Container(
                     height: 54,
                     decoration: BoxDecoration(
@@ -884,7 +895,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: _handlePengunaRegister,
+                        onTap: _handlePenggunaRegister,
                         borderRadius: BorderRadius.circular(14),
                         child: Center(
                           child: Text(

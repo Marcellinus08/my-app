@@ -285,11 +285,77 @@ class UserService {
 
       if (updateData.isNotEmpty) {
         await _firestore.collection('users').doc(uid).update(updateData);
+        await _syncFamilyInfoToConnectedUsers(
+          familyUid: uid,
+          familyName: name,
+          familyPhone: phoneNumber,
+        );
         print('✅ Family user updated: $uid');
       }
     } catch (e) {
       print('❌ Error updating Family user: $e');
       throw Exception('Gagal update data keluarga: ${e.toString()}');
+    }
+  }
+
+  Future<void> _syncFamilyInfoToConnectedUsers({
+    required String familyUid,
+    String? familyName,
+    String? familyPhone,
+  }) async {
+    if (familyName == null && familyPhone == null) return;
+
+    final connectedUsers = await getTunaNetraUsersByFamilyId(familyUid);
+    if (connectedUsers.isEmpty) {
+      print('ℹ️ Tidak ada pengguna terhubung yang perlu disinkronkan');
+      return;
+    }
+
+    final batch = _firestore.batch();
+    var updatesCount = 0;
+
+    for (final user in connectedUsers) {
+      final userUid = user['uid']?.toString().trim();
+      if (userUid == null || userUid.isEmpty) continue;
+
+      final userRef = _firestore.collection('users').doc(userUid);
+      final userDoc = await userRef.get();
+      if (!userDoc.exists) continue;
+
+      final userData = userDoc.data() as Map<String, dynamic>?;
+      final connectedFamiliesRaw = userData?['connectedFamilies'];
+      if (connectedFamiliesRaw is! List) continue;
+
+      var changed = false;
+      final updatedFamilies = connectedFamiliesRaw.map((family) {
+        if (family is! Map) return family;
+
+        final familyMap = Map<String, dynamic>.from(family as Map);
+        final isTargetFamily = familyMap['uid']?.toString().trim() == familyUid;
+        if (!isTargetFamily) return familyMap;
+
+        if (familyName != null) {
+          familyMap['name'] = familyName;
+          changed = true;
+        }
+
+        if (familyPhone != null) {
+          familyMap['phone'] = familyPhone;
+          changed = true;
+        }
+
+        return familyMap;
+      }).toList();
+
+      if (changed) {
+        batch.update(userRef, {'connectedFamilies': updatedFamilies});
+        updatesCount++;
+      }
+    }
+
+    if (updatesCount > 0) {
+      await batch.commit();
+      print('✅ Synced family info to $updatesCount connected user(s)');
     }
   }
 

@@ -59,7 +59,7 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen> {
   void _showTestMessage(String message) {
     debugPrint('[SMARTCANE] $message');
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+      SnackBar(content: Text(message)),
     );
   }
 
@@ -108,7 +108,10 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen> {
                         description: 'Data tongkat',
                         icon: Icons.developer_board_rounded,
                         active: raspberryConnected,
-                        details: ['IP: $raspberryIp', 'Last sync: $lastSync'],
+                        details: [
+                          'IP: $raspberryIp',
+                          'Sinkron terakhir: $lastSync',
+                        ],
                       ),
                       const SizedBox(height: 16),
                       buildStatusCard(
@@ -117,7 +120,7 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen> {
                         description: 'Deteksi objek',
                         icon: Icons.psychology_rounded,
                         active: mlActive,
-                        details: ['Confidence: $lastConfidence%'],
+                        details: ['Tingkat keyakinan: $lastConfidence%'],
                       ),
                       const SizedBox(height: 16),
                       buildDetectionModeCard(),
@@ -294,7 +297,7 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen> {
                     ),
                     const SizedBox(width: 7),
                     Text(
-                      active ? 'Online' : 'Offline',
+                      active ? 'Aktif' : 'Tidak Aktif',
                       style: AppTextStyles.caption.copyWith(
                         color: color,
                         fontWeight: FontWeight.w800,
@@ -392,7 +395,7 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen> {
 
   Widget buildDetectionLogCard() {
     return _buildOptionCard(
-      title: 'Log Deteksi Terakhir',
+      title: 'Catatan Deteksi Terakhir',
       subtitle: 'Riwayat deteksi terbaru',
       icon: Icons.history_rounded,
       children: [

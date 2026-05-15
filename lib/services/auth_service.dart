@@ -39,17 +39,17 @@ class AuthService {
   ) async {
     try {
       print('🔐 Attempting login with email: $email');
-      
+
       final userCredential = await _auth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
-      
+
       print('✅ Login successful for user: ${userCredential.user?.email}');
       return userCredential;
     } on FirebaseAuthException catch (e) {
       print('❌ Login error: ${e.code} - ${e.message}');
-      
+
       switch (e.code) {
         case 'user-not-found':
           throw Exception('Email tidak terdaftar');
@@ -74,11 +74,11 @@ class AuthService {
   Future<bool> requestRegistrationOtp(String email) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [AUTH SERVICE] REQUEST REGISTRATION OTP                ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       print('\n[AUTH] STEP 1: Validating input');
       if (email.isEmpty) {
         throw Exception('Email tidak boleh kosong');
@@ -87,16 +87,16 @@ class AuthService {
       if (!email.contains('@')) {
         throw Exception('Format email tidak valid');
       }
-      
+
       print('✅ Email format valid: $email');
 
       print('\n[AUTH] STEP 2: Creating OTP Service instance');
       final otpService = OtpService();
       print('✅ OTP Service created');
-      
+
       print('\n[AUTH] STEP 3: Calling OTP Service sendOtpToEmail()');
       final success = await otpService.sendOtpToEmail(email);
-      
+
       if (!success) {
         throw Exception('OTP Service returned false');
       }
@@ -107,7 +107,6 @@ class AuthService {
       print('║ USER akan menerima OTP ke email mereka                 ║');
       print('╚════════════════════════════════════════════════════════╝\n');
       return true;
-      
     } catch (e) {
       print('\n❌ [AUTH SERVICE] REQUEST FAILED');
       print('Error: $e');
@@ -127,16 +126,16 @@ class AuthService {
   ) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [AUTH SERVICE] registerWithOtp()                      ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       print('\n[AUTH] SUBSTEP 1: Validating input parameters');
       print('   Email: $email');
       print('   Username: $username');
       print('   User Type: $userType');
-      
+
       if (email.isEmpty || username.isEmpty) {
         throw Exception('Email atau username kosong');
       }
@@ -148,12 +147,12 @@ class AuthService {
       print('\n[AUTH] SUBSTEP 3: Verifying OTP code');
       print('   Calling otpService.verifyOtp($email, $otp)');
       final startTime = DateTime.now();
-      
+
       final verifiedEmail = await otpService.verifyOtp(email, otp);
-      
+
       final duration = DateTime.now().difference(startTime).inSeconds;
       print('   ⏱️  OTP verification took ${duration}s');
-      
+
       if (verifiedEmail == null) {
         throw Exception('OTP verification failed - returned null');
       }
@@ -163,57 +162,60 @@ class AuthService {
       print('\n[AUTH] SUBSTEP 4: Creating Firestore user document');
       print('   Collection: users');
       print('   Auto-generating document ID');
-      
+
       // Generate a random UID using Firestore doc ID
       final usersRef = FirebaseFirestore.instance.collection('users');
       final newUserDoc = usersRef.doc();
       final uid = newUserDoc.id;
-      
+
       print('   Generated UID: $uid');
 
       print('\n[AUTH] SUBSTEP 5: Writing user document to Firestore');
       print('   Data: {uid, email, username, userType, timestamps, verified}');
       print('   ⏱️  Starting write operation...');
-      
+
       final writeStart = DateTime.now();
-      
-      await newUserDoc.set({
-        'uid': uid,
-        'email': email,
-        'username': username,
-        'userType': userType.toString(),
-        'createdAt': FieldValue.serverTimestamp(),
-        'verified': true,
-        'verifiedVia': 'otp',
-      }).timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => throw Exception('User creation timeout - Firestore write not responding'),
-      );
-      
+
+      await newUserDoc
+          .set({
+            'uid': uid,
+            'email': email,
+            'username': username,
+            'userType': userType.toString(),
+            'createdAt': FieldValue.serverTimestamp(),
+            'verified': true,
+            'verifiedVia': 'otp',
+          })
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () => throw Exception(
+              'User creation timeout - Firestore write not responding',
+            ),
+          );
+
       final writeDuration = DateTime.now().difference(writeStart).inSeconds;
       print('   ✅ Write completed in ${writeDuration}s');
 
       print('\n[AUTH] SUBSTEP 6: Verifying user was created');
       final verify = await newUserDoc.get();
       if (!verify.exists) {
-        throw Exception('User document created but could not verify - read failed');
+        throw Exception(
+          'User document created but could not verify - read failed',
+        );
       }
       print('   ✅ User document verified - data exists in Firestore');
 
       print('\n✅ [AUTH SERVICE] registerWithOtp() COMPLETE\n');
       return null; // We'll return null and handle differently in app
-      
     } on FirebaseAuthException catch (e) {
       print('\n❌ [AUTH SERVICE] Firebase Auth Exception');
       print('   Code: ${e.code}');
       print('   Message: ${e.message}\n');
       throw Exception('Firebase Auth: ${e.message}');
-      
     } on TimeoutException catch (te) {
       print('\n❌ [AUTH SERVICE] Timeout Exception');
       print('   Message: ${te.message}\n');
       throw Exception('⏱️ Operation timed out - check network connection');
-      
     } catch (e) {
       print('\n❌ [AUTH SERVICE] Unexpected Error');
       print('   Type: ${e.runtimeType}');
@@ -226,7 +228,7 @@ class AuthService {
   Future<bool> requestLoginOtp(String email) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       if (email.isEmpty) {
         throw Exception('Email tidak boleh kosong');
       }
@@ -251,7 +253,7 @@ class AuthService {
       // Send OTP
       final otpService = OtpService();
       final success = await otpService.sendOtpToEmail(email);
-      
+
       if (!success) {
         throw Exception('Gagal mengirim OTP');
       }
@@ -268,13 +270,13 @@ class AuthService {
   Future<String?> loginWithOtp(String email, String otp) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       print('🔐 Verifying OTP for login: $email');
 
       // Verify OTP
       final otpService = OtpService();
       final verifiedEmail = await otpService.verifyOtp(email, otp);
-      
+
       if (verifiedEmail == null) {
         throw Exception('OTP verification gagal');
       }
@@ -296,7 +298,7 @@ class AuthService {
 
       final uid = userDoc.docs.first.id;
       print('✅ Login successful: $email (UID: $uid)');
-      
+
       return uid; // Return UID for app logic
     } catch (e) {
       print('❌ Login error: $e');
@@ -308,7 +310,7 @@ class AuthService {
   Future<Map<String, dynamic>?> getUserByEmail(String email) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .where('email', isEqualTo: email)
@@ -363,7 +365,7 @@ class AuthService {
       // Add detailed logging for the auth operation
       print('📡 Creating user with email and password...');
       final startTime = DateTime.now();
-      
+
       UserCredential? userCredential;
       try {
         userCredential = await _auth
@@ -377,17 +379,26 @@ class AuthService {
                 print('❌ createUserWithEmailAndPassword timed out after 90s');
                 print('   Firebase Auth is not responding');
                 print('   CRITICAL: This usually means:');
-                print('   1. ⚠️ Email/Password provider NOT enabled in Firebase Console');
+                print(
+                  '   1. ⚠️ Email/Password provider NOT enabled in Firebase Console',
+                );
                 print('   2. ⚠️ Network connectivity issue on device');
                 print('   3. ⚠️ Google Services misconfiguration');
                 print('   ');
                 print('   TO FIX:');
-                print('   → Go to Firebase Console: https://console.firebase.google.com/');
+                print(
+                  '   → Go to Firebase Console: https://console.firebase.google.com/',
+                );
                 print('   → Select project: smarthcane-11b47');
                 print('   → Go to Authentication → Sign-in method');
                 print('   → Enable Email/Password provider');
-                print('   → Ensure Android app is registered with package: com.example.my_app');
-                throw TimeoutException('Firebase Auth timeout (90s) - Email/Password provider may not be enabled', const Duration(seconds: 90));
+                print(
+                  '   → Ensure Android app is registered with package: com.example.my_app',
+                );
+                throw TimeoutException(
+                  'Firebase Auth timeout (90s) - Email/Password provider may not be enabled',
+                  const Duration(seconds: 90),
+                );
               },
             );
       } catch (e) {
@@ -402,15 +413,19 @@ class AuthService {
       await userCredential.user?.updateDisplayName(username);
 
       // Store additional user data in Firestore (optional here, will be done in UserService)
-      print('✅ Registration successful for user: ${userCredential.user?.email}');
-      
+      print(
+        '✅ Registration successful for user: ${userCredential.user?.email}',
+      );
+
       return userCredential;
     } on FirebaseAuthException catch (e) {
       print('❌ Registration error: ${e.code} - ${e.message}');
-      
+
       switch (e.code) {
         case 'weak-password':
-          throw Exception('Password terlalu lemah, gunakan kombinasi huruf dan angka');
+          throw Exception(
+            'Password terlalu lemah, gunakan kombinasi huruf dan angka',
+          );
         case 'email-already-in-use':
           throw Exception('Email sudah terdaftar');
         case 'invalid-email':
@@ -444,7 +459,7 @@ class AuthService {
       print('✅ Password reset email sent');
     } on FirebaseAuthException catch (e) {
       print('❌ Password reset error: ${e.code}');
-      
+
       if (e.code == 'user-not-found') {
         throw Exception('Email tidak terdaftar');
       }
@@ -497,15 +512,63 @@ class AuthService {
     }
   }
 
+  /// Update password after verifying the current password
+  Future<void> updatePasswordWithCurrentPassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      print('Reauthenticating before password update...');
+
+      final user = _auth.currentUser;
+      final email = user?.email;
+
+      if (user == null || email == null || email.isEmpty) {
+        throw Exception('User belum login');
+      }
+
+      if (currentPassword.isEmpty || newPassword.isEmpty) {
+        throw Exception('Password lama dan password baru harus diisi');
+      }
+
+      if (newPassword.length < 6) {
+        throw Exception('Password baru minimal 6 karakter');
+      }
+
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: currentPassword,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+      await user.updatePassword(newPassword);
+      print('Password updated after reauthentication');
+    } on FirebaseAuthException catch (e) {
+      print('Update password with reauth error: ${e.code}');
+
+      switch (e.code) {
+        case 'wrong-password':
+        case 'invalid-credential':
+          throw Exception('Password lama salah');
+        case 'weak-password':
+          throw Exception('Password baru terlalu lemah');
+        case 'requires-recent-login':
+          throw Exception('Silakan login ulang sebelum mengubah password');
+        default:
+          throw Exception('Gagal mengubah password: ${e.message}');
+      }
+    }
+  }
+
   /// ========== NEW FLOW: Email + Password ==========
 
   /// Check if email already exists in Firestore users collection
   Future<bool> emailExists(String email) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       print('🔍 Checking if email exists: $email');
-      
+
       final userDoc = await FirebaseFirestore.instance
           .collection('users')
           .where('email', isEqualTo: email)
@@ -518,7 +581,7 @@ class AuthService {
 
       final exists = userDoc.docs.isNotEmpty;
       print(exists ? '⚠️ Email already registered' : '✅ Email available');
-      
+
       return exists;
     } catch (e) {
       print('❌ Error checking email: $e');
@@ -533,32 +596,31 @@ class AuthService {
   ) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [AUTH SERVICE] LOGIN WITH EMAIL & PASSWORD            ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       print('\n[LOGIN] STEP 1: Validating inputs');
       if (email.isEmpty || password.isEmpty) {
         throw Exception('Email dan password harus diisi');
       }
-      
+
       if (!email.contains('@')) {
         throw Exception('Format email tidak valid');
       }
-      
+
       print('✅ Input valid');
 
       print('\n[LOGIN] STEP 2: Authenticating with Firebase Auth');
       print('   Email: $email');
-      
-      final userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw Exception('Login timeout - check network'),
-      );
+
+      final userCredential = await _auth
+          .signInWithEmailAndPassword(email: email, password: password)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw Exception('Login timeout - check network'),
+          );
 
       print('✅ Authentication successful');
       print('   UID: ${userCredential.user?.uid}');
@@ -566,11 +628,10 @@ class AuthService {
 
       print('\n✅ [AUTH SERVICE] LOGIN COMPLETE\n');
       return userCredential;
-      
     } on FirebaseAuthException catch (e) {
       print('\n❌ [AUTH SERVICE] Firebase Auth Exception');
       print('   Code: ${e.code}');
-      
+
       switch (e.code) {
         case 'user-not-found':
           throw Exception('Email tidak terdaftar');
@@ -603,30 +664,30 @@ class AuthService {
   }) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [AUTH SERVICE] REGISTER WITH EMAIL, PASSWORD & OTP    ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       print('\n[REGISTER] STEP 1: Validating inputs');
       if (email.isEmpty || password.isEmpty || otp.isEmpty || name.isEmpty) {
         throw Exception('Semua field harus diisi');
       }
-      
+
       if (!email.contains('@')) {
         throw Exception('Format email tidak valid');
       }
-      
+
       if (password.length < 6) {
         throw Exception('Password minimal 6 karakter');
       }
-      
+
       print('✅ Input valid');
 
       print('\n[REGISTER] STEP 2: Verifying OTP');
       final otpService = OtpService();
       final verifiedEmail = await otpService.verifyOtp(email, otp);
-      
+
       if (verifiedEmail == null) {
         throw Exception('OTP verification failed');
       }
@@ -634,14 +695,13 @@ class AuthService {
 
       print('\n[REGISTER] STEP 3: Creating Firebase Auth account');
       print('   Email: $email');
-      
-      final userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw Exception('Account creation timeout'),
-      );
+
+      final userCredential = await _auth
+          .createUserWithEmailAndPassword(email: email, password: password)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw Exception('Account creation timeout'),
+          );
 
       final user = userCredential.user;
       if (user == null) {
@@ -654,7 +714,7 @@ class AuthService {
       print('\n[REGISTER] STEP 4: Saving user profile to Firestore');
       print('   Collection: users');
       print('   Document ID: ${user.uid}');
-      
+
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
@@ -677,11 +737,10 @@ class AuthService {
 
       print('\n✅ [AUTH SERVICE] REGISTER COMPLETE\n');
       return user;
-      
     } on FirebaseAuthException catch (e) {
       print('\n❌ [AUTH SERVICE] Firebase Auth Exception');
       print('   Code: ${e.code}');
-      
+
       switch (e.code) {
         case 'email-already-in-use':
           throw Exception('Email sudah terdaftar');
@@ -699,7 +758,7 @@ class AuthService {
   }
 
   // ========== EMAIL VERIFICATION METHODS ==========
-  
+
   /// Register dengan email verification (tanpa OTP)
   /// Langsung kirim verification email ke inbox user
   Future<User?> registerWithEmailPasswordAndVerification({
@@ -711,36 +770,35 @@ class AuthService {
   }) async {
     try {
       email = email.toLowerCase().trim();
-      
+
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [AUTH SERVICE] REGISTER WITH EMAIL VERIFICATION       ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       print('\n[REGISTER] STEP 1: Validating inputs');
       if (email.isEmpty || password.isEmpty || name.isEmpty) {
         throw Exception('Semua field harus diisi');
       }
-      
+
       if (!email.contains('@')) {
         throw Exception('Format email tidak valid');
       }
-      
+
       if (password.length < 6) {
         throw Exception('Password minimal 6 karakter');
       }
-      
+
       print('✅ Input valid');
 
       print('\n[REGISTER] STEP 2: Creating Firebase Auth account');
       print('   Email: $email');
-      
-      final userCredential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: password,
-      ).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () => throw Exception('Account creation timeout'),
-      );
+
+      final userCredential = await _auth
+          .createUserWithEmailAndPassword(email: email, password: password)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw Exception('Account creation timeout'),
+          );
 
       final user = userCredential.user;
       if (user == null) {
@@ -768,13 +826,14 @@ class AuthService {
 
       print('\n✅ [AUTH SERVICE] STEP 1 COMPLETE - WAITING FOR VERIFICATION');
       print('   🔗 Verification email dikirim ke: $email');
-      print('   ⏳ Data akan disimpan ke Firestore setelah verifikasi berhasil\n');
+      print(
+        '   ⏳ Data akan disimpan ke Firestore setelah verifikasi berhasil\n',
+      );
       return user;
-      
     } on FirebaseAuthException catch (e) {
       print('\n❌ [AUTH SERVICE] Firebase Auth Exception');
       print('   Code: ${e.code}');
-      
+
       switch (e.code) {
         case 'email-already-in-use':
           throw Exception('Email sudah terdaftar');
@@ -804,12 +863,12 @@ class AuthService {
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [AUTH SERVICE] SAVE TO FIRESTORE (AFTER VERIFICATION) ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       print('\n[SAVE] Saving user data to Firestore...');
       print('   UID: $uid');
       print('   Email: $email');
       print('   Name: $name');
-      
+
       await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
@@ -854,7 +913,7 @@ class AuthService {
       // Refresh user untuk dapatkan email verification status terbaru dari Firebase
       print('[AUTH] Refreshing email verification status for: ${user.email}');
       await user.reload();
-      
+
       final verified = user.emailVerified;
       print('[AUTH] Email verified status: $verified');
       return verified;
@@ -878,22 +937,26 @@ class AuthService {
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ [AUTH SERVICE] WAITING FOR EMAIL VERIFICATION         ║');
       print('╚════════════════════════════════════════════════════════╝');
-      
+
       print('\n⏳ Starting email verification polling...');
-      print('   ✅ Checking every ${checkInterval.inSeconds}s (OPTIMIZED FOR SPEED)');
-      print('   Max wait time: ${maxAttempts * checkInterval.inSeconds ~/ 60} minutes');
+      print(
+        '   ✅ Checking every ${checkInterval.inSeconds}s (OPTIMIZED FOR SPEED)',
+      );
+      print(
+        '   Max wait time: ${maxAttempts * checkInterval.inSeconds ~/ 60} minutes',
+      );
       print('   📧 Waiting for user to click verification link...\n');
-      
+
       for (int i = 0; i < maxAttempts; i++) {
         // Wait before checking
         await Future.delayed(checkInterval);
-        
+
         // Refresh and check status
         final verified = await isEmailVerified();
         final elapsed = (i + 1) * checkInterval.inSeconds;
         final minutes = elapsed ~/ 60;
         final seconds = elapsed % 60;
-        
+
         if (verified) {
           print('\n╔════════════════════════════════════════════════════════╗');
           print('║ ✅ EMAIL VERIFICATION SUCCESSFUL!                    ║');
@@ -901,17 +964,21 @@ class AuthService {
           print('✨ Time taken: ${minutes}m ${seconds}s\n');
           return true;
         }
-        
+
         // Show progress every 30 checks (every 60 seconds)
         if ((i + 1) % 30 == 0) {
-          print('[AUTH] Still waiting... (${minutes}m ${seconds}s elapsed) - Check #${i + 1}/$maxAttempts');
+          print(
+            '[AUTH] Still waiting... (${minutes}m ${seconds}s elapsed) - Check #${i + 1}/$maxAttempts',
+          );
         }
       }
-      
+
       print('\n╔════════════════════════════════════════════════════════╗');
       print('║ ⏱️  VERIFICATION TIMEOUT                              ║');
       print('╚════════════════════════════════════════════════════════╝');
-      print('User did not verify email in time (${maxAttempts * checkInterval.inSeconds ~/ 60} minutes)');
+      print(
+        'User did not verify email in time (${maxAttempts * checkInterval.inSeconds ~/ 60} minutes)',
+      );
       print('User can still manually verify and login later\n');
       return false;
     } catch (e) {
@@ -937,16 +1004,19 @@ class AuthService {
       print('\n[AUTH] RESEND VERIFICATION EMAIL');
       print('   Target: ${user.email}');
       print('   Attempt: 1/$maxRetries');
-      
+
       int attempt = 0;
       while (attempt < maxRetries) {
         attempt++;
         try {
           await user.sendEmailVerification().timeout(
             const Duration(seconds: 30),
-            onTimeout: () => throw TimeoutException('Send email timeout', const Duration(seconds: 30)),
+            onTimeout: () => throw TimeoutException(
+              'Send email timeout',
+              const Duration(seconds: 30),
+            ),
           );
-          
+
           print('✅ [AUTH] Verification email SENT successfully');
           print('   Check inbox at: ${user.email}');
           print('   Link valid untuk: 24 jam');
@@ -959,7 +1029,9 @@ class AuthService {
             await Future.delayed(const Duration(seconds: 2));
           } else {
             print('❌ All $maxRetries attempts failed');
-            throw Exception('Gagal mengirim email verifikasi setelah $maxRetries coba: ${e.message}');
+            throw Exception(
+              'Gagal mengirim email verifikasi setelah $maxRetries coba: ${e.message}',
+            );
           }
         } catch (e) {
           print('⚠️  Attempt $attempt: Error - $e');
@@ -989,12 +1061,12 @@ class AuthService {
       }
 
       print('[AUTH] Fetching user type for UID: $userId');
-      
+
       final db = FirebaseFirestore.instance;
-      
+
       // First check in 'users' collection
       final userDoc = await db.collection('users').doc(userId).get();
-      
+
       if (userDoc.exists) {
         final userType = userDoc.data()?['userType'] as String?;
         print('✅ [AUTH] User type found: $userType');
@@ -1005,21 +1077,21 @@ class AuthService {
           return UserType.family;
         }
       }
-      
+
       // Also check in 'tunanetra_users' collection for backward compatibility
       final tunaDoc = await db.collection('tunanetra_users').doc(userId).get();
       if (tunaDoc.exists) {
         print('✅ [AUTH] User found in tunanetra_users collection');
         return UserType.tunanetra;
       }
-      
+
       // Check in 'family_users' collection
       final familyDoc = await db.collection('family_users').doc(userId).get();
       if (familyDoc.exists) {
         print('✅ [AUTH] User found in family_users collection');
         return UserType.family;
       }
-      
+
       print('⚠️  [AUTH] User type not found in any collection');
       return null;
     } catch (e) {
@@ -1027,7 +1099,4 @@ class AuthService {
       return null;
     }
   }
-
 }
-
-
