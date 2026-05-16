@@ -41,9 +41,27 @@ class PlaceModel {
       throw FormatException('Koordinat tempat tidak valid: $docId');
     }
 
+    // Normalize keys to be resilient against typos like trailing spaces
+    // or alternative languages (e.g. 'nama') coming from manual imports.
+    String? resolveStringKey(Map<String, dynamic> map, String key) {
+      if (map.containsKey(key) && map[key] != null) return map[key].toString();
+      final found = map.keys.firstWhere(
+        (k) => k.toString().trim().toLowerCase() == key.toLowerCase(),
+        orElse: () => '',
+      );
+      if (found != '') return map[found]?.toString();
+      return null;
+    }
+
+    final resolvedName = resolveStringKey(data, 'name') ??
+        resolveStringKey(data, 'nama') ??
+        resolveStringKey(data, 'title');
+
     return PlaceModel(
       id: docId,
-      name: data['name'] ?? 'Unknown Place',
+      name: (resolvedName == null || resolvedName.trim().isEmpty)
+          ? 'Unknown Place'
+          : resolvedName.trim(),
       latitude: latitude,
       longitude: longitude,
       description: data['description'] ?? data['address'] ?? '',
