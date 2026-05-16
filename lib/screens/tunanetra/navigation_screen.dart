@@ -64,9 +64,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const Duration _rerouteCooldown = Duration(seconds: 20);
   bool _isLocationReady =
       false; // Track if real user location has been obtained
-  bool _isMapReady = false; // Set true after FlutterMap has rendered
-  LatLng? _pendingMapMoveLocation;
-  double? _pendingMapMoveZoom;
 
   // Places from Firestore
   List<PlaceModel> _places = [];
@@ -141,7 +138,11 @@ class _NavigationScreenState extends State<NavigationScreen>
     });
 
     if (_isNavigating) {
-      _moveMap(nextPoint, _mapController.camera.zoom);
+      try {
+        _mapController.move(nextPoint, _mapController.camera.zoom);
+      } catch (_) {
+        // Ignore while map is not ready yet.
+      }
     }
   }
 
@@ -177,29 +178,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     _locationAnimationController
       ..reset()
       ..forward();
-  }
-
-  void _onMapReady() {
-    _isMapReady = true;
-    if (_pendingMapMoveLocation != null && _pendingMapMoveZoom != null) {
-      _mapController.move(_pendingMapMoveLocation!, _pendingMapMoveZoom!);
-      _pendingMapMoveLocation = null;
-      _pendingMapMoveZoom = null;
-    }
-  }
-
-  void _moveMap(LatLng center, double zoom) {
-    if (_isMapReady) {
-      try {
-        _mapController.move(center, zoom);
-      } catch (_) {
-        // ignore if controller is temporarily unavailable
-      }
-      return;
-    }
-
-    _pendingMapMoveLocation = center;
-    _pendingMapMoveZoom = zoom;
   }
 
   LatLng _moveByMeters({
@@ -388,7 +366,11 @@ class _NavigationScreenState extends State<NavigationScreen>
     });
 
     if (_isNavigating) {
-      _moveMap(displayLocation, _mapController.camera.zoom);
+      try {
+        _mapController.move(displayLocation, _mapController.camera.zoom);
+      } catch (_) {
+        // Ignore while map is not ready yet.
+      }
     }
 
     _updateRouteProgress(
@@ -758,7 +740,7 @@ class _NavigationScreenState extends State<NavigationScreen>
               _isLocationReady = true;
             });
 
-            _moveMap(_userLocation, 18.0);
+            _mapController.move(_userLocation, 18.0);
           }
         } catch (e) {
           print('[NAVIGATION] ❌ Error getting position: $e');
@@ -1157,25 +1139,25 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   void _goToLocation(LatLng location) {
-    _moveMap(location, 18.0);
+    _mapController.move(location, 18.0);
   }
 
   void _zoomIn() {
-    _moveMap(
+    _mapController.move(
       _mapController.camera.center,
       _mapController.camera.zoom + 1,
     );
   }
 
   void _zoomOut() {
-    _moveMap(
+    _mapController.move(
       _mapController.camera.center,
       _mapController.camera.zoom - 1,
     );
   }
 
   void _goToCurrentLocation() {
-    _moveMap(_userLocation, 18.0);
+    _mapController.move(_userLocation, 18.0);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1190,7 +1172,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   /// Zoom map to fit all markers (user location + all places)
   void _zoomToFitAllMarkers() {
     if (_places.isEmpty) {
-      _moveMap(_userLocation, 18.0);
+      _mapController.move(_userLocation, 18.0);
       return;
     }
 
@@ -1231,7 +1213,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       zoom = 12;
     }
 
-    _moveMap(center, zoom);
+    _mapController.move(center, zoom);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -2069,7 +2051,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                                   Future.delayed(
                                     const Duration(milliseconds: 300),
                                     () {
-                                      _moveMap(_userLocation, 18.0);
+                                      _mapController.move(_userLocation, 18.0);
                                     },
                                   );
                                 },
@@ -2256,7 +2238,6 @@ class _NavigationScreenState extends State<NavigationScreen>
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.all,
                 ),
-                onMapReady: _onMapReady,
               ),
               children: [
                 // OpenStreetMap Tile Layer
