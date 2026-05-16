@@ -23,6 +23,8 @@ import 'screens/family/emergency_sos_screen.dart';
 import 'screens/family/family_manage_places_screen.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+final RouteObserver<ModalRoute<void>> routeObserver =
+    RouteObserver<ModalRoute<void>>();
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -115,6 +117,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: appNavigatorKey,
+      navigatorObservers: [routeObserver],
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(

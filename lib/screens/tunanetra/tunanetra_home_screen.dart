@@ -1,3 +1,4 @@
+import '../../main.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,6 +11,8 @@ import '../../services/notification_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/sos_service.dart';
 import '../../services/weather_service.dart';
+import '../../services/stt_service.dart';
+import '../../services/tts_service.dart';
 
 class TunaNetraHomeScreen extends StatefulWidget {
   const TunaNetraHomeScreen({super.key});
@@ -19,7 +22,7 @@ class TunaNetraHomeScreen extends StatefulWidget {
 }
 
 class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
-    with TickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   String _userName = 'Pengguna';
   WeatherData? _weatherData;
   bool _isLoadingWeather = true;
@@ -31,6 +34,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _pairingRequestSub;
   final Set<String> _shownPairingRequestIds = {};
   bool _isPairingDialogOpen = false;
+  final TTSService _ttsService = TTSService();
+  final STTService _sttService = STTService();
+  bool _hasSpoken = false;
+  bool _isSpeaking = false;
 
   late AnimationController _fadeController;
   late AnimationController _rotationController;
@@ -49,14 +56,96 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _loadWeather();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _liveTrackingService.startHomeLocationTracking();
-      NotificationService.instance.requestNotificationPermission().catchError(
-        (error) {
-          debugPrint(
-            '[TunaNetraHome] Notification permission request failed: $error',
-          );
-        },
-      );
+      NotificationService.instance.requestNotificationPermission().catchError((
+        error,
+      ) {
+        debugPrint(
+          '[TunaNetraHome] Notification permission request failed: $error',
+        );
+      });
     });
+  }
+
+  Future<void> speakSafe(String text) async {
+    _isSpeaking = true;
+    await TTSService().speak(text);
+    _isSpeaking = false;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    routeObserver.subscribe(this, ModalRoute.of(context)!);
+  }
+
+  @override
+  void didPopNext() async {
+    print("🔙 Balik ke HomeScreen");
+
+    await _sttService.stopListening();
+
+    await speakSafe("Kamu kembali ke halaman utama");
+
+    await Future.delayed(Duration(milliseconds: 300));
+
+    _startListening();
+  }
+
+  void _handleCommand(String command) async {
+    await _sttService.stopListening();
+
+    if (command.contains("bluetooth")) {
+      await speakSafe("Membuka pengaturan bluetooth");
+      Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
+    } else if (command.contains("navigasi")) {
+      await speakSafe("Membuka navigasi");
+      Navigator.pushNamed(context, AppRoutes.tunaNetraNavigation);
+    } else if (command.contains("ebook") || command.contains("buku panduan")) {
+      await speakSafe("Membuka buku panduan");
+      Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
+    } else if (command.contains("tongkat pintar")) {
+      await speakSafe("Membuka pengaturan smartcane");
+      Navigator.pushNamed(context, AppRoutes.tunaNetraSmartcane);
+    } else if (command.contains("pengaturan")) {
+      await speakSafe("Membuka pengaturan");
+      Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
+    } else {
+      await speakSafe("Perintah tidak dikenali");
+      _startListening();
+    }
+  }
+
+  void _startListening() {
+    _sttService.startListening((result) {
+      if (_isSpeaking) return;
+
+      final text = result.toString().toLowerCase();
+
+      if (text.length < 15) return;
+
+      print("🎤 $text");
+
+      _handleCommand(text);
+    });
+  }
+
+  void _speakIfReady() async {
+    if (_hasSpoken) return;
+
+    if (_weatherData != null && _userName.isNotEmpty) {
+      _hasSpoken = true;
+
+      final cuaca = _weatherData!;
+      final text =
+          "Selamat datang $_userName. "
+          "Cuaca hari ini ${cuaca.temperature.toStringAsFixed(0)} derajat, "
+          "kelembapan ${cuaca.humidity} persen, "
+          "kecepatan angin ${cuaca.windSpeed.toStringAsFixed(0)} kilometer per jam.";
+
+      await TTSService().speak(text);
+
+      _startListening();
+    }
   }
 
   @override
@@ -92,6 +181,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           setState(() {
             _userName = newName;
           });
+          _speakIfReady();
         }
       });
     } else {
@@ -116,6 +206,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           _weatherData = weather;
           _isLoadingWeather = false;
         });
+        _speakIfReady();
       }
     } catch (e) {
       print('❌ Error loading weather: $e');
@@ -754,6 +845,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     WidgetsBinding.instance.removeObserver(this);
     _liveTrackingService.stopHomeLocationTracking();
     _authStateSub?.cancel();
+    routeObserver.unsubscribe(this);
     _pairingRequestSub?.cancel();
     _fadeController.dispose();
     _rotationController.dispose();

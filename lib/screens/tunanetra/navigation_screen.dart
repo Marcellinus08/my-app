@@ -14,6 +14,8 @@ import '../../services/routing_service.dart';
 import '../../services/analytics_service.dart';
 import '../../services/live_tracking_service.dart';
 import '../../services/navigation_history_service.dart';
+import '../../services/stt_service.dart';
+import '../../services/tts_service.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -31,6 +33,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   final LiveTrackingService _liveTrackingService = LiveTrackingService();
   final NavigationHistoryService _navigationHistoryService =
       NavigationHistoryService();
+  final TTSService _ttsService = TTSService();
+  final STTService _sttService = STTService();
+  bool _hasSpoken = false;
+  bool _isSpeaking = false;
   static const double _pedestrianSpeedMs = 1.4;
   static const double _arrivalThresholdMeters = 5.0;
 
@@ -110,6 +116,12 @@ class _NavigationScreenState extends State<NavigationScreen>
   bool _hasArrivedAtDestination = false;
   String _destinationName = '';
 
+  Future<void> speakSafe(String text) async {
+    _isSpeaking = true;
+    await _ttsService.speak(text);
+    _isSpeaking = false;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -122,10 +134,57 @@ class _NavigationScreenState extends State<NavigationScreen>
     )..addListener(_onLocationAnimationTick);
 
     // Wait for widget to render, then load places
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       _getUserLocation();
       _loadPlaces();
+
+      await speakSafe("Halaman navigasi dibuka. Silakan sebutkan tujuan anda");
+
+      _startVoiceNavigation();
     });
+  }
+
+  void _startVoiceNavigation() {
+    _sttService.startListening((result) {
+      if (_isSpeaking) return;
+
+      final text = result.toLowerCase();
+      String cleanedText = text.replaceAll('-', ' ').toLowerCase();
+      print("🎤 NAV: $cleanedText");
+
+      _handleNavigationCommand(cleanedText);
+    });
+  }
+
+  void _handleNavigationCommand(String command) async {
+    if (command.length < 2) return;
+
+    for (final place in _places) {
+      if (command.contains(place.name.replaceAll('-', ' ').toLowerCase())) {
+        await _sttService.stopListening();
+
+        await speakSafe("Memulai navigasi ke ${place.name}");
+
+        setState(() {
+          _selectedPlace = place;
+        });
+
+        _startLocationStreaming();
+        await _loadRoute();
+
+        return;
+      }
+    }
+
+    if (command.contains("berhenti")) {
+      await _sttService.stopListening();
+
+      await speakSafe("Navigasi dihentikan");
+
+      await _endNavigationSession();
+
+      Navigator.pop(context);
+    }
   }
 
   void _onLocationAnimationTick() {
@@ -499,6 +558,8 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
 
     if (!mounted) return;
+
+    unawaited(speakSafe("Anda keluar jalur. Menghitung ulang rute"));
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1135,6 +1196,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       ..removeListener(_onLocationAnimationTick)
       ..dispose();
     unawaited(_liveTrackingService.stopNavigationTracking());
+    _sttService.stopListening();
     super.dispose();
   }
 
@@ -1646,6 +1708,8 @@ class _NavigationScreenState extends State<NavigationScreen>
         final hasArrivedNow =
             !_hasArrivedAtDestination &&
             distanceMeters < _arrivalThresholdMeters;
+        bool forwardInstruction = false;
+        String instructionText = '';
 
         setState(() {
           // Update walking mode
@@ -1658,13 +1722,24 @@ class _NavigationScreenState extends State<NavigationScreen>
           if (nextInstructionIndex >= 0 &&
               nextInstructionIndex != _currentInstructionIndex) {
             _currentInstructionIndex = nextInstructionIndex;
+
+            final instruction =
+                _navigationInstructions[_currentInstructionIndex];
+            instructionText = instruction.instruction;
+
+            // Tandai bahwa kita perlu memicu suara SETELAH setState selesai
+            forwardInstruction = true;
+
             print(
               '[NAVIGATION] 📍 Updated to instruction ${_currentInstructionIndex + 1}',
             );
           }
-
           _lastDurationUpdateTime = now;
         });
+
+        if (forwardInstruction && instructionText.isNotEmpty) {
+          await speakSafe(instructionText);
+        }
 
         if (hasArrivedNow) {
           print(
@@ -1684,7 +1759,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
   }
 
-  void _handleArrival() {
+  void _handleArrival() async {
     if (!mounted || _hasArrivedAtDestination) return;
 
     final destinationName = _selectedPlace?.name ?? 'tujuan';
@@ -1710,6 +1785,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     );
 
     unawaited(_endNavigationSession(endReason: 'arrived'));
+    unawaited(speakSafe("Anda telah tiba di ${_selectedPlace?.name}"));
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
