@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/live_tracking_service.dart';
+import '../../services/notification_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/sos_service.dart';
 import '../../services/weather_service.dart';
@@ -48,6 +49,13 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _loadWeather();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _liveTrackingService.startHomeLocationTracking();
+      NotificationService.instance.requestNotificationPermission().catchError(
+        (error) {
+          debugPrint(
+            '[TunaNetraHome] Notification permission request failed: $error',
+          );
+        },
+      );
     });
   }
 

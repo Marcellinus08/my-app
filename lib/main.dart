@@ -71,7 +71,10 @@ void main() async {
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
-  await NotificationService.instance.initialize(navigatorKey: appNavigatorKey);
+  await NotificationService.instance.initialize(
+    navigatorKey: appNavigatorKey,
+    requestPermission: false,
+  );
   final initialSosPayload = NotificationService.instance
       .takeInitialSosPayload();
   final initialSosMonitoringPayload = NotificationService.instance

@@ -172,6 +172,7 @@ class NotificationService {
 
   Future<void> initialize({
     required GlobalKey<NavigatorState> navigatorKey,
+    bool requestPermission = true,
   }) async {
     if (_messageHandlersInitialized) {
       debugPrint('[NotificationService] Message handlers sudah aktif');
@@ -181,7 +182,9 @@ class NotificationService {
     _navigatorKey = navigatorKey;
     _messageHandlersInitialized = true;
 
-    await requestNotificationPermission();
+    if (requestPermission) {
+      await requestNotificationPermission();
+    }
     await createSosEmergencyChannel();
     await _handleLocalNotificationLaunchDetails();
 
