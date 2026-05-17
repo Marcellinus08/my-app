@@ -111,6 +111,9 @@ class _NavigationScreenState extends State<NavigationScreen>
   // Navigation instructions (Turn-by-turn guidance)
   List<NavigationInstruction> _navigationInstructions = [];
   int _currentInstructionIndex = 0; // Index of current/next instruction
+  double? _currentInstructionRemainingMeters;
+  final Map<int, Set<int>> _announcedInstructionCueMeters = {};
+  final Set<int> _announcedNowInstructionIndexes = {};
   bool _isLoadingInstructions = false;
   String _instructionLoadError = '';
   bool _hasArrivedAtDestination = false;
@@ -364,6 +367,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     });
 
     _animateUserLocation(displayLocation);
+    _updateLiveInstructionDistance(displayLocation, allowVoiceCue: true);
     _updateRouteProgress(
       snapResult.segmentIndex,
       snapResult.distanceToRouteMeters,
@@ -436,6 +440,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       snapResult.segmentIndex,
       snapResult.distanceToRouteMeters,
     );
+    _updateLiveInstructionDistance(displayLocation, allowVoiceCue: false);
     unawaited(
       _handleOffRouteDetection(
         distanceToRouteMeters: snapResult.distanceToRouteMeters,
@@ -493,6 +498,177 @@ class _NavigationScreenState extends State<NavigationScreen>
       });
     }
     unawaited(_syncRemainingRoutePolyline());
+  }
+
+  double _distanceBetweenPoints(LatLng start, LatLng end) {
+    return Geolocator.distanceBetween(
+      start.latitude,
+      start.longitude,
+      end.latitude,
+      end.longitude,
+    );
+  }
+
+  double? _remainingDistanceAlongPolyline(
+    LatLng currentPosition,
+    List<LatLng> polylinePoints,
+  ) {
+    if (polylinePoints.isEmpty) return null;
+    if (polylinePoints.length == 1) {
+      return _distanceBetweenPoints(currentPosition, polylinePoints.first);
+    }
+
+    var bestSegmentIndex = 0;
+    var bestProjectedPoint = polylinePoints.first;
+    var bestDistanceToSegment = double.infinity;
+
+    for (var i = 0; i < polylinePoints.length - 1; i++) {
+      final projected = _projectPointToSegment(
+        currentPosition,
+        polylinePoints[i],
+        polylinePoints[i + 1],
+      );
+      final distanceToSegment = _distanceBetweenPoints(
+        currentPosition,
+        projected,
+      );
+
+      if (distanceToSegment < bestDistanceToSegment) {
+        bestDistanceToSegment = distanceToSegment;
+        bestSegmentIndex = i;
+        bestProjectedPoint = projected;
+      }
+    }
+
+    var remainingMeters = _distanceBetweenPoints(
+      bestProjectedPoint,
+      polylinePoints[bestSegmentIndex + 1],
+    );
+
+    for (var i = bestSegmentIndex + 1; i < polylinePoints.length - 1; i++) {
+      remainingMeters += _distanceBetweenPoints(
+        polylinePoints[i],
+        polylinePoints[i + 1],
+      );
+    }
+
+    return remainingMeters;
+  }
+
+  void _updateLiveInstructionDistance(
+    LatLng displayLocation, {
+    required bool allowVoiceCue,
+  }) {
+    if (!_isNavigating ||
+        _navigationInstructions.isEmpty ||
+        _currentInstructionIndex >= _navigationInstructions.length) {
+      if (_currentInstructionRemainingMeters != null && mounted) {
+        setState(() {
+          _currentInstructionRemainingMeters = null;
+        });
+      }
+      return;
+    }
+
+    final instruction = _navigationInstructions[_currentInstructionIndex];
+    final remainingMeters = _remainingDistanceAlongPolyline(
+      displayLocation,
+      instruction.polylinePoints,
+    );
+    if (remainingMeters == null) return;
+
+    final previousRemaining = _currentInstructionRemainingMeters;
+    final shouldUpdateUi =
+        previousRemaining == null ||
+        (previousRemaining - remainingMeters).abs() >= 1.0;
+
+    if (shouldUpdateUi && mounted) {
+      setState(() {
+        _currentInstructionRemainingMeters = remainingMeters;
+      });
+    }
+
+    if (allowVoiceCue) {
+      _announceInstructionCueIfNeeded(remainingMeters, displayLocation);
+    }
+  }
+
+  void _announceInstructionCueIfNeeded(
+    double remainingMeters,
+    LatLng displayLocation,
+  ) {
+    if (_currentInstructionIndex >= _navigationInstructions.length) return;
+
+    final nextInstructionIndex = _currentInstructionIndex + 1;
+    final cueInstruction = nextInstructionIndex < _navigationInstructions.length
+        ? _navigationInstructions[nextInstructionIndex].instruction
+        : 'tujuan berada di depan';
+
+    if (remainingMeters <= 2) {
+      _announceNowCueAndAdvance(
+        sourceInstructionIndex: _currentInstructionIndex,
+        nextInstructionIndex: nextInstructionIndex,
+        cueInstruction: cueInstruction,
+        displayLocation: displayLocation,
+      );
+      return;
+    }
+
+    final cueMeters = remainingMeters <= 10
+        ? 10
+        : remainingMeters <= 30
+        ? 30
+        : null;
+    if (cueMeters == null) return;
+
+    final announcedCueMeters = _announcedInstructionCueMeters.putIfAbsent(
+      _currentInstructionIndex,
+      () => <int>{},
+    );
+    if (!announcedCueMeters.add(cueMeters)) return;
+
+    unawaited(speakSafe("Dalam $cueMeters meter, $cueInstruction"));
+  }
+
+  void _announceNowCueAndAdvance({
+    required int sourceInstructionIndex,
+    required int nextInstructionIndex,
+    required String cueInstruction,
+    required LatLng displayLocation,
+  }) {
+    if (!_announcedNowInstructionIndexes.add(sourceInstructionIndex)) return;
+
+    unawaited(
+      _speakNowCueThenAdvance(
+        sourceInstructionIndex: sourceInstructionIndex,
+        nextInstructionIndex: nextInstructionIndex,
+        cueInstruction: cueInstruction,
+        displayLocation: displayLocation,
+      ),
+    );
+  }
+
+  Future<void> _speakNowCueThenAdvance({
+    required int sourceInstructionIndex,
+    required int nextInstructionIndex,
+    required String cueInstruction,
+    required LatLng displayLocation,
+  }) async {
+    await speakSafe("Sekarang $cueInstruction");
+
+    if (!mounted ||
+        !_isNavigating ||
+        _currentInstructionIndex != sourceInstructionIndex ||
+        nextInstructionIndex >= _navigationInstructions.length) {
+      return;
+    }
+
+    setState(() {
+      _currentInstructionIndex = nextInstructionIndex;
+      _currentInstructionRemainingMeters = null;
+    });
+
+    _updateLiveInstructionDistance(displayLocation, allowVoiceCue: false);
   }
 
   Future<void> _syncRemainingRoutePolyline() async {
@@ -1159,6 +1335,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       _isOffRouteWarningVisible = false;
       _navigationInstructions = [];
       _currentInstructionIndex = 0;
+      _currentInstructionRemainingMeters = null;
+      _announcedInstructionCueMeters.clear();
+      _announcedNowInstructionIndexes.clear();
       _routeDistanceKm = 0.0;
       _routeDurationMinutes = 0.0;
       _routeDistanceMeters = 0.0;
@@ -1515,6 +1694,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       _routeLoadError = '';
       _navigationInstructions = [];
       _currentInstructionIndex = 0;
+      _currentInstructionRemainingMeters = null;
+      _announcedInstructionCueMeters.clear();
+      _announcedNowInstructionIndexes.clear();
       _isLoadingInstructions = false;
       _instructionLoadError = '';
       _hasArrivedAtDestination = false;
@@ -1562,6 +1744,9 @@ class _NavigationScreenState extends State<NavigationScreen>
           _routeLoadError = '';
           _navigationInstructions = instructions;
           _currentInstructionIndex = 0;
+          _currentInstructionRemainingMeters = null;
+          _announcedInstructionCueMeters.clear();
+          _announcedNowInstructionIndexes.clear();
           _isLoadingInstructions = false;
 
           // Foot mode (default)
@@ -1578,6 +1763,8 @@ class _NavigationScreenState extends State<NavigationScreen>
           _lastDurationUpdateTime = tripStartedAt;
           _destinationName = _selectedPlace?.name ?? 'unknown';
         });
+
+        _updateLiveInstructionDistance(_userLocation, allowVoiceCue: false);
 
         if (!wasNavigating) {
           await _startTripHistoryIfNeeded();
@@ -1666,7 +1853,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   /// Update remaining duration based on current location
   /// This will call OSRM API to get new duration from current location to destination in walking mode
-  /// Also update current instruction based on user location
+  /// Instruction advancement is handled on each GPS update for better timing.
   Future<void> _updateRemainingDuration() async {
     if (!_isNavigating || _selectedPlace == null) return;
 
@@ -1694,13 +1881,6 @@ class _NavigationScreenState extends State<NavigationScreen>
         profile: 'foot',
       );
 
-      // Update current instruction index based on current location
-      final nextInstructionIndex = _routingService.findNextInstructionIndex(
-        currentLocation: _userLocation,
-        instructions: _navigationInstructions,
-        distanceThreshold: 50.0, // 50 meter threshold
-      );
-
       if (mounted) {
         final distanceMeters = (routeInfo['distance'] as num).toDouble();
         final newFootDurationSeconds = distanceMeters / _pedestrianSpeedMs;
@@ -1708,8 +1888,10 @@ class _NavigationScreenState extends State<NavigationScreen>
         final hasArrivedNow =
             !_hasArrivedAtDestination &&
             distanceMeters < _arrivalThresholdMeters;
-        bool forwardInstruction = false;
-        String instructionText = '';
+        // Instruction changes are handled by GPS-triggered maneuver cues.
+        final nextInstructionIndex = _currentInstructionIndex;
+        var forwardInstruction = false;
+        var instructionText = '';
 
         setState(() {
           // Update walking mode
@@ -1722,6 +1904,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           if (nextInstructionIndex >= 0 &&
               nextInstructionIndex != _currentInstructionIndex) {
             _currentInstructionIndex = nextInstructionIndex;
+            _currentInstructionRemainingMeters = null;
 
             final instruction =
                 _navigationInstructions[_currentInstructionIndex];
@@ -1739,6 +1922,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
         if (forwardInstruction && instructionText.isNotEmpty) {
           await speakSafe(instructionText);
+          _updateLiveInstructionDistance(_userLocation, allowVoiceCue: false);
         }
 
         if (hasArrivedNow) {
@@ -1772,6 +1956,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     setState(() {
       _hasArrivedAtDestination = true;
       _currentInstructionIndex = _navigationInstructions.length;
+      _currentInstructionRemainingMeters = null;
       _routeDurationSeconds = 0.0;
       _routeDurationMinutes = 0.0;
     });
@@ -1821,9 +2006,11 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     final instruction = _navigationInstructions[_currentInstructionIndex];
     final emoji = ManeuverParser.getTurnEmoji(instruction.turnType);
-    final distanceText = instruction.distance > 1000
-        ? '${(instruction.distance / 1000).toStringAsFixed(1)} km'
-        : '${instruction.distance.toStringAsFixed(0)} m';
+    final displayDistance =
+        _currentInstructionRemainingMeters ?? instruction.distance;
+    final distanceText = displayDistance > 1000
+        ? '${(displayDistance / 1000).toStringAsFixed(1)} km'
+        : '${displayDistance.toStringAsFixed(0)} m';
 
     return Container(
       padding: const EdgeInsets.all(14),
