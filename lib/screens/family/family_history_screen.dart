@@ -1967,7 +1967,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                                       ],
                                                     ),
                                                     child: const Icon(
-                                                      Icons.route_rounded,
+                                                      Icons.history_rounded,
                                                       color: Colors.white,
                                                       size: 22,
                                                     ),
@@ -2102,7 +2102,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                               ],
                                             ),
                                             child: const Icon(
-                                              Icons.route_rounded,
+                                              Icons.history_rounded,
                                               color: Colors.white,
                                               size: 22,
                                             ),

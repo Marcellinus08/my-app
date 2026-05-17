@@ -16,13 +16,18 @@ class LiveTrackingScreen extends StatefulWidget {
 }
 
 class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
+  late final MapController _mapController;
   Timer? _realtimeUpdateTimer;
+  LatLng? _lastFocusedUserLocation;
 
   static const LatLng _fallbackCenter = LatLng(-6.9147, 107.6098);
+  static const double _initialTrackingZoom = 16.0;
+  static const double _minimumCameraMoveMeters = 8.0;
 
   @override
   void initState() {
     super.initState();
+    _mapController = MapController();
     _realtimeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
         setState(() {
@@ -35,6 +40,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   @override
   void dispose() {
     _realtimeUpdateTimer?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -109,6 +115,39 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
         .toList();
   }
 
+  void _focusMapOnUserLocation(
+    LatLng userLocation, {
+    required bool hasLocation,
+    bool force = false,
+  }) {
+    if (!hasLocation) return;
+
+    final previousLocation = _lastFocusedUserLocation;
+    if (!force && previousLocation != null) {
+      final movedMeters = const Distance().as(
+        LengthUnit.Meter,
+        previousLocation,
+        userLocation,
+      );
+      if (movedMeters < _minimumCameraMoveMeters) return;
+    }
+
+    _lastFocusedUserLocation = userLocation;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      try {
+        final currentZoom = _mapController.camera.zoom;
+        _mapController.move(
+          userLocation,
+          currentZoom > 0 ? currentZoom : _initialTrackingZoom,
+        );
+      } catch (_) {
+        // MapController can throw before FlutterMap finishes attaching.
+      }
+    });
+  }
+
   Widget _buildMap({
     required LatLng userLocation,
     required double heading,
@@ -117,10 +156,18 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
     List<LatLng> activeRoute = const [],
     LatLng? destination,
   }) {
+    _focusMapOnUserLocation(userLocation, hasLocation: hasLocation);
+
     return FlutterMap(
+      mapController: _mapController,
       options: MapOptions(
         initialCenter: userLocation,
-        initialZoom: 16.0,
+        initialZoom: _initialTrackingZoom,
+        onMapReady: () => _focusMapOnUserLocation(
+          userLocation,
+          hasLocation: hasLocation,
+          force: true,
+        ),
       ),
       children: [
         TileLayer(
@@ -186,9 +233,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pelacakan Langsung'),
-      ),
+      appBar: AppBar(title: const Text('Pelacakan Langsung')),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection('live_tracking')
@@ -216,8 +261,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
           final gpsStatus = data?['gpsStatus'] as String? ?? '-';
           final destinationName =
               (data?['destinationName'] as String?)?.isNotEmpty == true
-                  ? data!['destinationName'] as String
-                  : '-';
+              ? data!['destinationName'] as String
+              : '-';
           final batteryLevel = data?['batteryLevel'];
           final updatedAt = _parseTimestamp(data?['updatedAt']);
           final isGpsActive = isGpsActiveTracking(data);
@@ -225,21 +270,23 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
           final hasLocation = isGpsActive && lat != null && lng != null;
           final userLocation = hasLocation ? LatLng(lat, lng) : _fallbackCenter;
 
-          final displayDestination =
-              isNavigationActive ? destinationName : '-';
+          final displayDestination = isNavigationActive ? destinationName : '-';
           final navigationText = buildNavigationText(isGpsActive, isNavigating);
           final displaySpeed = isNavigationActive && speed != null
               ? '${speed.toStringAsFixed(1)} m/s'
               : '-';
-            final displayHeading =
-              isNavigationActive ? '${heading.toStringAsFixed(0)}°' : '-';
+          final displayHeading = isNavigationActive
+              ? '${heading.toStringAsFixed(0)}°'
+              : '-';
           final displayAccuracy = isNavigationActive && accuracy != null
               ? '${accuracy.toStringAsFixed(1)} m'
               : '-';
-          final displayBattery =
-              isGpsActive && batteryLevel != null ? '$batteryLevel%' : '-';
-          final displayLastUpdate =
-              isNavigationActive ? formatLastUpdate(updatedAt) : '-';
+          final displayBattery = isGpsActive && batteryLevel != null
+              ? '$batteryLevel%'
+              : '-';
+          final displayLastUpdate = isNavigationActive
+              ? formatLastUpdate(updatedAt)
+              : '-';
           final gpsStatusText = buildGpsStatusText(isGpsActive);
 
           return Column(
@@ -263,7 +310,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                 ),
               ),
               Expanded(
-                child: !isNavigationActive ||
+                child:
+                    !isNavigationActive ||
                         currentTripId == null ||
                         currentTripId.isEmpty
                     ? _buildMap(
