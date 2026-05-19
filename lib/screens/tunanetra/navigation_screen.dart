@@ -166,8 +166,6 @@ class _NavigationScreenState extends State<NavigationScreen>
       if (command.contains(place.name.replaceAll('-', ' ').toLowerCase())) {
         await _sttService.stopListening();
 
-        await speakSafe("Memulai navigasi ke ${place.name}");
-
         setState(() {
           _selectedPlace = place;
         });
@@ -1002,6 +1000,10 @@ class _NavigationScreenState extends State<NavigationScreen>
     print(
       '[NAVIGATION] Starting continuous location streaming for navigation...',
     );
+
+    if (_selectedPlace != null) {
+      speakSafe("Memulai navigasi ke ${_selectedPlace!.name}");
+    }
 
     _startSensorFusion();
 
