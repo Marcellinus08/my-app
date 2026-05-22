@@ -157,9 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
         if (registeredUserType != _selectedUserType) {
           await _authService.logout();
-          throw Exception(
-            'Email atau kata sandi yang dipilih salah.',
-          );
+          throw Exception('Email atau kata sandi yang dipilih salah.');
         }
 
         ScaffoldMessenger.of(context).showSnackBar(

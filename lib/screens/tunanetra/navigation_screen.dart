@@ -16,6 +16,7 @@ import '../../services/live_tracking_service.dart';
 import '../../services/navigation_history_service.dart';
 import '../../services/stt_service.dart';
 import '../../services/tts_service.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -27,6 +28,9 @@ class NavigationScreen extends StatefulWidget {
 class _NavigationScreenState extends State<NavigationScreen>
     with SingleTickerProviderStateMixin {
   late MapController _mapController;
+  bool _isMapReady = false;
+  LatLng? _pendingMapCenter;
+  double? _pendingMapZoom;
   final PlacesService _placesService = PlacesService();
   final RoutingService _routingService = RoutingService();
   final AnalyticsService _analyticsService = AnalyticsService();
@@ -162,6 +166,17 @@ class _NavigationScreenState extends State<NavigationScreen>
   void _handleNavigationCommand(String command) async {
     if (command.length < 2) return;
 
+    if (TunaNetraVoiceCommands.isHomeCommand(command)) {
+      await _sttService.stopListening();
+      await speakSafe("Membuka halaman utama");
+      await _endNavigationSession();
+      if (!mounted) return;
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil(AppRoutes.tunaNetraHome, (route) => false);
+      return;
+    }
+
     for (final place in _places) {
       if (command.contains(place.name.replaceAll('-', ' ').toLowerCase())) {
         await _sttService.stopListening();
@@ -198,11 +213,29 @@ class _NavigationScreenState extends State<NavigationScreen>
     });
 
     if (_isNavigating) {
-      try {
-        _mapController.move(nextPoint, _mapController.camera.zoom);
-      } catch (_) {
-        // Ignore while map is not ready yet.
-      }
+      _safeMoveMap(nextPoint);
+    }
+  }
+
+  void _safeMoveMap(LatLng center, [double? zoom]) {
+    if (!_isMapReady) {
+      _pendingMapCenter = center;
+      _pendingMapZoom = zoom;
+      return;
+    }
+
+    _mapController.move(center, zoom ?? _mapController.camera.zoom);
+  }
+
+  void _onMapReady() {
+    _isMapReady = true;
+    final pendingCenter = _pendingMapCenter;
+    final pendingZoom = _pendingMapZoom;
+    _pendingMapCenter = null;
+    _pendingMapZoom = null;
+
+    if (pendingCenter != null) {
+      _safeMoveMap(pendingCenter, pendingZoom);
     }
   }
 
@@ -427,11 +460,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     });
 
     if (_isNavigating) {
-      try {
-        _mapController.move(displayLocation, _mapController.camera.zoom);
-      } catch (_) {
-        // Ignore while map is not ready yet.
-      }
+      _safeMoveMap(displayLocation);
     }
 
     _updateRouteProgress(
@@ -975,7 +1004,7 @@ class _NavigationScreenState extends State<NavigationScreen>
               _isLocationReady = true;
             });
 
-            _mapController.move(_userLocation, 18.0);
+            _safeMoveMap(_userLocation, 18.0);
           }
         } catch (e) {
           print('[NAVIGATION] ❌ Error getting position: $e');
@@ -1382,25 +1411,21 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   void _goToLocation(LatLng location) {
-    _mapController.move(location, 18.0);
+    _safeMoveMap(location, 18.0);
   }
 
   void _zoomIn() {
-    _mapController.move(
-      _mapController.camera.center,
-      _mapController.camera.zoom + 1,
-    );
+    if (!_isMapReady) return;
+    _safeMoveMap(_mapController.camera.center, _mapController.camera.zoom + 1);
   }
 
   void _zoomOut() {
-    _mapController.move(
-      _mapController.camera.center,
-      _mapController.camera.zoom - 1,
-    );
+    if (!_isMapReady) return;
+    _safeMoveMap(_mapController.camera.center, _mapController.camera.zoom - 1);
   }
 
   void _goToCurrentLocation() {
-    _mapController.move(_userLocation, 18.0);
+    _safeMoveMap(_userLocation, 18.0);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1415,7 +1440,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   /// Zoom map to fit all markers (user location + all places)
   void _zoomToFitAllMarkers() {
     if (_places.isEmpty) {
-      _mapController.move(_userLocation, 18.0);
+      _safeMoveMap(_userLocation, 18.0);
       return;
     }
 
@@ -1456,7 +1481,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       zoom = 12;
     }
 
-    _mapController.move(center, zoom);
+    _safeMoveMap(center, zoom);
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -2316,7 +2341,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                                   Future.delayed(
                                     const Duration(milliseconds: 300),
                                     () {
-                                      _mapController.move(_userLocation, 18.0);
+                                      _safeMoveMap(_userLocation, 18.0);
                                     },
                                   );
                                 },
@@ -2500,6 +2525,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                 initialZoom: 18.0,
                 minZoom: 5.0,
                 maxZoom: 18.0,
+                onMapReady: _onMapReady,
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.all,
                 ),

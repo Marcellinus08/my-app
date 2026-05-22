@@ -6,13 +6,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math' as math;
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
+import '../../services/core_permission_service.dart';
 import '../../services/live_tracking_service.dart';
-import '../../services/notification_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/sos_service.dart';
 import '../../services/weather_service.dart';
 import '../../services/stt_service.dart';
 import '../../services/tts_service.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 
 class TunaNetraHomeScreen extends StatefulWidget {
   const TunaNetraHomeScreen({super.key});
@@ -38,6 +39,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   final STTService _sttService = STTService();
   bool _hasSpoken = false;
   bool _isSpeaking = false;
+  bool _initialPermissionFlowDone = false;
+  bool _locationFeaturesStarted = false;
 
   late AnimationController _fadeController;
   late AnimationController _rotationController;
@@ -53,17 +56,24 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _firestore = FirebaseFirestore.instance;
     _setupUserNameStream();
     _subscribeToPairingRequests();
-    _loadWeather();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _liveTrackingService.startHomeLocationTracking();
-      NotificationService.instance.requestNotificationPermission().catchError((
-        error,
-      ) {
-        debugPrint(
-          '[TunaNetraHome] Notification permission request failed: $error',
-        );
-      });
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await CorePermissionService().ensureTunaNetraCorePermissions(
+        onLocationPermissionHandled: (_) async {
+          if (!mounted) return;
+          _startLocationFeatures();
+        },
+      );
+      if (!mounted) return;
+      _initialPermissionFlowDone = true;
+      _speakIfReady();
     });
+  }
+
+  void _startLocationFeatures() {
+    if (_locationFeaturesStarted) return;
+    _locationFeaturesStarted = true;
+    _loadWeather();
+    _liveTrackingService.startHomeLocationTracking();
   }
 
   Future<void> speakSafe(String text) async {
@@ -91,10 +101,18 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _startListening();
   }
 
+  @override
+  void didPushNext() {
+    _sttService.stopListening();
+  }
+
   void _handleCommand(String command) async {
     await _sttService.stopListening();
 
-    if (command.contains("bluetooth")) {
+    if (TunaNetraVoiceCommands.isHomeCommand(command)) {
+      await speakSafe("Kamu sudah berada di halaman utama");
+      _startListening();
+    } else if (command.contains("bluetooth")) {
       await speakSafe("Membuka pengaturan bluetooth");
       Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
     } else if (command.contains("navigasi")) {
@@ -121,7 +139,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
       final text = result.toString().toLowerCase();
 
-      if (text.length < 15) return;
+      if (text.length < 15 && !TunaNetraVoiceCommands.isHomeCommand(text)) {
+        return;
+      }
 
       print("🎤 $text");
 
@@ -131,6 +151,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   void _speakIfReady() async {
     if (_hasSpoken) return;
+    if (!_initialPermissionFlowDone) return;
 
     if (_weatherData != null && _userName.isNotEmpty) {
       _hasSpoken = true;

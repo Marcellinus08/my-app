@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
 import '../../services/bluetooth_service.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 
 class BluetoothScreen extends StatefulWidget {
   const BluetoothScreen({super.key});
@@ -9,7 +10,8 @@ class BluetoothScreen extends StatefulWidget {
   State<BluetoothScreen> createState() => _BluetoothScreenState();
 }
 
-class _BluetoothScreenState extends State<BluetoothScreen> {
+class _BluetoothScreenState extends State<BluetoothScreen>
+    with TunaNetraHomeVoiceCommandMixin {
   final BluetoothService _bluetoothService = BluetoothService();
   bool _isScanning = false;
   bool _isConnected = false;
@@ -17,6 +19,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   @override
   void initState() {
     super.initState();
+    startHomeVoiceCommandListener();
 
     // Listen to connection state
     _bluetoothService.connectionStateStream.listen((connected) {
@@ -526,6 +529,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
 
   @override
   void dispose() {
+    stopHomeVoiceCommandListener();
     super.dispose();
   }
 }

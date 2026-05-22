@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/pairing_service.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 import '../../services/user_service.dart';
 import '../../models/user_models.dart';
 
@@ -14,7 +15,8 @@ class TunaNetraProfileScreen extends StatefulWidget {
   State<TunaNetraProfileScreen> createState() => _TunaNetraProfileScreenState();
 }
 
-class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
+class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
+    with TunaNetraHomeVoiceCommandMixin {
   late AuthService _authService;
   late UserService _userService;
   final PairingService _pairingService = PairingService();
@@ -36,6 +38,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
     _emailController = TextEditingController();
     _phoneController = TextEditingController();
     _loadUserData();
+    startHomeVoiceCommandListener();
   }
 
   Future<void> _loadUserData() async {
@@ -680,6 +683,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen> {
 
   @override
   void dispose() {
+    stopHomeVoiceCommandListener();
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 import 'tunanetra_profile_screen.dart';
 import 'connected_family_accounts_screen.dart';
 import 'password_settings_screen.dart';
@@ -13,8 +14,21 @@ class TunaNetraSettingsScreen extends StatefulWidget {
       _TunaNetraSettingsScreenState();
 }
 
-class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
+class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
+    with TunaNetraHomeVoiceCommandMixin {
   final AuthService _authService = AuthService();
+
+  @override
+  void initState() {
+    super.initState();
+    startHomeVoiceCommandListener();
+  }
+
+  @override
+  void dispose() {
+    stopHomeVoiceCommandListener();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -167,14 +181,18 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                                 color: Colors.white,
                               ),
                             ),
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              await stopHomeVoiceCommandListener();
+                              if (!context.mounted) return;
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       const TunaNetraProfileScreen(),
                                 ),
                               );
+                              if (!context.mounted) return;
+                              startHomeVoiceCommandListener();
                             },
                           ),
                           Divider(
@@ -218,14 +236,18 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                                 color: Colors.white,
                               ),
                             ),
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              await stopHomeVoiceCommandListener();
+                              if (!context.mounted) return;
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       const PasswordSettingsScreen(),
                                 ),
                               );
+                              if (!context.mounted) return;
+                              startHomeVoiceCommandListener();
                             },
                           ),
                           Divider(
@@ -269,14 +291,18 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen> {
                                 color: Colors.white,
                               ),
                             ),
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              await stopHomeVoiceCommandListener();
+                              if (!context.mounted) return;
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       const ConnectedFamilyAccountsScreen(),
                                 ),
                               );
+                              if (!context.mounted) return;
+                              startHomeVoiceCommandListener();
                             },
                           ),
                           Divider(

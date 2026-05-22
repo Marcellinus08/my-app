@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 
 class EbookScreen extends StatefulWidget {
   const EbookScreen({super.key});
@@ -8,7 +9,8 @@ class EbookScreen extends StatefulWidget {
   State<EbookScreen> createState() => _EbookScreenState();
 }
 
-class _EbookScreenState extends State<EbookScreen> {
+class _EbookScreenState extends State<EbookScreen>
+    with TunaNetraHomeVoiceCommandMixin {
   final List<Map<String, dynamic>> _books = [
     {
       'title': 'Panduan Navigasi',
@@ -51,6 +53,18 @@ class _EbookScreenState extends State<EbookScreen> {
       'pages': 28,
     },
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    startHomeVoiceCommandListener();
+  }
+
+  @override
+  void dispose() {
+    stopHomeVoiceCommandListener();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 import '../../utils/constants.dart';
 
 class PasswordSettingsScreen extends StatefulWidget {
@@ -9,8 +10,21 @@ class PasswordSettingsScreen extends StatefulWidget {
   State<PasswordSettingsScreen> createState() => _PasswordSettingsScreenState();
 }
 
-class _PasswordSettingsScreenState extends State<PasswordSettingsScreen> {
+class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
+    with TunaNetraHomeVoiceCommandMixin {
   final AuthService _authService = AuthService();
+
+  @override
+  void initState() {
+    super.initState();
+    startHomeVoiceCommandListener();
+  }
+
+  @override
+  void dispose() {
+    stopHomeVoiceCommandListener();
+    super.dispose();
+  }
 
   Future<void> _showChangePasswordDialog() async {
     final formKey = GlobalKey<FormState>();

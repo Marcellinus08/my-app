@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../utils/constants.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 
 class SmartcaneMonitoringScreen extends StatefulWidget {
   const SmartcaneMonitoringScreen({super.key});
@@ -10,7 +11,8 @@ class SmartcaneMonitoringScreen extends StatefulWidget {
       _SmartcaneMonitoringScreenState();
 }
 
-class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen> {
+class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen>
+    with TunaNetraHomeVoiceCommandMixin {
   bool cameraActive = true;
   bool raspberryConnected = true;
   bool mlActive = true;
@@ -45,6 +47,18 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen> {
     },
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    startHomeVoiceCommandListener();
+  }
+
+  @override
+  void dispose() {
+    stopHomeVoiceCommandListener();
+    super.dispose();
+  }
+
   String get _detectionModeHelperText {
     switch (detectionMode) {
       case 'Objek':
@@ -58,9 +72,9 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen> {
 
   void _showTestMessage(String message) {
     debugPrint('[SMARTCANE] $message');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   TextStyle get _cardDescriptionStyle => AppTextStyles.bodySmall.copyWith(

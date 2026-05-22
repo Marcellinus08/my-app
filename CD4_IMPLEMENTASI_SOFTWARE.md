@@ -62,7 +62,7 @@ Source code aplikasi ditempatkan pada folder `lib`, sedangkan backend Worker dit
 
 Alur penggunaan aplikasi dimulai dari inisialisasi Firebase pada saat aplikasi dibuka. Setelah itu aplikasi menampilkan splash screen dan mengecek status login pengguna. Jika belum login, pengguna diarahkan ke halaman login atau registrasi. Pada registrasi, pengguna memilih role tunanetra atau family, memasukkan data akun, lalu melakukan verifikasi email.
 
-Setelah login berhasil, aplikasi membaca role dari Firestore. Pengguna dengan role tunanetra diarahkan ke halaman utama tunanetra. Pengguna dengan role family diarahkan ke halaman utama keluarga. Pengguna tunanetra dapat memilih tujuan navigasi, memulai rute, mengaktifkan live tracking, dan mengirim SOS. Pengguna keluarga dapat melihat status live tracking, lokasi, baterai, riwayat perjalanan, daftar anggota yang terhubung, serta menerima notifikasi SOS.
+Setelah login berhasil, aplikasi membaca role dari Firestore. Pengguna dengan role tunanetra diarahkan ke halaman utama tunanetra. Pengguna dengan role family diarahkan ke halaman utama keluarga. Pengguna tunanetra dapat memilih tujuan navigasi, memulai rute, mengaktifkan live tracking, dan mengirim SOS. Pengguna keluarga dapat melihat status live tracking, lokasi, baterai, riwayat navigasi dan event perjalanan, daftar anggota yang terhubung, serta menerima notifikasi SOS.
 
 ### Source Code Inisialisasi Aplikasi
 
@@ -151,7 +151,7 @@ Karena software menghasilkan tampilan mobile, dokumentasi CD-4 perlu melampirkan
 | Smartcane monitoring screen | Tampilan data monitoring smart cane. |
 | Settings tunanetra | Tampilan pengaturan akun pengguna tunanetra. |
 | Home family | Dashboard pemantauan keluarga. |
-| Family history screen | Tampilan riwayat perjalanan dan monitoring anggota. |
+| Family history screen | Tampilan riwayat navigasi, event perjalanan, dan monitoring anggota. |
 | Family members list screen | Tampilan daftar pengguna tunanetra yang terhubung. |
 | Family member detail screen | Tampilan detail anggota keluarga. |
 | Emergency SOS screen | Tampilan alert darurat dari notifikasi SOS. |
@@ -169,7 +169,7 @@ Karena software menggunakan Firebase, dokumentasi CD-4 perlu melampirkan screens
 | `live_tracking` | Lokasi aktif, status online/offline, baterai, tujuan, dan status navigasi. |
 | `places` | Daftar tempat tujuan, kategori, latitude, longitude, dan metadata. |
 | `pairing_requests` | Permintaan hubungan family dan tunanetra. |
-| `navigation_history` atau data riwayat terkait | Titik perjalanan, event rute, dan informasi trip. |
+| `navigation_history` | Informasi trip navigasi, rute penuh, rute tersisa, titik perjalanan, dan event perjalanan. |
 | `sos_alerts` | Data SOS aktif, koordinat, UID pengguna, dan status alert. |
 | Realtime Database path lokasi | Data lokasi real-time yang diterima melalui listener. |
 
@@ -317,7 +317,7 @@ Komponen implementasi navigasi adalah sebagai berikut.
 
 Alur implementasi navigasi dimulai ketika `NavigationScreen` dijalankan. Screen meminta izin lokasi melalui Geolocator. Jika izin diberikan, posisi GPS pertama digunakan sebagai `origin`. Setelah itu aplikasi membaca daftar tempat dari Firestore melalui `PlacesService`. Ketika pengguna memilih tujuan, aplikasi mengirim `origin` dan `destination` ke `RoutingService`. Hasil dari OSRM berupa polyline, jarak, durasi, dan instruksi belok. Data tersebut disimpan ke state screen dan ditampilkan pada peta.
 
-Ketika navigasi dimulai, aplikasi mengaktifkan streaming GPS presisi tinggi. Setiap perubahan posisi dipakai untuk memperbarui marker pengguna, mengecek progres pada rute, menyimpan riwayat titik perjalanan, dan mengirim live tracking ke keluarga. Jika posisi pengguna keluar dari rute melebihi batas tertentu, aplikasi melakukan deteksi off-route dan memuat ulang rute dari posisi terbaru.
+Ketika navigasi dimulai, aplikasi mengaktifkan streaming GPS presisi tinggi. Setiap perubahan posisi dipakai untuk memperbarui marker pengguna, mengecek progres pada rute, menyimpan riwayat titik navigasi, mencatat event perjalanan, dan mengirim live tracking ke keluarga. Jika posisi pengguna keluar dari rute melebihi batas tertentu, aplikasi melakukan deteksi off-route dan memuat ulang rute dari posisi terbaru.
 
 **Sumber:** `lib/services/routing_service.dart`
 
@@ -373,13 +373,389 @@ Future<List<NavigationInstruction>> getNavigationInstructions({
 
 Fungsi `getNavigationInstructions()` meminta detail langkah navigasi dari OSRM. Parameter `steps=true` digunakan agar OSRM mengembalikan instruksi belok. Parameter `annotations=distance,duration` menambahkan jarak dan durasi tiap segmen. Fungsi `_parseInstructionsFromLegs()` mengubah response OSRM menjadi list `NavigationInstruction` yang lebih mudah ditampilkan pada UI.
 
-Output utama modul navigasi adalah polyline rute, instruksi navigasi, status navigasi aktif, dan riwayat perjalanan. Polyline digunakan untuk menggambar jalur pada peta. Instruksi navigasi digunakan untuk memberi arahan kepada pengguna. Status navigasi aktif dikirim ke `live_tracking/{uid}` agar keluarga mengetahui bahwa pengguna sedang menuju suatu tempat. Riwayat perjalanan disimpan agar keluarga dapat melihat perjalanan setelah navigasi selesai.
+Output utama modul navigasi adalah polyline rute, instruksi navigasi, status navigasi aktif, serta riwayat navigasi dan event perjalanan. Polyline digunakan untuk menggambar jalur pada peta. Instruksi navigasi digunakan untuk memberi arahan kepada pengguna. Status navigasi aktif dikirim ke `live_tracking/{uid}` agar keluarga mengetahui bahwa pengguna sedang menuju suatu tempat. Riwayat navigasi disimpan agar keluarga dapat melihat perjalanan setelah navigasi selesai.
 
 Parameter penting pada modul ini adalah `origin`, `destination`, `profile`, `routePoints`, dan `navigationInstructions`. `origin` selalu diperbarui berdasarkan lokasi pengguna. `destination` berasal dari tempat yang dipilih. `profile` default menggunakan `foot` karena aplikasi ditujukan untuk pejalan kaki. `routePoints` berisi titik polyline, sedangkan `navigationInstructions` berisi daftar langkah belok.
 
-### 1.2.3 Implementasi Live Tracking
+### 1.2.3 Implementasi Text-to-Speech dan Speech-to-Text
 
-Live tracking digunakan agar keluarga dapat melihat status lokasi pengguna tunanetra secara real-time. Saat pengguna berada di home, aplikasi melakukan tracking berkala. Saat navigasi dimulai, aplikasi menggunakan mode akurasi tinggi dan memperbarui dokumen `live_tracking/{uid}`.
+Fitur Text-to-Speech (TTS) dan Speech-to-Text (STT) diimplementasikan untuk mendukung aksesibilitas pengguna tunanetra. TTS digunakan agar aplikasi dapat memberikan respons suara, sedangkan STT digunakan agar pengguna dapat memberi perintah melalui suara. Implementasi ini penting karena target utama aplikasi adalah pengguna yang tidak selalu dapat mengandalkan interaksi visual.
+
+Komponen yang terlibat dalam implementasi suara adalah sebagai berikut.
+
+| Komponen | Peran |
+| --- | --- |
+| `TTSService` | Mengubah teks dari aplikasi menjadi suara berbahasa Indonesia. |
+| `STTService` | Mengubah suara pengguna menjadi teks perintah. |
+| `TunaNetraHomeScreen` | Mendengarkan perintah seperti membuka navigasi atau Bluetooth. |
+| `NavigationScreen` | Mendengarkan perintah tujuan, menghentikan navigasi, dan memberi arahan suara. |
+| `flutter_tts` | Library untuk text-to-speech. |
+| `speech_to_text` | Library untuk speech-to-text. |
+
+Pada sisi TTS, aplikasi mengatur bahasa menjadi `id-ID` agar keluaran suara menggunakan Bahasa Indonesia. Service juga mengatur pitch dan membuat proses bicara menunggu sampai selesai dengan `awaitSpeakCompletion(true)`. Sebelum mengucapkan teks baru, aplikasi menghentikan suara yang sedang berjalan agar instruksi lama tidak bertumpuk dengan instruksi baru.
+
+**Sumber:** `lib/services/tts_service.dart`
+
+```dart
+import 'package:flutter_tts/flutter_tts.dart';
+
+class TTSService {
+  final FlutterTts _tts = FlutterTts();
+
+  bool _isInit = false;
+
+  Future<void> init() async {
+    if (_isInit) return;
+
+    await _tts.setLanguage("id-ID");
+    await _tts.setPitch(1.0);
+    await _tts.awaitSpeakCompletion(true);
+
+    _isInit = true;
+  }
+
+  Future<void> speak(String text) async {
+    await init();
+
+    await _tts.stop();
+    await _tts.speak(text);
+  }
+}
+```
+
+Variabel `_tts` adalah objek utama dari library `FlutterTts`. Variabel `_isInit` digunakan agar konfigurasi bahasa dan pitch hanya dilakukan sekali. Fungsi `init()` menyiapkan bahasa Indonesia, pitch suara, dan mode menunggu sampai pembacaan selesai. Fungsi `speak()` menerima parameter `text`, menghentikan suara sebelumnya dengan `_tts.stop()`, lalu membacakan teks baru menggunakan `_tts.speak(text)`.
+
+Pada sisi STT, aplikasi menginisialisasi microphone dan engine pengenal suara melalui `SpeechToText`. Locale yang digunakan adalah `id_ID`, sehingga input suara diproses sebagai Bahasa Indonesia. Hasil pengenalan suara dikirim ke callback `onResult`, lalu screen memproses teks tersebut sebagai perintah.
+
+**Sumber:** `lib/services/stt_service.dart`
+
+```dart
+import 'package:speech_to_text/speech_to_text.dart';
+
+class STTService {
+  final SpeechToText _stt = SpeechToText();
+
+  bool isListening = false;
+
+  Future<bool> init() async {
+    return await _stt.initialize();
+  }
+
+  Future<void> startListening(Function(String) onResult) async {
+    bool available = await init();
+
+    if (available) {
+      isListening = true;
+
+      _stt.listen(
+        localeId: "id_ID",
+        onResult: (result) {
+          onResult(result.recognizedWords);
+        },
+      );
+    } else {
+      print("STT tidak tersedia");
+    }
+  }
+
+  Future<void> stopListening() async {
+    await _stt.stop();
+    isListening = false;
+  }
+}
+```
+
+Variabel `_stt` adalah objek dari library `SpeechToText`. Variabel `isListening` menandai apakah aplikasi sedang mendengarkan suara. Fungsi `init()` mengecek apakah STT tersedia pada perangkat. Fungsi `startListening()` mulai mendengarkan suara dan mengirim teks hasil pengenalan ke callback `onResult`. Fungsi `stopListening()` menghentikan proses mendengarkan agar microphone tidak terus aktif ketika pengguna berpindah halaman atau ketika aplikasi sedang berbicara.
+
+Implementasi pada halaman utama tunanetra menggunakan STT untuk menerima perintah navigasi fitur. Ketika pengguna mengucapkan perintah seperti "bluetooth" atau "navigasi", aplikasi menghentikan listening sementara, memberi respons suara melalui TTS, lalu membuka halaman yang sesuai. Variabel `_isSpeaking` digunakan agar aplikasi tidak memproses suara sendiri ketika TTS sedang berbicara.
+
+**Sumber:** `lib/screens/tunanetra/tunanetra_home_screen.dart`
+
+```dart
+Future<void> speakSafe(String text) async {
+  _isSpeaking = true;
+  await TTSService().speak(text);
+  _isSpeaking = false;
+}
+
+void _handleCommand(String command) async {
+  await _sttService.stopListening();
+
+  if (command.contains("bluetooth")) {
+    await speakSafe("Membuka pengaturan bluetooth");
+    Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
+  } else if (command.contains("navigasi")) {
+    await speakSafe("Membuka navigasi");
+    Navigator.pushNamed(context, AppRoutes.tunaNetraNavigation);
+  } else {
+    await speakSafe("Perintah tidak dikenali");
+    _startListening();
+  }
+}
+```
+
+Fungsi `speakSafe()` mengatur `_isSpeaking` menjadi `true` sebelum TTS berjalan dan mengembalikannya menjadi `false` setelah TTS selesai. Hal ini mencegah STT menangkap suara aplikasi sebagai perintah pengguna. Fungsi `_handleCommand()` memeriksa isi teks perintah. Jika teks mengandung kata `bluetooth`, aplikasi membuka halaman Bluetooth. Jika mengandung kata `navigasi`, aplikasi membuka halaman navigasi. Jika perintah tidak cocok, aplikasi memberi respons bahwa perintah tidak dikenali lalu kembali mendengarkan.
+
+Pada halaman navigasi, STT digunakan untuk memilih tujuan berdasarkan nama tempat dan untuk menghentikan navigasi. Aplikasi membandingkan teks hasil STT dengan daftar tempat yang sudah dimuat dari Firestore. Jika nama tempat ditemukan di dalam command, aplikasi memilih tempat tersebut sebagai tujuan dan memuat rute.
+
+**Sumber:** `lib/screens/tunanetra/navigation_screen.dart`
+
+```dart
+void _startVoiceNavigation() {
+  _sttService.startListening((result) {
+    if (_isSpeaking) return;
+
+    final text = result.toLowerCase();
+    String cleanedText = text.replaceAll('-', ' ').toLowerCase();
+    _handleVoiceCommand(cleanedText);
+  });
+}
+
+Future<void> _handleVoiceCommand(String command) async {
+  for (final place in _places) {
+    if (command.contains(place.name.replaceAll('-', ' ').toLowerCase())) {
+      await _sttService.stopListening();
+
+      setState(() {
+        _selectedPlace = place;
+      });
+
+      await speakSafe("Tujuan dipilih ${place.name}");
+      await _loadRoute();
+      return;
+    }
+  }
+
+  if (command.contains("berhenti")) {
+    await _sttService.stopListening();
+    await speakSafe("Navigasi dihentikan");
+    await _endNavigationSession();
+  }
+}
+```
+
+Fungsi `_startVoiceNavigation()` mulai mendengarkan suara ketika pengguna berada pada halaman navigasi. Hasil suara diubah menjadi huruf kecil dan tanda hubung diganti spasi agar pencocokan nama tempat lebih fleksibel. Fungsi `_handleVoiceCommand()` melakukan pencarian terhadap list `_places`. Jika perintah mengandung nama tempat, maka `_selectedPlace` diisi dan `_loadRoute()` dipanggil untuk memuat rute. Jika command mengandung kata `berhenti`, aplikasi menghentikan sesi navigasi.
+
+Luaran modul TTS dan STT adalah interaksi suara dua arah. Pengguna dapat mengontrol sebagian fitur tanpa harus melihat layar, sedangkan aplikasi dapat memberikan konfirmasi dan instruksi secara verbal. Modul ini mendukung tujuan utama Teman Arah sebagai aplikasi navigasi yang lebih ramah bagi pengguna tunanetra.
+
+### 1.2.4 Implementasi Riwayat Navigasi dan Event Perjalanan
+
+Riwayat navigasi dan event perjalanan diimplementasikan untuk mencatat aktivitas pengguna tunanetra saat fitur navigasi digunakan. Modul ini menyimpan informasi awal navigasi, tujuan, rute penuh, rute tersisa, titik posisi pengguna selama bergerak, event penting selama perjalanan, durasi, jarak, dan status akhir navigasi. Riwayat tersebut kemudian dapat dilihat oleh pengguna keluarga melalui halaman riwayat.
+
+Komponen yang terlibat dalam implementasi riwayat navigasi dan event perjalanan adalah sebagai berikut.
+
+| Komponen | Peran |
+| --- | --- |
+| `NavigationHistoryService` | Service utama untuk membuat, memperbarui, dan menutup data navigasi. |
+| `NavigationScreen` | Memanggil service ketika navigasi dimulai, posisi berubah, pengguna keluar rute, dan navigasi selesai/dibatalkan. |
+| `FamilyHistoryScreen` | Menampilkan monitoring aktif dan membuka halaman detail riwayat. |
+| `FamilyHistoryDetailScreen` | Menampilkan detail navigasi, rute pada peta, titik perjalanan, dan timeline event. |
+| `navigation_history` | Koleksi utama penyimpanan data riwayat navigasi. |
+| `navigation_history/{tripId}/route_points` | Subkoleksi titik posisi selama perjalanan. |
+| `navigation_history/{tripId}/events` | Subkoleksi event seperti mulai navigasi, keluar rute, kembali ke rute, SOS, sampai tujuan, atau navigasi dibatalkan. |
+
+Alur implementasi riwayat navigasi dimulai ketika pengguna menekan tombol mulai navigasi. Aplikasi membuat dokumen navigasi baru melalui `startTrip()`. Dokumen ini menyimpan UID pengguna, nama asal, nama tujuan, koordinat asal dan tujuan, jarak total, polyline rute, rute tersisa, waktu mulai, dan status `ongoing`. ID dokumen yang dikembalikan disimpan sebagai `currentTripId`, lalu ID tersebut juga dikirim ke live tracking agar keluarga dapat membuka rute aktif yang sedang dijalani.
+
+**Sumber:** `lib/services/navigation_history_service.dart`
+
+```dart
+Future<String?> startTrip({
+  String originName = 'Lokasi awal',
+  required String destinationName,
+  required double originLat,
+  required double originLng,
+  required double destinationLat,
+  required double destinationLng,
+  required double totalDistanceMeters,
+  List<LatLng>? routePolyline,
+  List<LatLng>? remainingRoutePolyline,
+}) async {
+  final user = _auth.currentUser;
+  if (user == null) {
+    return null;
+  }
+
+  final now = Timestamp.now();
+  final docRef = await _collection.add({
+    'userId': user.uid,
+    'startTime': now,
+    'endTime': null,
+    'durationSeconds': null,
+    'originName': originName.isNotEmpty ? originName : 'Lokasi awal',
+    'destinationName': destinationName,
+    'originLat': originLat,
+    'originLng': originLng,
+    'destinationLat': destinationLat,
+    'destinationLng': destinationLng,
+    'totalDistanceMeters': totalDistanceMeters,
+    'routePolyline': _latLngListToMapList(routePolyline ?? const <LatLng>[]),
+    'remainingRoutePolyline': _latLngListToMapList(
+      remainingRoutePolyline ?? routePolyline ?? const <LatLng>[],
+    ),
+    'status': 'ongoing',
+    'eventCount': 0,
+    'createdAt': FieldValue.serverTimestamp(),
+    'updatedAt': FieldValue.serverTimestamp(),
+  });
+
+  return docRef.id;
+}
+```
+
+Fungsi `startTrip()` membuat dokumen baru pada koleksi `navigation_history`. Parameter `destinationName`, `originLat`, `originLng`, `destinationLat`, dan `destinationLng` digunakan untuk mendeskripsikan asal dan tujuan navigasi. Parameter `routePolyline` menyimpan rute penuh yang diperoleh dari OSRM. Parameter `remainingRoutePolyline` menyimpan rute yang masih tersisa. Field `status` diisi `ongoing` karena navigasi baru dimulai. Nilai return `docRef.id` menjadi `tripId` yang dipakai untuk update berikutnya.
+
+Selama navigasi berjalan, aplikasi menambahkan titik perjalanan ke subkoleksi `route_points`. Titik ini tidak hanya berisi latitude dan longitude, tetapi juga heading, speed, accuracy, status GPS, dan penanda apakah posisi berasal dari GPS langsung atau prediksi sensor. Dengan data ini, halaman detail riwayat dapat menggambar ulang jejak navigasi pada peta.
+
+**Sumber:** `lib/services/navigation_history_service.dart`
+
+```dart
+Future<void> addRoutePoint({
+  required String tripId,
+  required double lat,
+  required double lng,
+  required double heading,
+  required double speed,
+  required double accuracy,
+  required bool isPredicted,
+}) async {
+  if (tripId.isEmpty) {
+    return;
+  }
+
+  final tripRef = _collection.doc(tripId);
+  final pointRef = tripRef.collection('route_points').doc();
+  final serverTimestamp = FieldValue.serverTimestamp();
+
+  final batch = _firestore.batch();
+  batch.set(pointRef, {
+    'lat': lat,
+    'lng': lng,
+    'heading': heading,
+    'speed': speed,
+    'accuracy': accuracy,
+    'isPredicted': isPredicted,
+    'gpsStatus': isPredicted ? 'predicted' : 'gps_live',
+    'timestamp': serverTimestamp,
+    'createdAt': serverTimestamp,
+  });
+  batch.update(tripRef, {
+    'updatedAt': serverTimestamp,
+  });
+
+  await batch.commit();
+}
+```
+
+Fungsi `addRoutePoint()` menyimpan titik posisi aktual pengguna selama navigasi. Parameter `tripId` menentukan dokumen navigasi yang sedang aktif. Field `lat` dan `lng` menjadi koordinat titik. Field `heading` menyimpan arah hadap, `speed` menyimpan kecepatan, dan `accuracy` menyimpan akurasi GPS. Field `isPredicted` membedakan data GPS asli dan posisi prediksi. Penggunaan `WriteBatch` membuat penambahan titik dan pembaruan `updatedAt` pada dokumen navigasi dilakukan dalam satu operasi commit.
+
+Selain titik posisi, sistem juga mencatat event perjalanan. Event digunakan untuk membentuk timeline aktivitas, misalnya navigasi dimulai, pengguna keluar rute, kembali ke rute, menekan SOS, sampai tujuan, atau membatalkan perjalanan. Timeline ini membantu keluarga memahami konteks perjalanan, bukan hanya melihat garis rute pada peta.
+
+**Sumber:** `lib/services/navigation_history_service.dart`
+
+```dart
+Future<void> addTripEvent({
+  required String? tripId,
+  required String type,
+  String? title,
+  String? description,
+  double? lat,
+  double? lng,
+}) async {
+  if (tripId == null || tripId.isEmpty) {
+    return;
+  }
+
+  final tripRef = _collection.doc(tripId);
+  final eventRef = tripRef.collection('events').doc();
+  final serverTimestamp = FieldValue.serverTimestamp();
+
+  final eventData = <String, dynamic>{
+    'type': type,
+    'title': title ?? getEventTitle(type),
+    'description': description ?? getEventDescription(type),
+    'lat': lat,
+    'lng': lng,
+    'timestamp': serverTimestamp,
+    'createdAt': serverTimestamp,
+  };
+
+  final batch = _firestore.batch();
+  batch.set(eventRef, eventData);
+  batch.update(tripRef, {
+    'eventCount': FieldValue.increment(1),
+    'updatedAt': serverTimestamp,
+  });
+
+  await batch.commit();
+}
+```
+
+Fungsi `addTripEvent()` menulis event ke subkoleksi `events`. Parameter `type` menentukan jenis event. Jika `title` dan `description` tidak diberikan, service memakai `getEventTitle()` dan `getEventDescription()` untuk membuat teks default. Field `lat` dan `lng` bersifat opsional, tetapi dapat dipakai untuk menandai lokasi event pada peta. Field `eventCount` pada dokumen utama dinaikkan dengan `FieldValue.increment(1)` agar jumlah event dapat ditampilkan tanpa harus menghitung seluruh subkoleksi.
+
+Ketika pengguna mencapai tujuan atau membatalkan navigasi, sistem menutup riwayat navigasi dengan memperbarui `endTime`, `durationSeconds`, `totalDistanceMeters`, dan `status`. Status `completed` digunakan untuk navigasi yang selesai, sedangkan `cancelled` digunakan ketika navigasi dihentikan sebelum sampai tujuan.
+
+**Sumber:** `lib/services/navigation_history_service.dart`
+
+```dart
+Future<void> finishTrip({
+  required String tripId,
+  required int durationSeconds,
+  required double totalDistanceMeters,
+}) async {
+  await _endTrip(
+    tripId: tripId,
+    durationSeconds: durationSeconds,
+    totalDistanceMeters: totalDistanceMeters,
+    status: 'completed',
+  );
+}
+
+Future<void> _endTrip({
+  required String tripId,
+  required int durationSeconds,
+  required double totalDistanceMeters,
+  required String status,
+}) async {
+  if (tripId.isEmpty) {
+    return;
+  }
+
+  await _collection.doc(tripId).update({
+    'endTime': FieldValue.serverTimestamp(),
+    'durationSeconds': durationSeconds < 0 ? 0 : durationSeconds,
+    'totalDistanceMeters': totalDistanceMeters,
+    'status': status,
+    'updatedAt': FieldValue.serverTimestamp(),
+  });
+}
+```
+
+Fungsi `finishTrip()` memanggil `_endTrip()` dengan status `completed`. Fungsi `_endTrip()` menjadi fungsi internal untuk menutup riwayat navigasi, baik selesai maupun dibatalkan. Parameter `durationSeconds` dinormalisasi agar tidak bernilai negatif. Field `endTime` memakai `FieldValue.serverTimestamp()` supaya waktu akhir navigasi mengikuti waktu server.
+
+Riwayat navigasi dibaca oleh halaman keluarga menggunakan stream. Stream ini mengambil dokumen `navigation_history` berdasarkan `userId`, lalu mengurutkannya dari navigasi terbaru. Pendekatan stream membuat daftar riwayat otomatis berubah saat ada navigasi baru atau status navigasi diperbarui.
+
+**Sumber:** `lib/services/navigation_history_service.dart`
+
+```dart
+Stream<QuerySnapshot<Map<String, dynamic>>> getUserTripHistoryStream(
+  String userId,
+) {
+  return _collection
+      .where('userId', isEqualTo: userId)
+      .orderBy('startTime', descending: true)
+      .snapshots();
+}
+```
+
+Fungsi `getUserTripHistoryStream()` digunakan untuk menampilkan daftar riwayat navigasi pada sisi keluarga. Parameter `userId` adalah UID pengguna tunanetra yang sedang dipantau. Query `where('userId', isEqualTo: userId)` membatasi data agar hanya riwayat navigasi milik pengguna tersebut yang ditampilkan. `orderBy('startTime', descending: true)` membuat navigasi terbaru muncul di bagian atas.
+
+Pada halaman detail riwayat, aplikasi membaca subkoleksi `route_points` untuk membangun ulang polyline navigasi. Aplikasi juga membaca subkoleksi `events` untuk menampilkan timeline aktivitas perjalanan. Rute digambar menggunakan Flutter Map dengan marker asal, marker tujuan, dan polyline perjalanan. Jika navigasi masih berlangsung, keluarga juga dapat melihat rute tersisa melalui field `remainingRoutePolyline`.
+
+Luaran modul riwayat navigasi dan event perjalanan adalah data navigasi yang dapat diaudit dan divisualisasikan ulang. Modul ini melengkapi live tracking karena live tracking hanya menunjukkan kondisi saat ini, sedangkan riwayat navigasi menyimpan jejak dan event setelah navigasi selesai.
+
+### 1.2.5 Implementasi Live Tracking dan Monitoring Keluarga
+
+Live tracking dan monitoring keluarga dijadikan satu modul karena keduanya berada dalam satu alur data yang sama. Live tracking adalah sisi pengirim data dari aplikasi pengguna tunanetra, sedangkan monitoring keluarga adalah sisi penerima dan penampil data pada aplikasi pengguna keluarga. Saat pengguna tunanetra berada di home, aplikasi melakukan tracking berkala. Saat navigasi dimulai, aplikasi menggunakan mode akurasi tinggi dan memperbarui dokumen `live_tracking/{uid}`. Data yang sama kemudian dibaca oleh screen keluarga untuk menampilkan status lokasi, baterai, tujuan aktif, dan kondisi online/offline.
 
 Implementasi live tracking dibagi menjadi dua mode, yaitu home tracking dan navigation tracking. Home tracking berjalan saat pengguna tidak sedang bernavigasi. Mode ini cukup memperbarui lokasi secara berkala agar keluarga tetap mengetahui posisi terakhir. Navigation tracking berjalan saat pengguna sedang mengikuti rute. Mode ini menggunakan akurasi lebih tinggi, update lebih sering, dan menyertakan informasi tujuan.
 
@@ -503,9 +879,7 @@ Output dari live tracking adalah dokumen Firestore yang terus diperbarui. Field 
 
 Implementasi ini juga mempertimbangkan efisiensi baterai. Home tracking tidak dibuat seagresif navigation tracking karena pengguna belum tentu sedang bergerak menuju tujuan. Saat navigasi aktif, akurasi dinaikkan karena kebutuhan arah dan pemantauan lebih penting. Saat navigasi berhenti, aplikasi kembali ke home tracking agar pemantauan tetap berjalan tanpa konsumsi GPS berlebihan.
 
-### 1.2.4 Implementasi Monitoring Keluarga
-
-Monitoring keluarga berada pada screen family. Screen membaca daftar pengguna tunanetra yang terhubung dengan akun keluarga, lalu memasang listener pada data profil, lokasi, dan live tracking. Data yang diterima ditampilkan dalam bentuk kartu status online/offline, koordinat, baterai, tujuan, dan waktu pembaruan terakhir.
+Pada sisi monitoring keluarga, screen membaca daftar pengguna tunanetra yang terhubung dengan akun keluarga, lalu memasang listener pada data profil, lokasi, dan live tracking. Data yang diterima ditampilkan dalam bentuk kartu status online/offline, koordinat, baterai, tujuan, dan waktu pembaruan terakhir.
 
 Proses implementasi monitoring keluarga dilakukan dengan pendekatan listener. Setelah keluarga login, aplikasi mencari daftar UID pengguna tunanetra yang terhubung. Untuk setiap UID, aplikasi memasang listener ke beberapa sumber data: profil pengguna pada `users/{uid}`, status lokasi pada `live_tracking/{uid}`, dan data SOS aktif pada `sos_alerts`. Dengan mekanisme listener, tampilan keluarga dapat berubah otomatis saat data di database berubah.
 
@@ -533,9 +907,9 @@ _subscribeToLiveTracking(uid) {
 
 Kode tersebut menggambarkan cara screen keluarga menerima perubahan data live tracking. Method `snapshots()` membuat listener real-time ke dokumen Firestore. Ketika dokumen berubah, variabel `_liveTrackingData` diperbarui menggunakan `setState()` sehingga UI ikut berubah. Variabel `_liveTrackingSubscriptions` menyimpan subscription agar dapat dihentikan ketika screen ditutup.
 
-Luaran modul monitoring keluarga adalah dashboard pemantauan. Dashboard ini bukan hanya menampilkan data, tetapi juga menjadi penghubung ke fitur lain seperti riwayat perjalanan, detail anggota, daftar anggota, kelola tempat, dan emergency SOS. Dengan demikian, screen family menjadi pusat kendali bagi pengguna keluarga.
+Luaran modul live tracking dan monitoring keluarga adalah dashboard pemantauan real-time. Dashboard ini bukan hanya menampilkan data, tetapi juga menjadi penghubung ke fitur lain seperti riwayat navigasi dan event perjalanan, detail anggota, daftar anggota, kelola tempat, dan emergency SOS. Dengan demikian, screen family menjadi pusat kendali bagi pengguna keluarga, sedangkan `LiveTrackingService` menjadi sumber data posisi dari sisi tunanetra.
 
-### 1.2.5 Implementasi Pairing Pengguna Tunanetra dan Keluarga
+### 1.2.6 Implementasi Pairing Pengguna Tunanetra dan Keluarga
 
 Pairing digunakan agar akun keluarga hanya dapat memantau pengguna tunanetra yang memang terhubung. Pengguna keluarga memasukkan pairing code, lalu aplikasi memverifikasi kode tersebut dan membuat permintaan pairing. Setelah permintaan diterima, relasi disimpan pada data pengguna.
 
@@ -580,7 +954,7 @@ Fungsi `createPairingRequest()` menerima `familyUid` dan `pairingCode`. Fungsi `
 
 Data pairing yang berhasil digunakan oleh modul monitoring keluarga. Setelah hubungan aktif, UID pengguna tunanetra dapat masuk ke daftar pantauan keluarga. Dari UID tersebut, aplikasi keluarga dapat membaca profil, live tracking, riwayat, dan notifikasi SOS yang relevan. Dengan demikian, pairing menjadi mekanisme otorisasi aplikasi pada level fitur.
 
-### 1.2.6 Implementasi SOS Darurat dan Notifikasi
+### 1.2.7 Implementasi SOS Darurat dan Notifikasi
 
 SOS darurat melibatkan dua sisi implementasi. Sisi Flutter membuat alert dan memanggil backend. Sisi backend Worker memverifikasi token Firebase, mengecek relasi family dan tunanetra, mengambil FCM token keluarga, lalu mengirim pesan FCM. Pendekatan ini digunakan agar credential sensitif Firebase tidak disimpan pada aplikasi mobile.
 
@@ -684,7 +1058,7 @@ Keamanan SOS diterapkan pada beberapa lapis. Pertama, endpoint hanya menerima me
 
 Luaran modul SOS adalah notifikasi prioritas tinggi dan data alert pada aplikasi keluarga. Pada Android, payload dikirim dengan priority `HIGH` agar notifikasi darurat lebih cepat diproses. Aplikasi Flutter kemudian menampilkan notifikasi full-screen atau membuka `EmergencySosScreen` jika pengguna menekan notifikasi.
 
-### 1.2.7 Implementasi Notifikasi Background di Flutter
+### 1.2.8 Implementasi Notifikasi Background di Flutter
 
 Ketika pesan FCM diterima pada background, Flutter menjalankan handler khusus. Handler ini harus berada di level top-level function agar dapat dipanggil oleh Firebase Messaging.
 
@@ -705,7 +1079,7 @@ Annotation `@pragma('vm:entry-point')` menjaga agar fungsi tidak dihapus oleh pr
 
 Selain background handler, aplikasi juga menginisialisasi notifikasi lokal saat `main()` dijalankan. Inisialisasi ini penting karena pesan FCM belum tentu langsung ditampilkan oleh sistem sesuai kebutuhan aplikasi. Dengan `NotificationService`, payload FCM dapat diubah menjadi notifikasi lokal yang memiliki behavior khusus, misalnya full-screen untuk SOS. Payload awal juga disimpan sementara agar ketika aplikasi dibuka dari notifikasi, route awal dapat langsung diarahkan ke halaman SOS.
 
-### 1.2.8 Implementasi Model Data
+### 1.2.9 Implementasi Model Data
 
 Model data digunakan agar data dari Firestore dan API eksternal tidak langsung dipakai dalam bentuk map mentah. Salah satu model penting adalah `PlaceModel`, yang merepresentasikan tempat tujuan navigasi.
 
@@ -752,7 +1126,7 @@ Contoh alur penggunaan model adalah pada tempat tujuan. `PlacesService` membaca 
 
 Model instruksi navigasi juga penting karena response OSRM memiliki struktur yang kompleks. Data dari OSRM perlu disederhanakan menjadi instruksi yang mudah dipakai UI, misalnya teks instruksi, nama jalan, jarak segmen, durasi segmen, dan tipe manuver. Dengan demikian, screen navigasi tidak perlu membaca JSON OSRM secara langsung.
 
-### 1.2.9 Implementasi Database Firebase
+### 1.2.10 Implementasi Database Firebase
 
 Struktur database utama yang digunakan software adalah sebagai berikut.
 
@@ -797,6 +1171,45 @@ places/{placeId}
   createdAt
   updatedAt
 
+navigation_history/{tripId}
+  userId
+  startTime
+  endTime
+  durationSeconds
+  originName
+  destinationName
+  originLat
+  originLng
+  destinationLat
+  destinationLng
+  totalDistanceMeters
+  routePolyline
+  remainingRoutePolyline
+  status
+  eventCount
+  createdAt
+  updatedAt
+
+navigation_history/{tripId}/route_points/{pointId}
+  lat
+  lng
+  heading
+  speed
+  accuracy
+  isPredicted
+  gpsStatus
+  timestamp
+  createdAt
+
+navigation_history/{tripId}/events/{eventId}
+  type
+  title
+  description
+  lat
+  lng
+  timestamp
+  createdAt
+
 pairing_requests/{requestId}
   familyUid
   targetUid
@@ -828,15 +1241,16 @@ Relasi data utama dapat dijelaskan sebagai berikut.
 | `familyUid` ke `targetUid` pada pairing | Menghubungkan akun keluarga dengan akun tunanetra. |
 | UID tunanetra ke `live_tracking/{uid}` | Menjadikan UID sebagai kunci status lokasi real-time. |
 | UID keluarga ke `users/{uid}/fcmTokens` | Menyimpan token perangkat keluarga untuk notifikasi SOS. |
+| UID tunanetra ke `navigation_history` | Menyimpan daftar riwayat navigasi, rute, titik posisi, dan event perjalanan. |
 | `sos_alerts` ke pengguna dan keluarga | Menyimpan konteks kejadian darurat agar dapat ditampilkan pada screen keluarga. |
 
 Pada sisi keamanan, struktur database ini perlu didukung oleh Firestore Rules. Prinsip yang digunakan adalah pengguna hanya dapat membaca atau menulis data miliknya sendiri, sedangkan keluarga hanya dapat membaca data tunanetra yang sudah terhubung melalui pairing. Untuk pengiriman SOS, akses sensitif tidak dilakukan langsung dari client, melainkan melalui Worker.
 
-### 1.2.10 Deklarasi Penggunaan Source Code dan Library
+### 1.2.11 Deklarasi Penggunaan Source Code dan Library
 
 Source code utama aplikasi Teman Arah dibuat oleh tim capstone dalam folder `lib` dan `workers/sos-worker`. Software juga menggunakan library open-source dan layanan pihak ketiga sebagai dependensi, antara lain Flutter, Dart, Firebase SDK, Flutter Map, Geolocator, OSRM, Flutter Blue Plus, Speech To Text, Flutter TTS, dan Cloudflare Worker. Library tersebut tidak diklaim sebagai source code buatan tim, melainkan digunakan sebagai alat bantu implementasi. Daftar library dapat dilihat pada `pubspec.yaml` dan `workers/sos-worker/package.json`, sedangkan sumber pustaka perlu dicantumkan pada daftar pustaka dokumen CD-4.
 
-### 1.2.11 Luaran Implementasi Software
+### 1.2.12 Luaran Implementasi Software
 
 Luaran implementasi software adalah prototype aplikasi mobile Teman Arah yang dapat menjalankan fitur berikut.
 
@@ -844,11 +1258,12 @@ Luaran implementasi software adalah prototype aplikasi mobile Teman Arah yang da
 2. Verifikasi email sebelum data profil digunakan.
 3. Pembagian role pengguna tunanetra dan keluarga.
 4. Navigasi pengguna tunanetra berbasis peta, GPS, OSRM, dan instruksi rute.
-5. Live tracking lokasi pengguna tunanetra untuk keluarga.
-6. Pairing akun keluarga dengan akun tunanetra.
-7. Pengelolaan tempat tujuan.
-8. Riwayat navigasi dan monitoring.
-9. Koneksi Bluetooth untuk smart cane.
-10. Pengiriman dan penerimaan notifikasi SOS darurat melalui Worker dan FCM.
+5. Perintah suara menggunakan Speech-to-Text dan respons suara menggunakan Text-to-Speech.
+6. Live tracking lokasi pengguna tunanetra untuk keluarga.
+7. Pairing akun keluarga dengan akun tunanetra.
+8. Pengelolaan tempat tujuan.
+9. Riwayat navigasi, visualisasi rute, titik perjalanan, dan timeline event perjalanan.
+10. Koneksi Bluetooth untuk smart cane.
+11. Pengiriman dan penerimaan notifikasi SOS darurat melalui Worker dan FCM.
 
 Dengan implementasi tersebut, rancangan pada CD-3 telah diwujudkan menjadi software yang memiliki antarmuka pengguna, database, autentikasi, integrasi lokasi, integrasi notifikasi, dan backend pendukung.

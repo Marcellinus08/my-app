@@ -47,6 +47,7 @@ dependencies:
   # Voice & AI Assistant
   speech_to_text: ^7.0.0
   flutter_tts: ^4.2.0
+  permission_handler: ^11.4.0
   
   # State Management
   provider: ^6.1.2

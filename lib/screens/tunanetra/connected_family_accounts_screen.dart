@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../utils/constants.dart';
 import '../../services/connected_family_service.dart';
 import '../../services/pairing_service.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 
 class ConnectedFamilyAccountsScreen extends StatefulWidget {
   const ConnectedFamilyAccountsScreen({super.key});
@@ -14,7 +15,8 @@ class ConnectedFamilyAccountsScreen extends StatefulWidget {
 }
 
 class _ConnectedFamilyAccountsScreenState
-    extends State<ConnectedFamilyAccountsScreen> {
+    extends State<ConnectedFamilyAccountsScreen>
+    with TunaNetraHomeVoiceCommandMixin {
   final ConnectedFamilyService _familyService = ConnectedFamilyService();
   final PairingService _pairingService = PairingService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -24,6 +26,13 @@ class _ConnectedFamilyAccountsScreenState
   void initState() {
     super.initState();
     _cleanupDuplicates();
+    startHomeVoiceCommandListener();
+  }
+
+  @override
+  void dispose() {
+    stopHomeVoiceCommandListener();
+    super.dispose();
   }
 
   @override
