@@ -34,9 +34,6 @@ dependencies:
   # UI & Icons
   cupertino_icons: ^1.0.8
   
-  # Bluetooth
-  flutter_blue_plus: ^1.32.12
-  
   # Maps & Location (OpenStreetMap)
   flutter_map: ^8.2.2
   latlong2: ^0.9.1
@@ -47,6 +44,7 @@ dependencies:
   # Voice & AI Assistant
   speech_to_text: ^7.0.0
   flutter_tts: ^4.2.0
+  flutter_blue_plus: ^1.35.5
   permission_handler: ^11.4.0
   
   # State Management

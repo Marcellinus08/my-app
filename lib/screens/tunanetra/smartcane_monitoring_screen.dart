@@ -50,7 +50,9 @@ class _SmartcaneMonitoringScreenState extends State<SmartcaneMonitoringScreen>
   @override
   void initState() {
     super.initState();
-    startHomeVoiceCommandListener();
+    startHomeVoiceCommandListener(
+      openingAnnouncement: 'Halaman smartcane dibuka',
+    );
   }
 
   @override

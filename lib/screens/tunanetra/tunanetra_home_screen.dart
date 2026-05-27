@@ -24,6 +24,8 @@ class TunaNetraHomeScreen extends StatefulWidget {
 
 class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
+  static bool _hasSpokenWelcomeThisSession = false;
+
   String _userName = 'Pengguna';
   WeatherData? _weatherData;
   bool _isLoadingWeather = true;
@@ -33,14 +35,23 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   final SosService _sosService = SosService();
   StreamSubscription<User?>? _authStateSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _pairingRequestSub;
+  Timer? _weatherRefreshTimer;
   final Set<String> _shownPairingRequestIds = {};
   bool _isPairingDialogOpen = false;
   final TTSService _ttsService = TTSService();
   final STTService _sttService = STTService();
-  bool _hasSpoken = false;
+  bool _hasSpoken = _hasSpokenWelcomeThisSession;
   bool _isSpeaking = false;
   bool _initialPermissionFlowDone = false;
   bool _locationFeaturesStarted = false;
+  bool _announceHomeOpenedFromVoice = false;
+  bool _hasAnnouncedHomeOpened = false;
+  bool _homeSttEnabled = false;
+  bool _homeSttActive = false;
+  bool _homeSttStarting = false;
+  Timer? _homeSttWatchdog;
+  Timer? _homeSttRestartTimer;
+  int _homeSttGeneration = 0;
 
   late AnimationController _fadeController;
   late AnimationController _rotationController;
@@ -73,7 +84,15 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     if (_locationFeaturesStarted) return;
     _locationFeaturesStarted = true;
     _loadWeather();
+    _startWeatherRefreshTimer();
     _liveTrackingService.startHomeLocationTracking();
+  }
+
+  void _startWeatherRefreshTimer() {
+    _weatherRefreshTimer?.cancel();
+    _weatherRefreshTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      _loadWeather(speakWhenReady: false);
+    });
   }
 
   Future<void> speakSafe(String text) async {
@@ -86,32 +105,36 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     routeObserver.subscribe(this, ModalRoute.of(context)!);
+    final arguments = ModalRoute.of(context)?.settings.arguments;
+    if (arguments is Map && arguments['announceHomeOpened'] == true) {
+      _announceHomeOpenedFromVoice = true;
+    }
   }
 
   @override
   void didPopNext() async {
     print("🔙 Balik ke HomeScreen");
 
-    await _sttService.stopListening();
+    await _stopHomeStt();
 
     await speakSafe("Kamu kembali ke halaman utama");
 
-    await Future.delayed(Duration(milliseconds: 300));
-
-    _startListening();
+    _scheduleHomeSttRestart();
   }
 
   @override
   void didPushNext() {
-    _sttService.stopListening();
+    _stopHomeStt();
   }
 
   void _handleCommand(String command) async {
-    await _sttService.stopListening();
+    await _stopHomeStt();
 
     if (TunaNetraVoiceCommands.isHomeCommand(command)) {
       await speakSafe("Kamu sudah berada di halaman utama");
-      _startListening();
+      _scheduleHomeSttRestart();
+    } else if (command.contains("cuaca")) {
+      await _speakCurrentWeather();
     } else if (command.contains("bluetooth")) {
       await speakSafe("Membuka pengaturan bluetooth");
       Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
@@ -129,43 +152,155 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
     } else {
       await speakSafe("Perintah tidak dikenali");
-      _startListening();
+      _scheduleHomeSttRestart();
     }
   }
 
   void _startListening() {
-    _sttService.startListening((result) {
-      if (_isSpeaking) return;
+    if (_isSpeaking || _homeSttStarting || _homeSttActive || !mounted) return;
 
-      final text = result.toString().toLowerCase();
+    _homeSttRestartTimer?.cancel();
+    _homeSttRestartTimer = null;
+    _homeSttEnabled = true;
+    _homeSttStarting = true;
+    _startHomeSttWatchdog();
 
-      if (text.length < 15 && !TunaNetraVoiceCommands.isHomeCommand(text)) {
+    _sttService
+        .startListening(
+          (result) {
+            if (_isSpeaking) return;
+
+            final text = result.toString().toLowerCase();
+
+            if (text.length < 15 && !_isKnownHomeVoiceCommand(text)) {
+              return;
+            }
+
+            print("🎤 $text");
+
+            _handleCommand(text);
+          },
+          onStatus: (status) {
+            _homeSttActive = status == 'listening';
+
+            if ((status == 'notListening' || status == 'done') &&
+                mounted &&
+                _homeSttEnabled &&
+                !_isSpeaking) {
+              _scheduleHomeSttRestart(
+                delay: const Duration(milliseconds: 1500),
+              );
+            }
+          },
+          onError: (_) {
+            _homeSttActive = false;
+            if (mounted && _homeSttEnabled && !_isSpeaking) {
+              _scheduleHomeSttRestart(delay: const Duration(seconds: 2));
+            }
+          },
+        )
+        .whenComplete(() {
+          _homeSttStarting = false;
+        });
+  }
+
+  Future<void> _stopHomeStt() async {
+    _homeSttGeneration++;
+    _homeSttEnabled = false;
+    _homeSttActive = false;
+    _homeSttStarting = false;
+    _homeSttRestartTimer?.cancel();
+    _homeSttRestartTimer = null;
+    _homeSttWatchdog?.cancel();
+    _homeSttWatchdog = null;
+    await _sttService.stopListening();
+  }
+
+  void _scheduleHomeSttRestart({
+    Duration delay = const Duration(milliseconds: 300),
+  }) {
+    if (!mounted || _isSpeaking) return;
+
+    _homeSttEnabled = true;
+    _startHomeSttWatchdog();
+
+    if (_homeSttRestartTimer?.isActive ?? false) return;
+
+    final generation = _homeSttGeneration;
+    _homeSttRestartTimer = Timer(delay, () {
+      _homeSttRestartTimer = null;
+      if (!mounted ||
+          !_homeSttEnabled ||
+          _isSpeaking ||
+          generation != _homeSttGeneration) {
         return;
       }
 
-      print("🎤 $text");
-
-      _handleCommand(text);
+      _startListening();
     });
   }
 
+  void _startHomeSttWatchdog() {
+    _homeSttWatchdog?.cancel();
+    _homeSttWatchdog = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted || !_homeSttEnabled || _isSpeaking) return;
+
+      if (!_sttService.isActuallyListening && !_homeSttStarting) {
+        _homeSttActive = false;
+        _scheduleHomeSttRestart(delay: const Duration(milliseconds: 800));
+      }
+    });
+  }
+
+  bool _isKnownHomeVoiceCommand(String text) {
+    return TunaNetraVoiceCommands.isHomeCommand(text) ||
+        text.contains("cuaca") ||
+        text.contains("bluetooth") ||
+        text.contains("navigasi") ||
+        text.contains("ebook") ||
+        text.contains("buku panduan") ||
+        text.contains("tongkat pintar") ||
+        text.contains("smartcane") ||
+        text.contains("pengaturan");
+  }
+
   void _speakIfReady() async {
-    if (_hasSpoken) return;
     if (!_initialPermissionFlowDone) return;
+    if (_isSpeaking) return;
+
+    if (_announceHomeOpenedFromVoice && !_hasAnnouncedHomeOpened) {
+      _hasAnnouncedHomeOpened = true;
+      await _stopHomeStt();
+      await speakSafe("Halaman utama dibuka");
+      if (mounted) {
+        _scheduleHomeSttRestart();
+      }
+      return;
+    }
+
+    if (_hasSpoken) {
+      _scheduleHomeSttRestart();
+      return;
+    }
 
     if (_weatherData != null && _userName.isNotEmpty) {
       _hasSpoken = true;
+      _hasSpokenWelcomeThisSession = true;
 
       final cuaca = _weatherData!;
-      final text =
-          "Selamat datang $_userName. "
-          "Cuaca hari ini ${cuaca.temperature.toStringAsFixed(0)} derajat, "
-          "kelembapan ${cuaca.humidity} persen, "
-          "kecepatan angin ${cuaca.windSpeed.toStringAsFixed(0)} kilometer per jam.";
+      final text = "Selamat datang $_userName. ${_formatWeatherSpeech(cuaca)}";
 
-      await TTSService().speak(text);
+      await _stopHomeStt();
+      _isSpeaking = true;
+      try {
+        await TTSService().speak(text);
+      } finally {
+        _isSpeaking = false;
+      }
 
-      _startListening();
+      if (mounted) {
+        _scheduleHomeSttRestart();
+      }
     }
   }
 
@@ -211,7 +346,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     }
   }
 
-  Future<void> _loadWeather() async {
+  Future<void> _loadWeather({bool speakWhenReady = true}) async {
     try {
       final weatherService = WeatherService();
       final cachedWeather = await weatherService.getCachedWeather();
@@ -227,7 +362,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           _weatherData = weather;
           _isLoadingWeather = false;
         });
-        _speakIfReady();
+        if (speakWhenReady) {
+          _speakIfReady();
+        }
       }
     } catch (e) {
       print('❌ Error loading weather: $e');
@@ -236,6 +373,31 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           _isLoadingWeather = false;
         });
       }
+    }
+  }
+
+  String _formatWeatherSpeech(WeatherData weather) {
+    return "Cuaca hari ini ${weather.temperature.toStringAsFixed(0)} derajat, "
+        "kelembapan ${weather.humidity} persen, "
+        "kecepatan angin ${weather.windSpeed.toStringAsFixed(0)} kilometer per jam.";
+  }
+
+  Future<void> _speakCurrentWeather() async {
+    final weather = _weatherData;
+    if (weather != null) {
+      await speakSafe(_formatWeatherSpeech(weather));
+    } else {
+      await speakSafe(
+        "Data cuaca belum tersedia. Mengambil data cuaca terbaru",
+      );
+      await _loadWeather(speakWhenReady: false);
+      if (_weatherData != null) {
+        await speakSafe(_formatWeatherSpeech(_weatherData!));
+      }
+    }
+
+    if (mounted) {
+      _scheduleHomeSttRestart();
     }
   }
 
@@ -264,32 +426,19 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   }
 
   void _navigateToBluetooth() {
-    _showComingSoonSnackBar();
-    // Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
+    Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
   }
 
   void _navigateToEbook() {
-    _showComingSoonSnackBar();
-    // Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
+    Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
   }
 
   void _navigateToSmartcane() {
-    _showComingSoonSnackBar();
-    // Navigator.pushNamed(context, AppRoutes.tunaNetraSmartcane);
+    Navigator.pushNamed(context, AppRoutes.tunaNetraSmartcane);
   }
 
   void _navigateToSettings() {
     Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
-  }
-
-  void _showComingSoonSnackBar() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Fitur ini akan segera hadir'),
-        backgroundColor: Colors.orange,
-        duration: Duration(seconds: 3),
-      ),
-    );
   }
 
   Future<void> _triggerEmergency() async {
@@ -865,7 +1014,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _liveTrackingService.stopHomeLocationTracking();
+    _weatherRefreshTimer?.cancel();
+    _homeSttRestartTimer?.cancel();
     _authStateSub?.cancel();
+    _stopHomeStt();
     routeObserver.unsubscribe(this);
     _pairingRequestSub?.cancel();
     _fadeController.dispose();

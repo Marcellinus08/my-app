@@ -41,6 +41,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   final STTService _sttService = STTService();
   bool _hasSpoken = false;
   bool _isSpeaking = false;
+  bool _navigationSttEnabled = false;
+  bool _navigationSttActive = false;
+  bool _navigationSttStarting = false;
+  Timer? _navigationSttWatchdog;
   static const double _pedestrianSpeedMs = 1.4;
   static const double _arrivalThresholdMeters = 5.0;
 
@@ -111,6 +115,8 @@ class _NavigationScreenState extends State<NavigationScreen>
   double _initialDurationSeconds = 0.0; // Initial duration from OSRM
   DateTime? _lastDurationUpdateTime; // Last time duration was updated
   Timer? _durationUpdateTimer; // Timer for periodic duration updates
+  static const String _ultrasonicSensorText =
+      'Sensor ultrasonik: data belum tersedia.';
 
   // Navigation instructions (Turn-by-turn guidance)
   List<NavigationInstruction> _navigationInstructions = [];
@@ -152,14 +158,65 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   void _startVoiceNavigation() {
-    _sttService.startListening((result) {
-      if (_isSpeaking) return;
+    if (_navigationSttStarting || _navigationSttActive || !mounted) return;
 
-      final text = result.toLowerCase();
-      String cleanedText = text.replaceAll('-', ' ').toLowerCase();
-      print("🎤 NAV: $cleanedText");
+    _navigationSttEnabled = true;
+    _navigationSttStarting = true;
+    _startNavigationSttWatchdog();
 
-      _handleNavigationCommand(cleanedText);
+    _sttService
+        .startListening(
+          (result) {
+            if (_isSpeaking) return;
+
+            final text = result.toLowerCase();
+            String cleanedText = text.replaceAll('-', ' ').toLowerCase();
+            print("🎤 NAV: $cleanedText");
+
+            _handleNavigationCommand(cleanedText);
+          },
+          onStatus: (status) {
+            _navigationSttActive = status == 'listening';
+
+            if ((status == 'notListening' || status == 'done') &&
+                mounted &&
+                _navigationSttEnabled &&
+                !_isSpeaking) {
+              Future.delayed(
+                const Duration(milliseconds: 1500),
+                _startVoiceNavigation,
+              );
+            }
+          },
+          onError: (_) {
+            _navigationSttActive = false;
+            if (mounted && _navigationSttEnabled && !_isSpeaking) {
+              Future.delayed(const Duration(seconds: 2), _startVoiceNavigation);
+            }
+          },
+        )
+        .whenComplete(() {
+          _navigationSttStarting = false;
+        });
+  }
+
+  Future<void> _stopNavigationStt() async {
+    _navigationSttEnabled = false;
+    _navigationSttActive = false;
+    _navigationSttWatchdog?.cancel();
+    _navigationSttWatchdog = null;
+    await _sttService.stopListening();
+  }
+
+  void _startNavigationSttWatchdog() {
+    _navigationSttWatchdog?.cancel();
+    _navigationSttWatchdog = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (!mounted || !_navigationSttEnabled || _isSpeaking) return;
+
+      if (!_sttService.isActuallyListening && !_navigationSttStarting) {
+        _navigationSttActive = false;
+        _startVoiceNavigation();
+      }
     });
   }
 
@@ -167,19 +224,21 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (command.length < 2) return;
 
     if (TunaNetraVoiceCommands.isHomeCommand(command)) {
-      await _sttService.stopListening();
+      await _stopNavigationStt();
       await speakSafe("Membuka halaman utama");
       await _endNavigationSession();
       if (!mounted) return;
-      Navigator.of(
-        context,
-      ).pushNamedAndRemoveUntil(AppRoutes.tunaNetraHome, (route) => false);
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        AppRoutes.tunaNetraHome,
+        (route) => false,
+        arguments: {'announceHomeOpened': true},
+      );
       return;
     }
 
     for (final place in _places) {
       if (command.contains(place.name.replaceAll('-', ' ').toLowerCase())) {
-        await _sttService.stopListening();
+        await _stopNavigationStt();
 
         setState(() {
           _selectedPlace = place;
@@ -187,13 +246,16 @@ class _NavigationScreenState extends State<NavigationScreen>
 
         _startLocationStreaming();
         await _loadRoute();
+        if (mounted) {
+          _startVoiceNavigation();
+        }
 
         return;
       }
     }
 
     if (command.contains("berhenti")) {
-      await _sttService.stopListening();
+      await _stopNavigationStt();
 
       await speakSafe("Navigasi dihentikan");
 
@@ -1406,7 +1468,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       ..removeListener(_onLocationAnimationTick)
       ..dispose();
     unawaited(_liveTrackingService.stopNavigationTracking());
-    _sttService.stopListening();
+    _stopNavigationStt();
     super.dispose();
   }
 
@@ -2507,6 +2569,44 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   /// Build map screen setelah memilih place
+  Widget _buildNavigationAlertBadge({
+    required IconData icon,
+    required String text,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF59E0B),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.16),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMapScreen() {
     final topInset = MediaQuery.of(context).padding.top;
     final fusionBadgeTop = topInset + 125;
@@ -2731,53 +2831,29 @@ class _NavigationScreenState extends State<NavigationScreen>
             ),
           ),
 
-          if (_isOffRouteWarningVisible)
-            Positioned(
-              top: fusionBadgeTop,
-              left: 16,
-              right: 16,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
+          Positioned(
+            top: fusionBadgeTop,
+            left: 16,
+            right: 16,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildNavigationAlertBadge(
+                  icon: Icons.sensors_rounded,
+                  text: _ultrasonicSensorText,
                 ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF59E0B),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.16),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.route_outlined,
-                      color: Colors.white,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _lastRerouteAt != null
-                            ? 'Keluar jalur. Menghitung ulang rute...'
-                            : 'Keluar jalur. Menyesuaikan navigasi...',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+                if (_isOffRouteWarningVisible) ...[
+                  const SizedBox(height: 8),
+                  _buildNavigationAlertBadge(
+                    icon: Icons.route_outlined,
+                    text: _lastRerouteAt != null
+                        ? 'Keluar jalur. Menghitung ulang rute...'
+                        : 'Keluar jalur. Menyesuaikan navigasi...',
+                  ),
+                ],
+              ],
             ),
+          ),
 
           // Header with back button (Floating overlay)
           Positioned(

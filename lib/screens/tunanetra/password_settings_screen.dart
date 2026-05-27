@@ -17,7 +17,9 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
   @override
   void initState() {
     super.initState();
-    startHomeVoiceCommandListener();
+    startHomeVoiceCommandListener(
+      openingAnnouncement: 'Halaman kata sandi dibuka',
+    );
   }
 
   @override

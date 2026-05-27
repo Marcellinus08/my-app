@@ -38,7 +38,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     _emailController = TextEditingController();
     _phoneController = TextEditingController();
     _loadUserData();
-    startHomeVoiceCommandListener();
+    startHomeVoiceCommandListener(openingAnnouncement: 'Halaman profil dibuka');
   }
 
   Future<void> _loadUserData() async {

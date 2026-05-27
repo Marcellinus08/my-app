@@ -57,7 +57,9 @@ class _EbookScreenState extends State<EbookScreen>
   @override
   void initState() {
     super.initState();
-    startHomeVoiceCommandListener();
+    startHomeVoiceCommandListener(
+      openingAnnouncement: 'Halaman buku panduan dibuka',
+    );
   }
 
   @override

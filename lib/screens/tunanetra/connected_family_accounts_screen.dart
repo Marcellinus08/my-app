@@ -26,7 +26,9 @@ class _ConnectedFamilyAccountsScreenState
   void initState() {
     super.initState();
     _cleanupDuplicates();
-    startHomeVoiceCommandListener();
+    startHomeVoiceCommandListener(
+      openingAnnouncement: 'Halaman akun keluarga dibuka',
+    );
   }
 
   @override

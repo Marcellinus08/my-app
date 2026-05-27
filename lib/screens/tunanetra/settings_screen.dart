@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
+import '../../services/tts_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
 import 'tunanetra_profile_screen.dart';
 import 'connected_family_accounts_screen.dart';
@@ -21,7 +22,57 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
   @override
   void initState() {
     super.initState();
-    startHomeVoiceCommandListener();
+    startHomeVoiceCommandListener(
+      openingAnnouncement: 'Halaman pengaturan dibuka',
+      onCommand: _handleSettingsVoiceCommand,
+    );
+  }
+
+  Future<bool> _handleSettingsVoiceCommand(String command) async {
+    if (command.contains('profil') || command.contains('profile')) {
+      await _openSettingsSubPage(
+        announcement: 'Membuka profil',
+        page: const TunaNetraProfileScreen(),
+      );
+      return true;
+    }
+
+    if (command.contains('kata sandi') ||
+        command.contains('password') ||
+        command.contains('sandi')) {
+      await _openSettingsSubPage(
+        announcement: 'Membuka kata sandi',
+        page: const PasswordSettingsScreen(),
+      );
+      return true;
+    }
+
+    if (command.contains('keluarga') || command.contains('akun keluarga')) {
+      await _openSettingsSubPage(
+        announcement: 'Membuka akun keluarga',
+        page: const ConnectedFamilyAccountsScreen(),
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  Future<void> _openSettingsSubPage({
+    required String announcement,
+    required Widget page,
+  }) async {
+    await stopHomeVoiceCommandListener();
+    await TTSService().speak(announcement);
+    if (!mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => page),
+    );
+
+    if (!mounted) return;
+    startHomeVoiceCommandListener(onCommand: _handleSettingsVoiceCommand);
   }
 
   @override
@@ -166,7 +217,7 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
                               ),
                             ),
                             title: Text(
-                              'Profil Saya',
+                              'Profil',
                               style: AppTextStyles.bodyLarge.copyWith(
                                 fontWeight: FontWeight.w600,
                               ),
@@ -192,7 +243,9 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
                                 ),
                               );
                               if (!context.mounted) return;
-                              startHomeVoiceCommandListener();
+                              startHomeVoiceCommandListener(
+                                onCommand: _handleSettingsVoiceCommand,
+                              );
                             },
                           ),
                           Divider(
@@ -247,7 +300,9 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
                                 ),
                               );
                               if (!context.mounted) return;
-                              startHomeVoiceCommandListener();
+                              startHomeVoiceCommandListener(
+                                onCommand: _handleSettingsVoiceCommand,
+                              );
                             },
                           ),
                           Divider(
@@ -302,7 +357,9 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
                                 ),
                               );
                               if (!context.mounted) return;
-                              startHomeVoiceCommandListener();
+                              startHomeVoiceCommandListener(
+                                onCommand: _handleSettingsVoiceCommand,
+                              );
                             },
                           ),
                           Divider(
