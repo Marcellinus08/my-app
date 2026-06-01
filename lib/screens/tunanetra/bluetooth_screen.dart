@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../services/smart_cane_ble_service.dart';
+import '../../services/tunanetra_voice_command_service.dart';
 import '../../utils/constants.dart';
 
 class BluetoothScreen extends StatefulWidget {
@@ -17,7 +19,8 @@ class BluetoothScreen extends StatefulWidget {
   State<BluetoothScreen> createState() => _BluetoothScreenState();
 }
 
-class _BluetoothScreenState extends State<BluetoothScreen> {
+class _BluetoothScreenState extends State<BluetoothScreen>
+    with TunaNetraHomeVoiceCommandMixin<BluetoothScreen> {
   static final Guid _smartCaneServiceUuid = Guid(
     '0000a001-0000-1000-8000-00805f9b34fb',
   );
@@ -27,27 +30,29 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   final TextEditingController _caneCodeController = TextEditingController();
   final TextEditingController _canePinController = TextEditingController();
   final Map<DeviceIdentifier, ScanResult> _scanResults = {};
+  final SmartCaneBleService _bleService = SmartCaneBleService.instance;
 
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   StreamSubscription<bool>? _scanStateSubscription;
-  StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
   StreamSubscription<BluetoothAdapterState>? _adapterStateSubscription;
 
-  BluetoothDevice? _connectedDevice;
   ScanResult? _selectedCaneResult;
-  String? _connectedBleName;
   String _bleStatus = 'Belum terhubung';
   bool _isBluetoothOn = false;
   bool _hasBlePermission = false;
   bool _isScanning = false;
-  bool _isConnecting = false;
   bool _isPairingCane = false;
 
   @override
   void initState() {
     super.initState();
+    _bleService.addListener(_syncBleServiceState);
+    _syncBleServiceState();
     _listenToAdapterState();
     _initializeBle();
+    startHomeVoiceCommandListener(
+      openingAnnouncement: 'Halaman bluetooth dibuka',
+    );
   }
 
   @override
@@ -56,9 +61,24 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
     _canePinController.dispose();
     _scanSubscription?.cancel();
     _scanStateSubscription?.cancel();
-    _connectionSubscription?.cancel();
     _adapterStateSubscription?.cancel();
+    _bleService.removeListener(_syncBleServiceState);
+    unawaited(stopHomeVoiceCommandListener());
     super.dispose();
+  }
+
+  void _syncBleServiceState() {
+    if (!mounted) return;
+    setState(() {
+      if (_bleService.isConnected) {
+        final name = _bleService.connectedBleName ?? 'TemanArah-Cane';
+        _bleStatus = 'Terhubung ke $name';
+      } else if (_bleStatus.startsWith('Terhubung')) {
+        _bleStatus = _isBluetoothOn
+            ? 'Belum terhubung'
+            : 'Bluetooth belum aktif';
+      }
+    });
   }
 
   void _listenToAdapterState() {
@@ -160,14 +180,28 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
     }
   }
 
-  Future<void> startBleScan() async {
+  Future<void> startBleScan({
+    Duration timeout = const Duration(seconds: 12),
+    bool clearSelectedDevice = true,
+  }) async {
     await checkBluetoothStatus();
     await requestBlePermissions();
 
     if (!_isBluetoothOn) {
-      _updateStatus('Bluetooth belum aktif');
-      _addLog('[BLE-STEP-03] Scan dibatalkan karena Bluetooth HP masih OFF');
-      return;
+      _updateStatus('Menyalakan Bluetooth...');
+      _addLog('[BLE-STEP-03] Bluetooth HP OFF, mencoba menyalakan adapter...');
+      await turnOnBluetooth();
+      await checkBluetoothStatus();
+
+      if (!_isBluetoothOn) {
+        _updateStatus('Bluetooth belum aktif');
+        _addLog('[BLE-STEP-03] Scan dibatalkan karena Bluetooth HP masih OFF');
+        _showBleSnackBar(
+          'Bluetooth belum aktif. Nyalakan Bluetooth lalu coba kembali.',
+          isError: true,
+        );
+        return;
+      }
     }
 
     if (!_hasBlePermission) {
@@ -180,7 +214,9 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
     if (!mounted) return;
     setState(() {
       _scanResults.clear();
-      _selectedCaneResult = null;
+      if (clearSelectedDevice) {
+        _selectedCaneResult = null;
+      }
       _bleStatus = 'Scanning...';
     });
 
@@ -212,7 +248,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
     });
 
     try {
-      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 12));
+      await FlutterBluePlus.startScan(timeout: timeout);
       _addLog('[BLE-STEP-05] Scan selesai');
     } catch (error) {
       _updateStatus('Gagal scan BLE');
@@ -283,7 +319,7 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
 
     try {
       await connectToDevice(selectedResult.device);
-      if (_connectedDevice == null) {
+      if (_bleService.connectedDevice == null) {
         _addLog('[BLE-STEP-13] Pairing berhenti: koneksi BLE belum berhasil');
         _showBleSnackBar(
           'Gagal terhubung ke perangkat tongkat.',
@@ -311,11 +347,15 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
         bleName: bleName,
         remoteId: selectedResult.device.remoteId.toString(),
       );
+      await _bleService.saveRememberedCane(
+        caneCode: caneCode,
+        bleName: bleName,
+        remoteId: selectedResult.device.remoteId.toString(),
+      );
 
       if (!mounted) return;
       setState(() {
         _bleStatus = 'Terhubung ke $bleName';
-        _connectedBleName = bleName;
       });
       _addLog('[BLE-STEP-16] Pairing tongkat berhasil dan tersimpan');
       _showBleSnackBar('Tongkat berhasil terhubung.');
@@ -356,87 +396,22 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
 
   Future<void> connectToDevice(BluetoothDevice device) async {
     await stopBleScan(logWhenStopped: false);
-
-    final name = _deviceName(device);
-    _updateStatus('Connecting ke $name...');
-    _addLog('[BLE-STEP-06] Mencoba connect ke $name...');
-
-    if (!mounted) return;
-    setState(() => _isConnecting = true);
-
-    try {
-      await _connectionSubscription?.cancel();
-      _connectionSubscription = device.connectionState.listen((state) {
-        if (!mounted) return;
-        if (state == BluetoothConnectionState.connected) {
-          setState(() {
-            _connectedDevice = device;
-            _bleStatus = 'Terhubung ke ${_deviceName(device)}';
-          });
-        } else if (state == BluetoothConnectionState.disconnected &&
-            _connectedDevice?.remoteId == device.remoteId) {
-          setState(() {
-            _connectedDevice = null;
-            _connectedBleName = null;
-            _bleStatus = 'Belum terhubung';
-          });
-        }
-      });
-
-      await device.connect(timeout: const Duration(seconds: 15), mtu: null);
-
-      if (!mounted) return;
-      setState(() {
-        _connectedDevice = device;
-        _bleStatus = 'Terhubung ke $name';
-      });
-      _addLog('[BLE-STEP-07] Berhasil connect ke Raspberry Pi');
-
-      _addLog('[BLE-STEP-09] Discovering services...');
-      final services = await device.discoverServices(
-        subscribeToServicesChanged: false,
-      );
-      _addLog('[BLE-STEP-10] Service ditemukan: ${services.length} service');
-    } catch (error) {
-      _updateStatus('Gagal terhubung');
-      _addLog('[BLE-STEP-08] Gagal connect: $error');
-
-      try {
-        await device.disconnect();
-      } catch (_) {
-        // Device may already be disconnected after a failed GATT attempt.
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isConnecting = false);
-      }
-    }
+    await _bleService.connectToDevice(
+      device,
+      log: _addLog,
+      updateStatus: _updateStatus,
+    );
+    _syncBleServiceState();
   }
 
   Future<void> disconnectDevice() async {
-    final device = _connectedDevice;
-    if (device == null) {
-      _updateStatus('Belum terhubung');
-      _addLog('[BLE-STEP-12] Disconnect dilewati: belum ada device terhubung');
-      return;
-    }
-
-    try {
-      await device.disconnect();
-      if (!mounted) return;
-      setState(() {
-        _connectedDevice = null;
-        _connectedBleName = null;
-        _bleStatus = 'Belum terhubung';
-      });
-      _addLog('[BLE-STEP-12] Disconnect berhasil');
-    } catch (error) {
-      _addLog('[BLE-STEP-12] Disconnect gagal: $error');
-    }
+    await _bleService.disconnect(log: _addLog, updateStatus: _updateStatus);
+    await _bleService.clearRememberedCane();
+    _syncBleServiceState();
   }
 
   Future<void> testConnection() async {
-    final device = _connectedDevice;
+    final device = _bleService.connectedDevice;
     if (device == null) {
       _addLog(
         '[BLE-STEP-11] Test connection gagal. Belum ada device connected',
@@ -502,6 +477,8 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   }
 
   Future<void> _scanAndShowDevices() async {
+    if (_bleService.isAutoConnecting) return;
+
     await startBleScan();
     if (!mounted) return;
 
@@ -978,14 +955,18 @@ class _BluetoothScreenState extends State<BluetoothScreen> {
   }
 
   Widget _buildScanCard() {
-    final isConnected = _connectedDevice != null;
-    final canUseButton = !_isScanning && !_isConnecting && !_isPairingCane;
+    final isConnected = _bleService.isConnected;
+    final canUseButton =
+        !_isScanning &&
+        !_bleService.isConnecting &&
+        !_isPairingCane &&
+        !_bleService.isAutoConnecting;
 
     return _PageCard(
       child: _ScanDeviceButton(
-        isScanning: _isScanning,
+        isScanning: _isScanning || _bleService.isAutoConnecting,
         isConnected: isConnected,
-        deviceName: _connectedBleName ?? 'TemanArah-Cane',
+        deviceName: _bleService.connectedBleName ?? 'TemanArah-Cane',
         onPressed: canUseButton
             ? (isConnected ? disconnectDevice : _scanAndShowDevices)
             : null,

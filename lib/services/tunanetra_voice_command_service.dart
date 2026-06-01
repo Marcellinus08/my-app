@@ -3,15 +3,40 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../utils/constants.dart';
+import 'smart_cane_ble_service.dart';
+import 'sos_service.dart';
 import 'stt_service.dart';
 import 'tts_service.dart';
 
 class TunaNetraVoiceCommands {
+  static DateTime? _lastSosTriggerAt;
+
   static bool isHomeCommand(String command) {
     final text = command.toLowerCase();
     return text.contains('halaman utama') ||
         text.contains('beranda') ||
         text.contains('home');
+  }
+
+  static bool isSosCommand(String command) {
+    final text = command.toLowerCase();
+    return text.contains('sos') ||
+        text.contains('darurat') ||
+        text.contains('tolong') ||
+        text.contains('bantuan');
+  }
+
+  static bool claimSosTrigger({
+    Duration cooldown = const Duration(seconds: 5),
+  }) {
+    final now = DateTime.now();
+    final lastTriggerAt = _lastSosTriggerAt;
+    if (lastTriggerAt != null && now.difference(lastTriggerAt) < cooldown) {
+      return false;
+    }
+
+    _lastSosTriggerAt = now;
+    return true;
   }
 }
 
@@ -23,7 +48,8 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
   bool _homeCommandListenerActive = false;
   bool _isStartingHomeCommandListener = false;
   bool _homeCommandListenerEnabled = false;
-  Timer? _homeCommandSttWatchdog;
+  bool _isSendingHardwareSos = false;
+  StreamSubscription<SmartCaneButtonEvent>? _homeCommandButtonSubscription;
 
   void startHomeVoiceCommandListener({
     bool isHomePage = false,
@@ -33,23 +59,22 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _homeCommandListenerEnabled = true;
-      _startHomeCommandSttWatchdog(
-        isHomePage: isHomePage,
-        onCommand: onCommand,
-      );
-      _startHomeVoiceCommandListenerAfterAnnouncement(
-        isHomePage: isHomePage,
-        openingAnnouncement: openingAnnouncement,
-        onCommand: onCommand,
-      );
+      _homeCommandButtonSubscription?.cancel();
+      _homeCommandButtonSubscription = SmartCaneBleService
+          .instance
+          .buttonEventStream
+          .listen(
+            (event) => _handleHomeCommandButtonEvent(
+              event,
+              isHomePage: isHomePage,
+              onCommand: onCommand,
+            ),
+          );
+      _speakOpeningAnnouncement(openingAnnouncement: openingAnnouncement);
     });
   }
 
-  Future<void> _startHomeVoiceCommandListenerAfterAnnouncement({
-    required bool isHomePage,
-    String? openingAnnouncement,
-    Future<bool> Function(String command)? onCommand,
-  }) async {
+  Future<void> _speakOpeningAnnouncement({String? openingAnnouncement}) async {
     if (openingAnnouncement != null && openingAnnouncement.isNotEmpty) {
       _isHomeCommandSpeaking = true;
       await _homeCommandTtsService.speak(openingAnnouncement);
@@ -57,8 +82,35 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
 
       if (!mounted) return;
     }
+  }
 
-    _startHomeCommandStt(isHomePage: isHomePage, onCommand: onCommand);
+  Future<void> _handleHomeCommandButtonEvent(
+    SmartCaneButtonEvent event, {
+    required bool isHomePage,
+    Future<bool> Function(String command)? onCommand,
+  }) async {
+    if (!mounted || !_homeCommandListenerEnabled) {
+      return;
+    }
+
+    if (event.isVoiceAssistantStop) {
+      _homeCommandListenerActive = false;
+      await _homeCommandSttService.stopListening();
+      return;
+    }
+
+    if (event.isSos) {
+      await _handleSosCommand();
+      return;
+    }
+
+    if (!event.isVoiceAssistantStart || _isHomeCommandSpeaking) return;
+
+    if (!mounted || !_homeCommandListenerEnabled) return;
+    await _homeCommandSttService.stopListening();
+    _homeCommandListenerActive = false;
+    _hasHandledHomeCommand = false;
+    await _startHomeCommandStt(isHomePage: isHomePage, onCommand: onCommand);
   }
 
   Future<void> _startHomeCommandStt({
@@ -82,10 +134,19 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
         if (onCommand != null) {
           onCommand(text).then((handled) {
             if (handled) return;
+            if (TunaNetraVoiceCommands.isSosCommand(text)) {
+              _handleSosCommand();
+              return;
+            }
             if (TunaNetraVoiceCommands.isHomeCommand(text)) {
               _handleHomeVoiceCommand(isHomePage: isHomePage);
             }
           });
+          return;
+        }
+
+        if (TunaNetraVoiceCommands.isSosCommand(text)) {
+          _handleSosCommand();
           return;
         }
 
@@ -95,61 +156,49 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
       },
       onStatus: (status) {
         _homeCommandListenerActive = status == 'listening';
-
-        if ((status == 'notListening' || status == 'done') &&
-            mounted &&
-            _homeCommandListenerEnabled &&
-            !_isHomeCommandSpeaking &&
-            !_hasHandledHomeCommand) {
-          Future.delayed(const Duration(milliseconds: 1500), () {
-            _startHomeCommandStt(isHomePage: isHomePage, onCommand: onCommand);
-          });
-        }
       },
       onError: (_) {
         _homeCommandListenerActive = false;
-        if (mounted &&
-            _homeCommandListenerEnabled &&
-            !_isHomeCommandSpeaking &&
-            !_hasHandledHomeCommand) {
-          Future.delayed(const Duration(seconds: 2), () {
-            _startHomeCommandStt(isHomePage: isHomePage, onCommand: onCommand);
-          });
-        }
       },
     );
     _isStartingHomeCommandListener = false;
-  }
-
-  void _startHomeCommandSttWatchdog({
-    required bool isHomePage,
-    Future<bool> Function(String command)? onCommand,
-  }) {
-    _homeCommandSttWatchdog?.cancel();
-    _homeCommandSttWatchdog = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (!mounted ||
-          !_homeCommandListenerEnabled ||
-          _isHomeCommandSpeaking ||
-          _hasHandledHomeCommand) {
-        return;
-      }
-
-      if (!_homeCommandSttService.isActuallyListening &&
-          !_isStartingHomeCommandListener) {
-        _homeCommandListenerActive = false;
-        _startHomeCommandStt(isHomePage: isHomePage, onCommand: onCommand);
-      }
-    });
   }
 
   Future<void> stopHomeVoiceCommandListener() async {
     _hasHandledHomeCommand = true;
     _homeCommandListenerEnabled = false;
     _homeCommandListenerActive = false;
-    _homeCommandSttWatchdog?.cancel();
-    _homeCommandSttWatchdog = null;
+    await _homeCommandButtonSubscription?.cancel();
+    _homeCommandButtonSubscription = null;
     await _homeCommandSttService.stopListening();
     _hasHandledHomeCommand = false;
+  }
+
+  Future<void> _handleSosCommand() async {
+    if (_isSendingHardwareSos) return;
+    if (!TunaNetraVoiceCommands.claimSosTrigger()) return;
+
+    _isSendingHardwareSos = true;
+    _hasHandledHomeCommand = true;
+    _homeCommandListenerActive = false;
+    await _homeCommandSttService.stopListening();
+
+    try {
+      _isHomeCommandSpeaking = true;
+      await _homeCommandTtsService.speak('Mengirim SOS darurat');
+      await SosService().sendSosAlert();
+      await Future.delayed(const Duration(milliseconds: 600));
+      await _homeCommandTtsService.speak(
+        'Status SOS, berhasil dikirim ke keluarga',
+      );
+    } catch (_) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      await _homeCommandTtsService.speak('Status SOS, gagal dikirim');
+    } finally {
+      _isHomeCommandSpeaking = false;
+      _isSendingHardwareSos = false;
+      _hasHandledHomeCommand = false;
+    }
   }
 
   Future<void> _handleHomeVoiceCommand({required bool isHomePage}) async {
@@ -169,7 +218,6 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
 
     if (isHomePage) {
       _hasHandledHomeCommand = false;
-      startHomeVoiceCommandListener(isHomePage: true);
       return;
     }
 

@@ -10,6 +10,7 @@ import '../../services/core_permission_service.dart';
 import '../../services/live_tracking_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/sos_service.dart';
+import '../../services/smart_cane_ble_service.dart';
 import '../../services/weather_service.dart';
 import '../../services/stt_service.dart';
 import '../../services/tts_service.dart';
@@ -46,12 +47,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   bool _locationFeaturesStarted = false;
   bool _announceHomeOpenedFromVoice = false;
   bool _hasAnnouncedHomeOpened = false;
-  bool _homeSttEnabled = false;
   bool _homeSttActive = false;
   bool _homeSttStarting = false;
-  Timer? _homeSttWatchdog;
-  Timer? _homeSttRestartTimer;
-  int _homeSttGeneration = 0;
+  Future<void>? _sosStatusAnnouncement;
+  StreamSubscription<SmartCaneButtonEvent>? _smartCaneButtonSubscription;
+  StreamSubscription<SmartCaneBatteryData>? _smartCaneBatterySubscription;
+  SmartCaneBatteryData? _latestSmartCaneBatteryData;
 
   late AnimationController _fadeController;
   late AnimationController _rotationController;
@@ -67,6 +68,16 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _firestore = FirebaseFirestore.instance;
     _setupUserNameStream();
     _subscribeToPairingRequests();
+    _smartCaneButtonSubscription = SmartCaneBleService
+        .instance
+        .buttonEventStream
+        .listen(_handleSmartCaneButtonEvent);
+    _latestSmartCaneBatteryData =
+        SmartCaneBleService.instance.latestBatteryData;
+    _smartCaneBatterySubscription = SmartCaneBleService
+        .instance
+        .batteryDataStream
+        .listen(_handleSmartCaneBatteryData);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await CorePermissionService().ensureTunaNetraCorePermissions(
         onLocationPermissionHandled: (_) async {
@@ -97,8 +108,44 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   Future<void> speakSafe(String text) async {
     _isSpeaking = true;
-    await TTSService().speak(text);
+    await _ttsService.speak(text);
     _isSpeaking = false;
+  }
+
+  void _handleSmartCaneBatteryData(SmartCaneBatteryData data) {
+    if (!mounted) return;
+    setState(() {
+      _latestSmartCaneBatteryData = data;
+    });
+  }
+
+  int? get _smartCaneBatteryPercentage =>
+      _latestSmartCaneBatteryData?.percentage;
+
+  String get _smartCaneBatteryLabel {
+    final percentage = _smartCaneBatteryPercentage;
+    if (percentage == null) return '?';
+    return '$percentage%';
+  }
+
+  double get _smartCaneBatteryFillHeight {
+    final percentage = _smartCaneBatteryPercentage;
+    if (percentage == null) return 60;
+    return 60 * math.max(0.08, percentage / 100);
+  }
+
+  List<Color> get _smartCaneBatteryGradient {
+    final percentage = _smartCaneBatteryPercentage;
+    if (percentage == null) {
+      return [Colors.white.withOpacity(0.12), Colors.white.withOpacity(0.18)];
+    }
+    if (percentage <= 20) {
+      return const [Color(0xFFEF4444), Color(0xFFF97316)];
+    }
+    if (percentage <= 40) {
+      return const [Color(0xFFF59E0B), Color(0xFFFBBF24)];
+    }
+    return const [Color(0xFF22C55E), Color(0xFF86EFAC)];
   }
 
   @override
@@ -117,9 +164,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
     await _stopHomeStt();
 
-    await speakSafe("Kamu kembali ke halaman utama");
+    final sosStatusAnnouncement = _sosStatusAnnouncement;
+    if (sosStatusAnnouncement != null) {
+      await sosStatusAnnouncement;
+    }
 
-    _scheduleHomeSttRestart();
+    await speakSafe("Kamu kembali ke halaman utama");
   }
 
   @override
@@ -132,12 +182,13 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
     if (TunaNetraVoiceCommands.isHomeCommand(command)) {
       await speakSafe("Kamu sudah berada di halaman utama");
-      _scheduleHomeSttRestart();
     } else if (command.contains("cuaca")) {
       await _speakCurrentWeather();
     } else if (command.contains("bluetooth")) {
-      await speakSafe("Membuka pengaturan bluetooth");
+      await speakSafe("Membuka bluetooth");
       Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
+    } else if (TunaNetraVoiceCommands.isSosCommand(command)) {
+      await _triggerEmergency();
     } else if (command.contains("navigasi")) {
       await speakSafe("Membuka navigasi");
       Navigator.pushNamed(context, AppRoutes.tunaNetraNavigation);
@@ -152,18 +203,13 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
     } else {
       await speakSafe("Perintah tidak dikenali");
-      _scheduleHomeSttRestart();
     }
   }
 
   void _startListening() {
     if (_isSpeaking || _homeSttStarting || _homeSttActive || !mounted) return;
 
-    _homeSttRestartTimer?.cancel();
-    _homeSttRestartTimer = null;
-    _homeSttEnabled = true;
     _homeSttStarting = true;
-    _startHomeSttWatchdog();
 
     _sttService
         .startListening(
@@ -182,21 +228,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           },
           onStatus: (status) {
             _homeSttActive = status == 'listening';
-
-            if ((status == 'notListening' || status == 'done') &&
-                mounted &&
-                _homeSttEnabled &&
-                !_isSpeaking) {
-              _scheduleHomeSttRestart(
-                delay: const Duration(milliseconds: 1500),
-              );
-            }
           },
           onError: (_) {
             _homeSttActive = false;
-            if (mounted && _homeSttEnabled && !_isSpeaking) {
-              _scheduleHomeSttRestart(delay: const Duration(seconds: 2));
-            }
           },
         )
         .whenComplete(() {
@@ -205,51 +239,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   }
 
   Future<void> _stopHomeStt() async {
-    _homeSttGeneration++;
-    _homeSttEnabled = false;
     _homeSttActive = false;
     _homeSttStarting = false;
-    _homeSttRestartTimer?.cancel();
-    _homeSttRestartTimer = null;
-    _homeSttWatchdog?.cancel();
-    _homeSttWatchdog = null;
     await _sttService.stopListening();
-  }
-
-  void _scheduleHomeSttRestart({
-    Duration delay = const Duration(milliseconds: 300),
-  }) {
-    if (!mounted || _isSpeaking) return;
-
-    _homeSttEnabled = true;
-    _startHomeSttWatchdog();
-
-    if (_homeSttRestartTimer?.isActive ?? false) return;
-
-    final generation = _homeSttGeneration;
-    _homeSttRestartTimer = Timer(delay, () {
-      _homeSttRestartTimer = null;
-      if (!mounted ||
-          !_homeSttEnabled ||
-          _isSpeaking ||
-          generation != _homeSttGeneration) {
-        return;
-      }
-
-      _startListening();
-    });
-  }
-
-  void _startHomeSttWatchdog() {
-    _homeSttWatchdog?.cancel();
-    _homeSttWatchdog = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (!mounted || !_homeSttEnabled || _isSpeaking) return;
-
-      if (!_sttService.isActuallyListening && !_homeSttStarting) {
-        _homeSttActive = false;
-        _scheduleHomeSttRestart(delay: const Duration(milliseconds: 800));
-      }
-    });
   }
 
   bool _isKnownHomeVoiceCommand(String text) {
@@ -261,7 +253,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         text.contains("buku panduan") ||
         text.contains("tongkat pintar") ||
         text.contains("smartcane") ||
-        text.contains("pengaturan");
+        text.contains("pengaturan") ||
+        TunaNetraVoiceCommands.isSosCommand(text);
   }
 
   void _speakIfReady() async {
@@ -272,14 +265,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       _hasAnnouncedHomeOpened = true;
       await _stopHomeStt();
       await speakSafe("Halaman utama dibuka");
-      if (mounted) {
-        _scheduleHomeSttRestart();
-      }
       return;
     }
 
     if (_hasSpoken) {
-      _scheduleHomeSttRestart();
       return;
     }
 
@@ -297,11 +286,32 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       } finally {
         _isSpeaking = false;
       }
-
-      if (mounted) {
-        _scheduleHomeSttRestart();
-      }
     }
+  }
+
+  Future<void> _handleSmartCaneButtonEvent(SmartCaneButtonEvent event) async {
+    debugPrint('[SMARTCANE_BUTTON] Home menerima event: ${event.type}');
+    if (!mounted) return;
+
+    if (event.isVoiceAssistantStop) {
+      debugPrint('[SMARTCANE_BUTTON] Home mematikan STT');
+      await _stopHomeStt();
+      return;
+    }
+
+    if (event.isSos) {
+      debugPrint('[SMARTCANE_BUTTON] Home mengirim SOS');
+      await _triggerEmergency();
+      return;
+    }
+
+    if (!event.isVoiceAssistantStart) return;
+
+    await _stopHomeStt();
+
+    if (!mounted) return;
+    debugPrint('[SMARTCANE_BUTTON] Home menyalakan STT');
+    _startListening();
   }
 
   @override
@@ -395,10 +405,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         await speakSafe(_formatWeatherSpeech(_weatherData!));
       }
     }
-
-    if (mounted) {
-      _scheduleHomeSttRestart();
-    }
   }
 
   void _initializeAnimations() {
@@ -443,6 +449,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   Future<void> _triggerEmergency() async {
     if (_isSendingSos) return;
+    if (!TunaNetraVoiceCommands.claimSosTrigger()) return;
 
     setState(() {
       _isSendingSos = true;
@@ -473,6 +480,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     );
 
     try {
+      await speakSafe('Mengirim SOS darurat');
       await _sosService.sendSosAlert();
 
       if (!mounted) return;
@@ -484,6 +492,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           duration: Duration(seconds: 3),
         ),
       );
+      _queueSosStatusAnnouncement('SOS berhasil dikirim ke keluarga');
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
@@ -494,12 +503,32 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           duration: const Duration(seconds: 4),
         ),
       );
+      _queueSosStatusAnnouncement('SOS gagal dikirim');
     } finally {
       if (mounted) {
         setState(() {
           _isSendingSos = false;
         });
       }
+    }
+  }
+
+  void _queueSosStatusAnnouncement(String message) {
+    final announcement = _announceSosStatus(message);
+    _sosStatusAnnouncement = announcement;
+    unawaited(announcement);
+  }
+
+  Future<void> _announceSosStatus(String message) async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) {
+      _sosStatusAnnouncement = null;
+      return;
+    }
+    try {
+      await speakSafe(message);
+    } finally {
+      _sosStatusAnnouncement = null;
     }
   }
 
@@ -893,24 +922,31 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                   ),
-                                  // Placeholder until SmartCane battery data is available.
+                                  // SmartCane battery fill.
                                   Align(
                                     alignment: Alignment.bottomCenter,
                                     child: Container(
                                       width: double.infinity,
-                                      height: 60,
+                                      height: _smartCaneBatteryFillHeight,
                                       decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.14),
+                                        gradient: LinearGradient(
+                                          begin: Alignment.bottomCenter,
+                                          end: Alignment.topCenter,
+                                          colors: _smartCaneBatteryGradient,
+                                        ),
                                         borderRadius: BorderRadius.circular(6),
                                       ),
                                     ),
                                   ),
                                   Center(
                                     child: Text(
-                                      '?',
+                                      _smartCaneBatteryLabel,
                                       style: AppTextStyles.heading2.copyWith(
                                         color: Colors.white,
-                                        fontSize: 26,
+                                        fontSize:
+                                            _latestSmartCaneBatteryData == null
+                                            ? 26
+                                            : 18,
                                         fontWeight: FontWeight.w900,
                                         shadows: [
                                           Shadow(
@@ -1015,7 +1051,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     WidgetsBinding.instance.removeObserver(this);
     _liveTrackingService.stopHomeLocationTracking();
     _weatherRefreshTimer?.cancel();
-    _homeSttRestartTimer?.cancel();
+    _smartCaneButtonSubscription?.cancel();
+    _smartCaneBatterySubscription?.cancel();
     _authStateSub?.cancel();
     _stopHomeStt();
     routeObserver.unsubscribe(this);

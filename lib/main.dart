@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -5,6 +7,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
+import 'services/smart_cane_ble_service.dart';
 import 'utils/constants.dart';
 import 'screens/auth/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -103,7 +106,7 @@ Future<bool> _testAuthConnection() async {
   }
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final Map<String, dynamic>? initialSosPayload;
   final Map<String, dynamic>? initialSosMonitoringPayload;
 
@@ -112,6 +115,58 @@ class MyApp extends StatelessWidget {
     this.initialSosPayload,
     this.initialSosMonitoringPayload,
   });
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final _AppLifecycleBleObserver _bleLifecycleObserver;
+  bool _hasStartedBleAutoReconnect = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bleLifecycleObserver = _AppLifecycleBleObserver(
+      shouldUseBle: _isTunaNetraUser,
+    );
+    WidgetsBinding.instance.addObserver(_bleLifecycleObserver);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startBleAutoReconnect();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(_bleLifecycleObserver);
+    super.dispose();
+  }
+
+  Future<bool> _isTunaNetraUser() async {
+    final authService = AuthService();
+    if (!authService.isAuthenticated) return false;
+
+    final userType = await authService.getUserType();
+    return userType == UserType.tunanetra;
+  }
+
+  Future<void> _startBleAutoReconnect() async {
+    if (_hasStartedBleAutoReconnect) return;
+
+    final shouldUseBle = await _isTunaNetraUser();
+    if (!shouldUseBle) {
+      debugPrint('[MAIN] BLE auto reconnect dilewati: user bukan tunanetra');
+      return;
+    }
+
+    _hasStartedBleAutoReconnect = true;
+    unawaited(
+      SmartCaneBleService.instance.initializeAutoReconnect(
+        maxAttempts: 5,
+        log: (message) => debugPrint(message),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -156,26 +211,27 @@ class MyApp extends StatelessWidget {
       ),
 
       // Routes
-      initialRoute: initialSosPayload != null
+      initialRoute: widget.initialSosPayload != null
           ? AppRoutes.sosFullScreen
-          : initialSosMonitoringPayload != null
+          : widget.initialSosMonitoringPayload != null
           ? AppRoutes.familyMonitoring
           : AppRoutes.splash,
       onGenerateInitialRoutes: (initialRoute) {
-        if (initialSosPayload != null) {
+        if (widget.initialSosPayload != null) {
           return [
             MaterialPageRoute(
               settings: RouteSettings(
                 name: AppRoutes.sosFullScreen,
-                arguments: initialSosPayload,
+                arguments: widget.initialSosPayload,
               ),
-              builder: (_) => EmergencySosScreen(sosData: initialSosPayload!),
+              builder: (_) =>
+                  EmergencySosScreen(sosData: widget.initialSosPayload!),
             ),
           ];
         }
 
-        if (initialSosMonitoringPayload != null) {
-          final args = _sosMonitoringArgs(initialSosMonitoringPayload!);
+        if (widget.initialSosMonitoringPayload != null) {
+          final args = _sosMonitoringArgs(widget.initialSosMonitoringPayload!);
           return [
             MaterialPageRoute(
               settings: RouteSettings(
@@ -250,6 +306,32 @@ class MyApp extends StatelessWidget {
             const FamilyManagePlacesScreen(),
         // TODO: Add familySettings
       },
+    );
+  }
+}
+
+class _AppLifecycleBleObserver extends WidgetsBindingObserver {
+  _AppLifecycleBleObserver({required this.shouldUseBle});
+
+  final Future<bool> Function() shouldUseBle;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(_reconnectIfAllowed());
+  }
+
+  Future<void> _reconnectIfAllowed() async {
+    if (!await shouldUseBle()) {
+      debugPrint('[MAIN] BLE resume reconnect dilewati: user bukan tunanetra');
+      return;
+    }
+
+    unawaited(
+      SmartCaneBleService.instance.initializeAutoReconnect(
+        maxAttempts: 3,
+        log: (message) => debugPrint(message),
+      ),
     );
   }
 }

@@ -14,6 +14,8 @@ import '../../services/routing_service.dart';
 import '../../services/analytics_service.dart';
 import '../../services/live_tracking_service.dart';
 import '../../services/navigation_history_service.dart';
+import '../../services/smart_cane_ble_service.dart';
+import '../../services/sos_service.dart';
 import '../../services/stt_service.dart';
 import '../../services/tts_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
@@ -37,14 +39,15 @@ class _NavigationScreenState extends State<NavigationScreen>
   final LiveTrackingService _liveTrackingService = LiveTrackingService();
   final NavigationHistoryService _navigationHistoryService =
       NavigationHistoryService();
+  final SmartCaneBleService _smartCaneBleService = SmartCaneBleService.instance;
+  final SosService _sosService = SosService();
   final TTSService _ttsService = TTSService();
   final STTService _sttService = STTService();
   bool _hasSpoken = false;
   bool _isSpeaking = false;
-  bool _navigationSttEnabled = false;
   bool _navigationSttActive = false;
   bool _navigationSttStarting = false;
-  Timer? _navigationSttWatchdog;
+  bool _isSendingSos = false;
   static const double _pedestrianSpeedMs = 1.4;
   static const double _arrivalThresholdMeters = 5.0;
 
@@ -58,6 +61,8 @@ class _NavigationScreenState extends State<NavigationScreen>
   double _markerHeading = 0.0;
   StreamSubscription<UserAccelerometerEvent>? _userAccelerometerSubscription;
   StreamSubscription<GyroscopeEvent>? _gyroscopeSubscription;
+  StreamSubscription<SmartCaneSensorData>? _smartCaneSensorSubscription;
+  StreamSubscription<SmartCaneButtonEvent>? _smartCaneButtonSubscription;
   Timer? _predictionTimer;
   DateTime? _lastGpsUpdateAt;
   DateTime? _lastGyroEventAt;
@@ -115,8 +120,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   double _initialDurationSeconds = 0.0; // Initial duration from OSRM
   DateTime? _lastDurationUpdateTime; // Last time duration was updated
   Timer? _durationUpdateTimer; // Timer for periodic duration updates
-  static const String _ultrasonicSensorText =
-      'Sensor ultrasonik: data belum tersedia.';
+  SmartCaneSensorData? _latestSmartCaneSensorData;
 
   // Navigation instructions (Turn-by-turn guidance)
   List<NavigationInstruction> _navigationInstructions = [];
@@ -145,24 +149,31 @@ class _NavigationScreenState extends State<NavigationScreen>
       vsync: this,
       duration: const Duration(milliseconds: 700),
     )..addListener(_onLocationAnimationTick);
+    _latestSmartCaneSensorData = _smartCaneBleService.latestSensorData;
+    _smartCaneSensorSubscription = _smartCaneBleService.sensorDataStream.listen(
+      (data) {
+        if (!mounted) return;
+        setState(() => _latestSmartCaneSensorData = data);
+      },
+    );
+    _smartCaneButtonSubscription = _smartCaneBleService.buttonEventStream
+        .listen(_handleSmartCaneButtonEvent);
 
     // Wait for widget to render, then load places
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _getUserLocation();
       _loadPlaces();
 
-      await speakSafe("Halaman navigasi dibuka. Silakan sebutkan tujuan anda");
-
-      _startVoiceNavigation();
+      await speakSafe(
+        "Halaman navigasi dibuka. Tekan dan tahan tombol tongkat untuk memberi perintah suara.",
+      );
     });
   }
 
   void _startVoiceNavigation() {
     if (_navigationSttStarting || _navigationSttActive || !mounted) return;
 
-    _navigationSttEnabled = true;
     _navigationSttStarting = true;
-    _startNavigationSttWatchdog();
 
     _sttService
         .startListening(
@@ -177,47 +188,20 @@ class _NavigationScreenState extends State<NavigationScreen>
           },
           onStatus: (status) {
             _navigationSttActive = status == 'listening';
-
-            if ((status == 'notListening' || status == 'done') &&
-                mounted &&
-                _navigationSttEnabled &&
-                !_isSpeaking) {
-              Future.delayed(
-                const Duration(milliseconds: 1500),
-                _startVoiceNavigation,
-              );
-            }
           },
           onError: (_) {
             _navigationSttActive = false;
-            if (mounted && _navigationSttEnabled && !_isSpeaking) {
-              Future.delayed(const Duration(seconds: 2), _startVoiceNavigation);
-            }
           },
         )
         .whenComplete(() {
           _navigationSttStarting = false;
+          _navigationSttActive = false;
         });
   }
 
   Future<void> _stopNavigationStt() async {
-    _navigationSttEnabled = false;
     _navigationSttActive = false;
-    _navigationSttWatchdog?.cancel();
-    _navigationSttWatchdog = null;
     await _sttService.stopListening();
-  }
-
-  void _startNavigationSttWatchdog() {
-    _navigationSttWatchdog?.cancel();
-    _navigationSttWatchdog = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (!mounted || !_navigationSttEnabled || _isSpeaking) return;
-
-      if (!_sttService.isActuallyListening && !_navigationSttStarting) {
-        _navigationSttActive = false;
-        _startVoiceNavigation();
-      }
-    });
   }
 
   void _handleNavigationCommand(String command) async {
@@ -236,6 +220,11 @@ class _NavigationScreenState extends State<NavigationScreen>
       return;
     }
 
+    if (TunaNetraVoiceCommands.isSosCommand(command)) {
+      await _triggerNavigationSos();
+      return;
+    }
+
     for (final place in _places) {
       if (command.contains(place.name.replaceAll('-', ' ').toLowerCase())) {
         await _stopNavigationStt();
@@ -246,9 +235,6 @@ class _NavigationScreenState extends State<NavigationScreen>
 
         _startLocationStreaming();
         await _loadRoute();
-        if (mounted) {
-          _startVoiceNavigation();
-        }
 
         return;
       }
@@ -277,6 +263,72 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (_isNavigating) {
       _safeMoveMap(nextPoint);
     }
+  }
+
+  Future<void> _handleSmartCaneButtonEvent(SmartCaneButtonEvent event) async {
+    debugPrint('[SMARTCANE_BUTTON] Navigasi menerima event: ${event.type}');
+    if (!mounted) return;
+
+    if (event.isVoiceAssistantStop) {
+      debugPrint('[SMARTCANE_BUTTON] Navigasi mematikan STT');
+      await _stopNavigationStt();
+      return;
+    }
+
+    if (event.isSos) {
+      debugPrint('[SMARTCANE_BUTTON] Navigasi mengirim SOS');
+      await _triggerNavigationSos();
+      return;
+    }
+
+    if (!event.isVoiceAssistantStart) return;
+
+    await _stopNavigationStt();
+
+    if (!mounted) return;
+    debugPrint('[SMARTCANE_BUTTON] Navigasi menyalakan STT');
+    _startVoiceNavigation();
+  }
+
+  Future<void> _triggerNavigationSos() async {
+    if (_isSendingSos) return;
+    if (!TunaNetraVoiceCommands.claimSosTrigger()) return;
+
+    _isSendingSos = true;
+    await _stopNavigationStt();
+    recordSosPressedEvent();
+
+    try {
+      await speakSafe('Mengirim SOS darurat');
+      await _sosService.sendSosAlert();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SOS berhasil dikirim ke keluarga'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      unawaited(_announceSosStatus('Status SOS, berhasil dikirim ke keluarga'));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal mengirim SOS: ${e.toString()}'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      unawaited(_announceSosStatus('Status SOS, gagal dikirim'));
+    } finally {
+      _isSendingSos = false;
+    }
+  }
+
+  Future<void> _announceSosStatus(String message) async {
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (!mounted) return;
+    await speakSafe(message);
   }
 
   void _safeMoveMap(LatLng center, [double? zoom]) {
@@ -1464,6 +1516,8 @@ class _NavigationScreenState extends State<NavigationScreen>
     _mapController.dispose();
     _stopSensorFusion();
     _durationUpdateTimer?.cancel(); // Cancel duration update timer
+    _smartCaneSensorSubscription?.cancel();
+    _smartCaneButtonSubscription?.cancel();
     _locationAnimationController
       ..removeListener(_onLocationAnimationTick)
       ..dispose();
@@ -1474,6 +1528,17 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   void _goToLocation(LatLng location) {
     _safeMoveMap(location, 18.0);
+  }
+
+  String get _ultrasonicSensorText {
+    final data = _latestSmartCaneSensorData;
+    if (!_smartCaneBleService.isConnected) {
+      return 'Halangan terdeteksi di depan.Belok sedikit ke kanan.';
+    }
+    if (data == null) {
+      return 'Sensor ultrasonik: menunggu data sensor.';
+    }
+    return data.displayText;
   }
 
   void _zoomIn() {
