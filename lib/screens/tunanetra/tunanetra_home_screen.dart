@@ -130,8 +130,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   double get _smartCaneBatteryFillHeight {
     final percentage = _smartCaneBatteryPercentage;
-    if (percentage == null) return 60;
-    return 60 * math.max(0.08, percentage / 100);
+    if (percentage == null) return 44;
+    return 44 * math.max(0.08, percentage / 100);
   }
 
   List<Color> get _smartCaneBatteryGradient {
@@ -867,38 +867,25 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Right: Battery Indicator
                 SizedBox(
-                  width: 52,
+                  width: 42,
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      // Modern Battery Icon with Fill
-                      Container(
-                        width: 52,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.8),
-                            width: 2,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                      SizedBox(
+                        width: 38,
+                        height: 56,
                         child: Stack(
+                          alignment: Alignment.topCenter,
                           children: [
-                            // Battery top bump
                             Positioned(
-                              top: -4,
-                              left: 0,
-                              right: 0,
+                              top: 0,
                               child: Container(
-                                height: 4,
-                                margin: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                ),
+                                width: 14,
+                                height: 5,
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.8),
+                                  color: Colors.white.withOpacity(0.85),
                                   borderRadius: const BorderRadius.only(
                                     topLeft: Radius.circular(2),
                                     topRight: Radius.circular(2),
@@ -906,23 +893,32 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                                 ),
                               ),
                             ),
-                            // Battery fill with gradient
+                            Positioned(
+                              top: 5,
+                              left: 2,
+                              right: 2,
+                              bottom: 0,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.06),
+                                  border: Border.all(
+                                    color: Colors.white.withOpacity(0.85),
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                              ),
+                            ),
                             Container(
-                              width: double.infinity,
-                              height: double.infinity,
+                              margin: const EdgeInsets.only(top: 5),
+                              width: 34,
+                              height: 51,
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(6),
                               ),
+                              clipBehavior: Clip.antiAlias,
                               child: Stack(
                                 children: [
-                                  // Background
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: Colors.white.withOpacity(0.05),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                  ),
-                                  // SmartCane battery fill.
                                   Align(
                                     alignment: Alignment.bottomCenter,
                                     child: Container(
@@ -934,24 +930,23 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                                           end: Alignment.topCenter,
                                           colors: _smartCaneBatteryGradient,
                                         ),
-                                        borderRadius: BorderRadius.circular(6),
                                       ),
                                     ),
                                   ),
                                   Center(
                                     child: Text(
                                       _smartCaneBatteryLabel,
-                                      style: AppTextStyles.heading2.copyWith(
+                                      style: AppTextStyles.bodySmall.copyWith(
                                         color: Colors.white,
                                         fontSize:
                                             _latestSmartCaneBatteryData == null
-                                            ? 26
-                                            : 18,
+                                            ? 24
+                                            : 13,
                                         fontWeight: FontWeight.w900,
                                         shadows: [
                                           Shadow(
                                             color: Colors.black.withOpacity(
-                                              0.3,
+                                              0.35,
                                             ),
                                             blurRadius: 3,
                                           ),

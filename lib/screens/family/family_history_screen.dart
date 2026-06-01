@@ -611,6 +611,8 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                       liveData?['isNavigating'] as bool? ?? false;
                   final batteryLevel =
                       liveData?['batteryLevel']?.toString() ?? '-';
+                  final smartCaneBatteryLevel =
+                      liveData?['smartCaneBatteryLevel']?.toString() ?? '-';
                   final speed = liveData?['speed']?.toString() ?? '-';
                   final accuracy = liveData?['accuracy']?.toString() ?? '-';
                   final destinationName =
@@ -689,6 +691,15 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                             'Baterai',
                             isGpsActive
                                 ? (batteryLevel != '-' ? '$batteryLevel%' : '-')
+                                : '-',
+                          ),
+                          const SizedBox(height: 12),
+                          _buildDetailRow(
+                            'Baterai Tongkat',
+                            isGpsActive
+                                ? (smartCaneBatteryLevel != '-'
+                                      ? '$smartCaneBatteryLevel%'
+                                      : '-')
                                 : '-',
                           ),
                           const SizedBox(height: 12),

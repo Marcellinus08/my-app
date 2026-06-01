@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 
+import 'smart_cane_ble_service.dart';
+
 class LiveTrackingService {
   static final LiveTrackingService _instance = LiveTrackingService._internal();
   factory LiveTrackingService() => _instance;
@@ -59,24 +61,21 @@ class LiveTrackingService {
   void _startHomePositionStream() {
     if (_homeSubscription != null) return;
 
-    _homeSubscription = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 5,
-      ),
-    ).listen(
-      (position) {
-        _lastHomePosition = position;
-        unawaited(
-          updateHomeLocationOnly(
-            position: position,
+    _homeSubscription =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 5,
           ),
+        ).listen(
+          (position) {
+            _lastHomePosition = position;
+            unawaited(updateHomeLocationOnly(position: position));
+          },
+          onError: (_) {
+            unawaited(updateInactiveTracking());
+          },
         );
-      },
-      onError: (_) {
-        unawaited(updateInactiveTracking());
-      },
-    );
   }
 
   Future<void> _refreshHomeTracking({
@@ -84,7 +83,8 @@ class LiveTrackingService {
     int? startToken,
   }) async {
     if (startToken != null && startToken != _homeStartToken) return;
-    if (_navigationSubscription != null || _isStartingNavigationTracking) return;
+    if (_navigationSubscription != null || _isStartingNavigationTracking)
+      return;
 
     final canTrackNow = await _ensureLocationReady();
     if (startToken != null && startToken != _homeStartToken) return;
@@ -106,9 +106,7 @@ class LiveTrackingService {
       );
       if (startToken != null && startToken != _homeStartToken) return;
       _lastHomePosition = position;
-      await updateHomeLocationOnly(
-        position: position,
-      );
+      await updateHomeLocationOnly(position: position);
     } catch (_) {
       await _homeSubscription?.cancel();
       _homeSubscription = null;
@@ -143,33 +141,34 @@ class LiveTrackingService {
         return;
       }
 
-      _navigationSubscription = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.bestForNavigation,
-          distanceFilter: 1,
-        ),
-      ).listen(
-        (position) {
-          _lastNavigationPosition = position;
-          onPosition(position);
-          unawaited(
-            updateLiveTracking(
-              position: position,
-              isNavigating: true,
-              isPredicted: false,
-              gpsStatus: 'gps_live',
-              connectionStatus: 'online',
-              destinationName: destinationName,
-              speed: position.speed.isFinite ? position.speed : null,
-              throttle: true,
+      _navigationSubscription =
+          Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.bestForNavigation,
+              distanceFilter: 1,
             ),
+          ).listen(
+            (position) {
+              _lastNavigationPosition = position;
+              onPosition(position);
+              unawaited(
+                updateLiveTracking(
+                  position: position,
+                  isNavigating: true,
+                  isPredicted: false,
+                  gpsStatus: 'gps_live',
+                  connectionStatus: 'online',
+                  destinationName: destinationName,
+                  speed: position.speed.isFinite ? position.speed : null,
+                  throttle: true,
+                ),
+              );
+            },
+            onError: (error) {
+              unawaited(updateInactiveTracking());
+              onError?.call(error);
+            },
           );
-        },
-        onError: (error) {
-          unawaited(updateInactiveTracking());
-          onError?.call(error);
-        },
-      );
     } finally {
       _isStartingNavigationTracking = false;
     }
@@ -250,9 +249,7 @@ class LiveTrackingService {
     });
   }
 
-  Future<void> updateHomeLocationOnly({
-    required Position position,
-  }) async {
+  Future<void> updateHomeLocationOnly({required Position position}) async {
     final user = _auth.currentUser;
     if (user == null) {
       print('[LIVE_TRACKING] Home update skipped: currentUser is null');
@@ -261,6 +258,8 @@ class LiveTrackingService {
 
     try {
       final batteryLevel = await _battery.batteryLevel;
+      final smartCaneBatteryLevel =
+          SmartCaneBleService.instance.latestBatteryData?.percentage;
 
       await _firestore.collection('live_tracking').doc(user.uid).set({
         'userId': user.uid,
@@ -276,11 +275,12 @@ class LiveTrackingService {
         'gpsStatus': 'gps_live',
         'connectionStatus': 'online',
         'batteryLevel': batteryLevel,
+        'smartCaneBatteryLevel': smartCaneBatteryLevel,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       print(
-        '[LIVE_TRACKING] Home location updated: ${position.latitude}, ${position.longitude}, battery: $batteryLevel%',
+        '[LIVE_TRACKING] Home location updated: ${position.latitude}, ${position.longitude}, battery: $batteryLevel%, caneBattery: ${smartCaneBatteryLevel ?? '-'}%',
       );
     } catch (e) {
       print('[LIVE_TRACKING] Home update failed: $e');
@@ -294,6 +294,7 @@ class LiveTrackingService {
     await _firestore.collection('live_tracking').doc(user.uid).set({
       'userId': user.uid,
       'batteryLevel': null,
+      'smartCaneBatteryLevel': null,
       'lat': null,
       'lng': null,
       'accuracy': null,
@@ -314,11 +315,14 @@ class LiveTrackingService {
     if (user == null) return;
 
     final batteryLevel = await _battery.batteryLevel;
+    final smartCaneBatteryLevel =
+        SmartCaneBleService.instance.latestBatteryData?.percentage;
 
     await _firestore.collection('live_tracking').doc(user.uid).set({
       'userId': user.uid,
       ...data,
       'batteryLevel': batteryLevel,
+      'smartCaneBatteryLevel': smartCaneBatteryLevel,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }

@@ -421,6 +421,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     return _parseBatteryLevel(_liveTrackingData[uid]?['batteryLevel']);
   }
 
+  double? _getLiveSmartCaneBatteryLevel(String uid) {
+    if (!_isUserOnline(uid)) return null;
+    return _parseBatteryLevel(_liveTrackingData[uid]?['smartCaneBatteryLevel']);
+  }
+
   Color _getBatteryColor(double battery) {
     if (battery >= 50) {
       return Colors.green;
@@ -1164,7 +1169,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           final uid = user['uid'] as String? ?? '';
           final location = _latestLocations[uid];
           final isOnline = _isUserOnline(uid);
-          final batteryLevel = _getLiveBatteryLevel(uid);
+          final phoneBatteryLevel = _getLiveBatteryLevel(uid);
+          final smartCaneBatteryLevel = _getLiveSmartCaneBatteryLevel(uid);
 
           return GestureDetector(
             onTap: () {
@@ -1318,10 +1324,10 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                         const SizedBox(width: 10),
 
                         // Battery Indicator
-                        if (batteryLevel != null)
-                          _buildBatteryIndicator(batteryLevel)
-                        else
-                          _buildUnknownBatteryIndicator(),
+                        _buildBatteryStatusIndicators(
+                          smartCaneBatteryLevel: smartCaneBatteryLevel,
+                          phoneBatteryLevel: phoneBatteryLevel,
+                        ),
                       ],
                     ),
                   ),
@@ -1622,86 +1628,69 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Widget _buildBatteryIndicator(double battery) {
+    final fillHeight = 50.0 * math.max(0.08, battery / 100.0);
+    final batteryColor = _getBatteryColor(battery);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 48,
-          height: 60,
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: AppColors.primary.withOpacity(0.3),
-              width: 2,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
+        SizedBox(
+          width: 38,
+          height: 56,
           child: Stack(
+            alignment: Alignment.center,
             children: [
-              // Battery top bump
+              Container(
+                width: 32,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: batteryColor.withOpacity(0.06),
+                  border: Border.all(
+                    color: batteryColor.withOpacity(0.5),
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+              ),
               Positioned(
-                top: -4,
-                left: 0,
-                right: 0,
+                top: 6,
                 child: Container(
+                  width: 11,
                   height: 3,
-                  margin: const EdgeInsets.symmetric(horizontal: 10),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.3),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(2),
-                      topRight: Radius.circular(2),
+                    color: batteryColor.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 3,
+                child: Container(
+                  width: 26,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Container(
+                      width: double.infinity,
+                      height: fillHeight,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [batteryColor, batteryColor.withOpacity(0.6)],
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-              // Battery fill
-              Container(
-                width: double.infinity,
-                height: double.infinity,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Stack(
-                  children: [
-                    // Background
-                    Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.03),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                    ),
-                    // Fill based on battery level
-                    Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Container(
-                        width: double.infinity,
-                        height: (battery / 100) * 60,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [
-                              _getBatteryColor(battery),
-                              _getBatteryColor(battery).withOpacity(0.6),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                      ),
-                    ),
-                    // Percentage text
-                    Center(
-                      child: Text(
-                        '${battery.toInt()}%',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textPrimary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              _buildBatteryPercentText(
+                '${battery.toInt()}%',
+                color: AppColors.textPrimary,
               ),
             ],
           ),
@@ -1711,43 +1700,39 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Widget _buildUnknownBatteryIndicator() {
-    return Container(
-      width: 48,
-      height: 60,
-      decoration: BoxDecoration(
-        border: Border.all(color: AppColors.primary.withOpacity(0.3), width: 2),
-        borderRadius: BorderRadius.circular(8),
-      ),
+    return SizedBox(
+      width: 38,
+      height: 56,
       child: Stack(
+        alignment: Alignment.center,
         children: [
-          Positioned(
-            top: -4,
-            left: 0,
-            right: 0,
-            child: Container(
-              height: 3,
-              margin: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.3),
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(2),
-                  topRight: Radius.circular(2),
-                ),
-              ),
-            ),
-          ),
           Container(
-            width: double.infinity,
-            height: double.infinity,
+            width: 32,
+            height: 54,
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: AppColors.primary.withOpacity(0.5),
+                width: 2,
+              ),
+              borderRadius: BorderRadius.circular(9),
+            ),
+          ),
+          Positioned(
+            top: 6,
+            child: Container(
+              width: 11,
+              height: 3,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.55),
+                borderRadius: BorderRadius.circular(999),
+              ),
             ),
           ),
           Center(
             child: Text(
               '?',
-              style: AppTextStyles.heading2.copyWith(
+              style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.primary,
                 fontSize: 24,
                 fontWeight: FontWeight.w900,
@@ -1755,6 +1740,129 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildBatteryStatusIndicators({
+    required double? smartCaneBatteryLevel,
+    required double? phoneBatteryLevel,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (smartCaneBatteryLevel != null)
+          _buildBatteryPercentageIndicator(smartCaneBatteryLevel)
+        else
+          _buildUnknownBatteryPercentageIndicator(),
+        const SizedBox(width: 8),
+        if (phoneBatteryLevel != null)
+          _buildBatteryIndicator(phoneBatteryLevel)
+        else
+          _buildUnknownBatteryIndicator(),
+      ],
+    );
+  }
+
+  Widget _buildBatteryPercentageIndicator(double battery) {
+    final fillHeight = 52.0 * math.max(0.08, battery / 100.0);
+    final batteryColor = _getBatteryColor(battery);
+
+    return SizedBox(
+      width: 38,
+      height: 56,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ClipPath(
+            clipper: _BatteryPercentShapeClipper(),
+            child: Container(
+              width: 32,
+              height: 54,
+              color: batteryColor.withOpacity(0.08),
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  width: double.infinity,
+                  height: fillHeight,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [batteryColor, batteryColor.withOpacity(0.58)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          CustomPaint(
+            size: const Size(32, 54),
+            painter: _BatteryPercentOutlinePainter(
+              color: batteryColor.withOpacity(0.5),
+            ),
+          ),
+          _buildBatteryPercentText(
+            '${battery.toInt()}%',
+            color: AppColors.textPrimary,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUnknownBatteryPercentageIndicator() {
+    return SizedBox(
+      width: 38,
+      height: 56,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          ClipPath(
+            clipper: _BatteryPercentShapeClipper(),
+            child: Container(
+              width: 32,
+              height: 54,
+              color: AppColors.primary.withOpacity(0.08),
+            ),
+          ),
+          CustomPaint(
+            size: const Size(32, 54),
+            painter: _BatteryPercentOutlinePainter(
+              color: AppColors.primary.withOpacity(0.5),
+            ),
+          ),
+          Text(
+            '?',
+            style: AppTextStyles.heading2.copyWith(
+              color: AppColors.primary,
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBatteryPercentText(String text, {required Color color}) {
+    return Center(
+      child: SizedBox(
+        width: 22,
+        height: 12,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: color,
+              fontSize: 9,
+              fontWeight: FontWeight.w900,
+              height: 1,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1856,4 +1964,57 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       return '${difference.inDays} hari yang lalu';
     }
   }
+}
+
+class _BatteryPercentShapeClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) => _batteryPercentShapePath(size);
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _BatteryPercentOutlinePainter extends CustomPainter {
+  final Color color;
+
+  const _BatteryPercentOutlinePainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeJoin = StrokeJoin.round;
+
+    canvas.drawPath(_batteryPercentShapePath(size), paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BatteryPercentOutlinePainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
+}
+
+Path _batteryPercentShapePath(Size size) {
+  final w = size.width;
+  final h = size.height;
+
+  return Path()
+    ..moveTo(w * 0.50, h * 0.02)
+    ..cubicTo(w * 0.70, h * 0.02, w * 0.76, h * 0.11, w * 0.76, h * 0.20)
+    ..lineTo(w * 0.76, h * 0.29)
+    ..cubicTo(w * 0.76, h * 0.37, w * 0.88, h * 0.38, w * 0.94, h * 0.45)
+    ..cubicTo(w * 0.98, h * 0.52, w * 0.97, h * 0.63, w * 0.97, h * 0.72)
+    ..lineTo(w * 0.97, h * 0.83)
+    ..cubicTo(w * 0.97, h * 0.90, w * 0.82, h * 0.91, w * 0.82, h * 0.96)
+    ..cubicTo(w * 0.82, h * 1.00, w * 0.70, h * 1.00, w * 0.50, h * 1.00)
+    ..cubicTo(w * 0.30, h * 1.00, w * 0.18, h * 1.00, w * 0.18, h * 0.96)
+    ..cubicTo(w * 0.18, h * 0.91, w * 0.03, h * 0.90, w * 0.03, h * 0.83)
+    ..lineTo(w * 0.03, h * 0.72)
+    ..cubicTo(w * 0.03, h * 0.63, w * 0.02, h * 0.52, w * 0.06, h * 0.45)
+    ..cubicTo(w * 0.12, h * 0.38, w * 0.24, h * 0.37, w * 0.24, h * 0.29)
+    ..lineTo(w * 0.24, h * 0.20)
+    ..cubicTo(w * 0.24, h * 0.11, w * 0.30, h * 0.02, w * 0.50, h * 0.02)
+    ..close();
 }
