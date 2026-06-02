@@ -1230,105 +1230,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                         ),
                       ),
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        // User Avatar
-                        Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppColors.primary,
-                                AppColors.primary.withOpacity(0.7),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.primary.withOpacity(0.2),
-                                blurRadius: 12,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Text(
-                              (user['name'] as String).characters.first
-                                  .toUpperCase(),
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 24,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-
-                        // User name and status
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                user['name'] ?? 'Pengguna',
-                                style: AppTextStyles.bodyLarge.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 16,
-                                  color: AppColors.textPrimary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 10,
-                                    height: 10,
-                                    decoration: BoxDecoration(
-                                      color: isOnline
-                                          ? Colors.green
-                                          : Colors.orange,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: isOnline
-                                              ? Colors.green
-                                              : Colors.orange,
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    isOnline ? 'Aktif' : 'Tidak aktif',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: isOnline
-                                          ? Colors.green
-                                          : Colors.orange,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-
-                        // Battery Indicator
-                        _buildBatteryStatusIndicators(
-                          smartCaneBatteryLevel: smartCaneBatteryLevel,
-                          phoneBatteryLevel: phoneBatteryLevel,
-                        ),
-                      ],
+                    child: _buildUserCardHeader(
+                      user: user,
+                      isOnline: isOnline,
+                      smartCaneBatteryLevel: smartCaneBatteryLevel,
+                      phoneBatteryLevel: phoneBatteryLevel,
                     ),
                   ),
 
@@ -1627,120 +1533,103 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     );
   }
 
-  Widget _buildBatteryIndicator(double battery) {
-    final fillHeight = 50.0 * math.max(0.08, battery / 100.0);
-    final batteryColor = _getBatteryColor(battery);
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 38,
-          height: 56,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
-                width: 32,
-                height: 54,
-                decoration: BoxDecoration(
-                  color: batteryColor.withOpacity(0.06),
-                  border: Border.all(
-                    color: batteryColor.withOpacity(0.5),
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-              ),
-              Positioned(
-                top: 6,
-                child: Container(
-                  width: 11,
-                  height: 3,
-                  decoration: BoxDecoration(
-                    color: batteryColor.withOpacity(0.55),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 3,
-                child: Container(
-                  width: 26,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(7),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Container(
-                      width: double.infinity,
-                      height: fillHeight,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [batteryColor, batteryColor.withOpacity(0.6)],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              _buildBatteryPercentText(
-                '${battery.toInt()}%',
-                color: AppColors.textPrimary,
-              ),
-            ],
-          ),
-        ),
-      ],
+  Widget _buildUserCardHeader({
+    required Map<String, dynamic> user,
+    required bool isOnline,
+    required double? smartCaneBatteryLevel,
+    required double? phoneBatteryLevel,
+  }) {
+    final userName = (user['name'] as String?)?.trim();
+    final displayName = userName?.isNotEmpty == true ? userName! : 'Pengguna';
+    final avatarText = displayName.characters.first.toUpperCase();
+    final batteryIndicators = _buildBatteryStatusIndicators(
+      smartCaneBatteryLevel: smartCaneBatteryLevel,
+      phoneBatteryLevel: phoneBatteryLevel,
     );
-  }
 
-  Widget _buildUnknownBatteryIndicator() {
-    return SizedBox(
-      width: 38,
+    final avatar = Container(
+      width: 56,
       height: 56,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 32,
-            height: 54,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.08),
-              border: Border.all(
-                color: AppColors.primary.withOpacity(0.5),
-                width: 2,
-              ),
-              borderRadius: BorderRadius.circular(9),
-            ),
-          ),
-          Positioned(
-            top: 6,
-            child: Container(
-              width: 11,
-              height: 3,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.55),
-                borderRadius: BorderRadius.circular(999),
-              ),
-            ),
-          ),
-          Center(
-            child: Text(
-              '?',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.primary,
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.7)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.2),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
+      child: Center(
+        child: Text(
+          avatarText,
+          style: AppTextStyles.heading2.copyWith(
+            color: Colors.white,
+            fontSize: 24,
+          ),
+        ),
+      ),
+    );
+
+    final userInfo = Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            displayName,
+            style: AppTextStyles.bodyLarge.copyWith(
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+              color: AppColors.textPrimary,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: isOnline ? Colors.green : Colors.orange,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: isOnline ? Colors.green : Colors.orange,
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isOnline ? 'Aktif' : 'Tidak aktif',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: isOnline ? Colors.green : Colors.orange,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    final identity = Row(
+      children: [avatar, const SizedBox(width: 14), userInfo],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [identity, const SizedBox(height: 14), batteryIndicators],
     );
   }
 
@@ -1749,119 +1638,128 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     required double? phoneBatteryLevel,
   }) {
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        if (smartCaneBatteryLevel != null)
-          _buildBatteryPercentageIndicator(smartCaneBatteryLevel)
-        else
-          _buildUnknownBatteryPercentageIndicator(),
-        const SizedBox(width: 8),
-        if (phoneBatteryLevel != null)
-          _buildBatteryIndicator(phoneBatteryLevel)
-        else
-          _buildUnknownBatteryIndicator(),
+        Expanded(
+          child: _buildBatteryBadge(
+            label: 'Tongkat',
+            semanticLabel: 'Baterai tongkat pintar',
+            battery: smartCaneBatteryLevel,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _buildBatteryBadge(
+            label: 'HP',
+            semanticLabel: 'Baterai HP pengguna',
+            battery: phoneBatteryLevel,
+          ),
+        ),
       ],
     );
   }
 
-  Widget _buildBatteryPercentageIndicator(double battery) {
-    final fillHeight = 52.0 * math.max(0.08, battery / 100.0);
-    final batteryColor = _getBatteryColor(battery);
+  Widget _buildBatteryBadge({
+    required String label,
+    required String semanticLabel,
+    required double? battery,
+  }) {
+    final batteryLevel = battery;
+    final hasBattery = batteryLevel != null;
+    final batteryColor = hasBattery
+        ? _getBatteryColor(batteryLevel)
+        : AppColors.textSecondary;
+    final percentText = hasBattery ? '${batteryLevel.toInt()}%' : '?';
+    final fillWidth = hasBattery ? math.max(0.08, batteryLevel / 100.0) : 0.0;
 
-    return SizedBox(
-      width: 38,
-      height: 56,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          ClipPath(
-            clipper: _BatteryPercentShapeClipper(),
-            child: Container(
-              width: 32,
-              height: 54,
-              color: batteryColor.withOpacity(0.08),
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  width: double.infinity,
-                  height: fillHeight,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [batteryColor, batteryColor.withOpacity(0.58)],
-                    ),
+    return Semantics(
+      label: '$semanticLabel: $percentText',
+      child: SizedBox(
+        height: 40,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned(
+              right: -4,
+              top: 17,
+              child: Container(
+                width: 5,
+                height: 14,
+                decoration: BoxDecoration(
+                  color: batteryColor.withValues(alpha: 0.42),
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(3),
+                    bottomRight: Radius.circular(3),
                   ),
                 ),
               ),
             ),
-          ),
-          CustomPaint(
-            size: const Size(32, 54),
-            painter: _BatteryPercentOutlinePainter(
-              color: batteryColor.withOpacity(0.5),
+            Positioned.fill(
+              right: 1,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: batteryColor.withValues(alpha: 0.48),
+                    width: 2,
+                  ),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (hasBattery)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: FractionallySizedBox(
+                          widthFactor: fillWidth,
+                          heightFactor: 1,
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [
+                                  batteryColor,
+                                  batteryColor.withValues(alpha: 0.72),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: [
+                          Text(
+                            label,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            percentText,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: hasBattery
+                                  ? AppColors.textPrimary
+                                  : AppColors.textSecondary,
+                              fontSize: hasBattery ? 14 : 20,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          _buildBatteryPercentText(
-            '${battery.toInt()}%',
-            color: AppColors.textPrimary,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUnknownBatteryPercentageIndicator() {
-    return SizedBox(
-      width: 38,
-      height: 56,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          ClipPath(
-            clipper: _BatteryPercentShapeClipper(),
-            child: Container(
-              width: 32,
-              height: 54,
-              color: AppColors.primary.withOpacity(0.08),
-            ),
-          ),
-          CustomPaint(
-            size: const Size(32, 54),
-            painter: _BatteryPercentOutlinePainter(
-              color: AppColors.primary.withOpacity(0.5),
-            ),
-          ),
-          Text(
-            '?',
-            style: AppTextStyles.heading2.copyWith(
-              color: AppColors.primary,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBatteryPercentText(String text, {required Color color}) {
-    return Center(
-      child: SizedBox(
-        width: 22,
-        height: 12,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: color,
-              fontSize: 9,
-              fontWeight: FontWeight.w900,
-              height: 1,
-            ),
-          ),
+          ],
         ),
       ),
     );
@@ -1964,57 +1862,4 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       return '${difference.inDays} hari yang lalu';
     }
   }
-}
-
-class _BatteryPercentShapeClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) => _batteryPercentShapePath(size);
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
-}
-
-class _BatteryPercentOutlinePainter extends CustomPainter {
-  final Color color;
-
-  const _BatteryPercentOutlinePainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2
-      ..strokeJoin = StrokeJoin.round;
-
-    canvas.drawPath(_batteryPercentShapePath(size), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _BatteryPercentOutlinePainter oldDelegate) {
-    return oldDelegate.color != color;
-  }
-}
-
-Path _batteryPercentShapePath(Size size) {
-  final w = size.width;
-  final h = size.height;
-
-  return Path()
-    ..moveTo(w * 0.50, h * 0.02)
-    ..cubicTo(w * 0.70, h * 0.02, w * 0.76, h * 0.11, w * 0.76, h * 0.20)
-    ..lineTo(w * 0.76, h * 0.29)
-    ..cubicTo(w * 0.76, h * 0.37, w * 0.88, h * 0.38, w * 0.94, h * 0.45)
-    ..cubicTo(w * 0.98, h * 0.52, w * 0.97, h * 0.63, w * 0.97, h * 0.72)
-    ..lineTo(w * 0.97, h * 0.83)
-    ..cubicTo(w * 0.97, h * 0.90, w * 0.82, h * 0.91, w * 0.82, h * 0.96)
-    ..cubicTo(w * 0.82, h * 1.00, w * 0.70, h * 1.00, w * 0.50, h * 1.00)
-    ..cubicTo(w * 0.30, h * 1.00, w * 0.18, h * 1.00, w * 0.18, h * 0.96)
-    ..cubicTo(w * 0.18, h * 0.91, w * 0.03, h * 0.90, w * 0.03, h * 0.83)
-    ..lineTo(w * 0.03, h * 0.72)
-    ..cubicTo(w * 0.03, h * 0.63, w * 0.02, h * 0.52, w * 0.06, h * 0.45)
-    ..cubicTo(w * 0.12, h * 0.38, w * 0.24, h * 0.37, w * 0.24, h * 0.29)
-    ..lineTo(w * 0.24, h * 0.20)
-    ..cubicTo(w * 0.24, h * 0.11, w * 0.30, h * 0.02, w * 0.50, h * 0.02)
-    ..close();
 }

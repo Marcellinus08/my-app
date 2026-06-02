@@ -688,7 +688,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                           ),
                           const SizedBox(height: 12),
                           _buildDetailRow(
-                            'Baterai',
+                            'Baterai HP',
                             isGpsActive
                                 ? (batteryLevel != '-' ? '$batteryLevel%' : '-')
                                 : '-',
