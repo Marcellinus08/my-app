@@ -1,9 +1,12 @@
 import '../../main.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'dart:math' as math;
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/core_permission_service.dart';
@@ -15,6 +18,7 @@ import '../../services/weather_service.dart';
 import '../../services/stt_service.dart';
 import '../../services/tts_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
+import '../../widgets/app_dialog.dart';
 
 class TunaNetraHomeScreen extends StatefulWidget {
   const TunaNetraHomeScreen({super.key});
@@ -26,16 +30,29 @@ class TunaNetraHomeScreen extends StatefulWidget {
 class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
   static bool _hasSpokenWelcomeThisSession = false;
+  static final Guid _smartCaneServiceUuid = Guid(
+    '0000a001-0000-1000-8000-00805f9b34fb',
+  );
+  static final Guid _pairingCharacteristicUuid = Guid(
+    '0000a003-0000-1000-8000-00805f9b34fb',
+  );
 
   String _userName = 'Pengguna';
   WeatherData? _weatherData;
   bool _isLoadingWeather = true;
   bool _isSendingSos = false;
+  final SmartCaneBleService _bleService = SmartCaneBleService.instance;
   final LiveTrackingService _liveTrackingService = LiveTrackingService();
   final PairingService _pairingService = PairingService();
   final SosService _sosService = SosService();
+  final TextEditingController _homeCaneCodeController = TextEditingController();
+  final TextEditingController _homeCanePinController = TextEditingController();
+  final Map<DeviceIdentifier, ScanResult> _homeScanResults = {};
   StreamSubscription<User?>? _authStateSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _pairingRequestSub;
+  StreamSubscription<List<ScanResult>>? _homeScanSubscription;
+  StreamSubscription<bool>? _homeScanStateSubscription;
+  StreamSubscription<BluetoothAdapterState>? _homeAdapterStateSubscription;
   Timer? _weatherRefreshTimer;
   final Set<String> _shownPairingRequestIds = {};
   bool _isPairingDialogOpen = false;
@@ -49,6 +66,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   bool _hasAnnouncedHomeOpened = false;
   bool _homeSttActive = false;
   bool _homeSttStarting = false;
+  bool _isBluetoothOn = false;
+  bool _hasBlePermission = false;
+  bool _isHomeBleScanning = false;
+  bool _isHomePairingCane = false;
+  String _homeBleStatus = 'Belum terhubung';
+  ScanResult? _homeSelectedCaneResult;
   Future<void>? _sosStatusAnnouncement;
   StreamSubscription<SmartCaneButtonEvent>? _smartCaneButtonSubscription;
   StreamSubscription<SmartCaneBatteryData>? _smartCaneBatterySubscription;
@@ -68,6 +91,14 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _firestore = FirebaseFirestore.instance;
     _setupUserNameStream();
     _subscribeToPairingRequests();
+    _bleService.addListener(_syncHomeBleServiceState);
+    _homeAdapterStateSubscription = FlutterBluePlus.adapterState.listen((
+      state,
+    ) {
+      if (!mounted) return;
+      setState(() => _isBluetoothOn = state == BluetoothAdapterState.on);
+    });
+    unawaited(_checkHomeBluetoothStatus());
     _smartCaneButtonSubscription = SmartCaneBleService
         .instance
         .buttonEventStream
@@ -128,25 +159,63 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     return '$percentage%';
   }
 
-  double get _smartCaneBatteryFillHeight {
+  bool get _isSmartCaneConnected =>
+      SmartCaneBleService.instance.connectedDevice != null;
+
+  bool get _hasRecentSensorData =>
+      SmartCaneBleService.instance.latestSensorData != null;
+
+  bool get _isSmartCaneBatteryLow {
     final percentage = _smartCaneBatteryPercentage;
-    if (percentage == null) return 44;
-    return 44 * math.max(0.08, percentage / 100);
+    return percentage != null && percentage <= 20;
   }
 
-  List<Color> get _smartCaneBatteryGradient {
-    final percentage = _smartCaneBatteryPercentage;
-    if (percentage == null) {
-      return [Colors.white.withOpacity(0.12), Colors.white.withOpacity(0.18)];
-    }
-    if (percentage <= 20) {
-      return const [Color(0xFFEF4444), Color(0xFFF97316)];
-    }
-    if (percentage <= 40) {
-      return const [Color(0xFFF59E0B), Color(0xFFFBBF24)];
-    }
-    return const [Color(0xFF22C55E), Color(0xFF86EFAC)];
+  Color get _smartCaneStatusColor {
+    if (!_isSmartCaneConnected) return AppColors.warning;
+    if (_isSmartCaneBatteryLow) return AppColors.error;
+    return AppColors.success;
   }
+
+  Color get _batteryStatusColor {
+    final percentage = _smartCaneBatteryPercentage;
+    if (percentage == null) return AppColors.textTertiary;
+    if (percentage <= 20) return AppColors.error;
+    if (percentage <= 40) return AppColors.warning;
+    return AppColors.success;
+  }
+
+  String get _smartCanePrimaryStatus {
+    if (!_isSmartCaneConnected) return 'Tongkat belum terhubung';
+    if (_isSmartCaneBatteryLow) return 'Baterai tongkat rendah';
+    return 'Smart Cane Terhubung';
+  }
+
+  String get _smartCaneSecondaryStatus {
+    if (!_isSmartCaneConnected) return 'Hubungkan melalui koneksi';
+    if (_isSmartCaneBatteryLow) return 'Lakukan pengisian baterai segera';
+    if (_hasRecentSensorData) return 'Sensor aktif dan siap membantu';
+    return 'Menunggu data sensor';
+  }
+
+  String get _bluetoothStatusLabel {
+    if (_isSmartCaneConnected) return 'Terhubung';
+    if (_isHomePairingCane || _bleService.isConnecting) {
+      return 'Menyambungkan';
+    }
+    if (_isHomeBleScanning) return 'Mencari perangkat';
+    return 'Belum terhubung';
+  }
+
+  String get _navigationStatusLabel =>
+      _isSmartCaneConnected ? 'Navigasi Siap Digunakan' : 'Navigasi belum siap';
+
+  String get _sensorStatusLabel {
+    if (!_isSmartCaneConnected) return 'Belum terhubung';
+    return 'SmartCane siap';
+  }
+
+  String get _gpsStatusLabel =>
+      _locationFeaturesStarted ? 'GPS Aktif' : 'GPS menunggu izin';
 
   @override
   void didChangeDependencies() {
@@ -185,8 +254,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     } else if (command.contains("cuaca")) {
       await _speakCurrentWeather();
     } else if (command.contains("bluetooth")) {
-      await speakSafe("Membuka bluetooth");
-      Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
+      await speakSafe("Membuka koneksi perangkat");
+      await _handleHomeConnectionTap();
     } else if (TunaNetraVoiceCommands.isSosCommand(command)) {
       await _triggerEmergency();
     } else if (command.contains("navigasi")) {
@@ -195,9 +264,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     } else if (command.contains("ebook") || command.contains("buku panduan")) {
       await speakSafe("Membuka buku panduan");
       Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
-    } else if (command.contains("tongkat pintar")) {
-      await speakSafe("Membuka pengaturan smartcane");
-      Navigator.pushNamed(context, AppRoutes.tunaNetraSmartcane);
     } else if (command.contains("pengaturan")) {
       await speakSafe("Membuka pengaturan");
       Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
@@ -431,16 +497,674 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     Navigator.pushNamed(context, AppRoutes.tunaNetraNavigation);
   }
 
-  void _navigateToBluetooth() {
-    Navigator.pushNamed(context, AppRoutes.tunaNetraBluetooth);
+  void _syncHomeBleServiceState() {
+    if (!mounted) return;
+    setState(() {
+      if (_bleService.isConnected) {
+        final name = _bleService.connectedBleName ?? 'TemanArah-Cane';
+        _homeBleStatus = 'Terhubung ke $name';
+      } else if (_homeBleStatus.startsWith('Terhubung')) {
+        _homeBleStatus = _isBluetoothOn
+            ? 'Belum terhubung'
+            : 'Bluetooth belum aktif';
+      }
+    });
+  }
+
+  Future<void> _handleHomeConnectionTap() async {
+    if (_isHomeBleScanning || _isHomePairingCane || _bleService.isConnecting) {
+      return;
+    }
+
+    if (_bleService.isConnected) {
+      await _disconnectHomeBleDevice();
+      return;
+    }
+
+    await _scanAndShowHomeBleDevices();
+  }
+
+  Future<void> _checkHomeBluetoothStatus() async {
+    try {
+      final adapterState = await FlutterBluePlus.adapterState.first;
+      if (!mounted) return;
+      setState(() => _isBluetoothOn = adapterState == BluetoothAdapterState.on);
+    } catch (error) {
+      _updateHomeBleStatus('Gagal mengecek Bluetooth');
+      debugPrint('[HOME-BLE] Gagal mengecek adapter: $error');
+    }
+  }
+
+  Future<void> _requestHomeBlePermissions() async {
+    if (defaultTargetPlatform != TargetPlatform.android) {
+      if (!mounted) return;
+      setState(() => _hasBlePermission = true);
+      return;
+    }
+
+    final permissions = <Permission>[
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.locationWhenInUse,
+    ];
+    final statuses = await permissions.request();
+    final granted = statuses.values.every((status) => status.isGranted);
+
+    if (!mounted) return;
+    setState(() => _hasBlePermission = granted);
+    if (!granted) {
+      _updateHomeBleStatus('Izin Bluetooth belum lengkap');
+    }
+  }
+
+  Future<void> _turnOnHomeBluetooth() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return;
+
+    try {
+      await FlutterBluePlus.turnOn(timeout: 20);
+      await _checkHomeBluetoothStatus();
+    } catch (error) {
+      _updateHomeBleStatus('Bluetooth belum aktif');
+      debugPrint('[HOME-BLE] Gagal menyalakan Bluetooth: $error');
+    }
+  }
+
+  Future<void> _startHomeBleScan({
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    await _checkHomeBluetoothStatus();
+    await _requestHomeBlePermissions();
+
+    if (!_isBluetoothOn) {
+      _updateHomeBleStatus('Menyalakan Bluetooth...');
+      await _turnOnHomeBluetooth();
+      await _checkHomeBluetoothStatus();
+
+      if (!_isBluetoothOn) {
+        _showHomeBleSnackBar(
+          'Bluetooth belum aktif. Nyalakan Bluetooth lalu coba kembali.',
+          isError: true,
+        );
+        return;
+      }
+    }
+
+    if (!_hasBlePermission) {
+      _showHomeBleSnackBar(
+        'Izin Bluetooth belum lengkap. Periksa izin aplikasi lalu coba kembali.',
+        isError: true,
+      );
+      return;
+    }
+
+    await _stopHomeBleScan(logWhenStopped: false);
+
+    if (!mounted) return;
+    setState(() {
+      _homeScanResults.clear();
+      _homeSelectedCaneResult = null;
+      _homeBleStatus = 'Mencari tongkat...';
+    });
+
+    _homeScanSubscription = FlutterBluePlus.scanResults.listen((results) {
+      var hasNewDevice = false;
+      for (final result in results) {
+        final remoteId = result.device.remoteId;
+        if (!_homeScanResults.containsKey(remoteId)) {
+          hasNewDevice = true;
+        }
+        _homeScanResults[remoteId] = result;
+      }
+      if (hasNewDevice && mounted) setState(() {});
+    });
+
+    _homeScanStateSubscription = FlutterBluePlus.isScanning.listen((
+      isScanning,
+    ) {
+      if (!mounted) return;
+      setState(() => _isHomeBleScanning = isScanning);
+    });
+
+    try {
+      await FlutterBluePlus.startScan(timeout: timeout);
+    } catch (error) {
+      _updateHomeBleStatus('Gagal mencari tongkat');
+      debugPrint('[HOME-BLE] Scan gagal: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isHomeBleScanning = false;
+          if (_homeBleStatus == 'Mencari tongkat...') {
+            _homeBleStatus = _homeScanResults.isEmpty
+                ? 'Tongkat tidak ditemukan'
+                : 'Pilih tongkat';
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _stopHomeBleScan({bool logWhenStopped = true}) async {
+    try {
+      if (FlutterBluePlus.isScanningNow) {
+        await FlutterBluePlus.stopScan();
+      }
+    } catch (error) {
+      debugPrint('[HOME-BLE] Gagal menghentikan scan: $error');
+    }
+
+    await _homeScanSubscription?.cancel();
+    _homeScanSubscription = null;
+    await _homeScanStateSubscription?.cancel();
+    _homeScanStateSubscription = null;
+
+    if (!mounted) return;
+    setState(() => _isHomeBleScanning = false);
+  }
+
+  Future<void> _scanAndShowHomeBleDevices() async {
+    if (_bleService.isAutoConnecting) return;
+
+    await _startHomeBleScan();
+    if (!mounted) return;
+
+    final results = _visibleHomeScanResults();
+    if (results.isEmpty) {
+      _showHomeBleSnackBar(
+        'Tidak ada perangkat tongkat yang ditemukan.',
+        isError: true,
+      );
+      return;
+    }
+
+    final selected = await _showHomeScanResultsSheet(results);
+    if (selected == null || !mounted) return;
+
+    _homeSelectedCaneResult = selected;
+    _updateHomeBleStatus(
+      'Perangkat dipilih: ${_displayHomeDeviceName(selected)}',
+    );
+    await _stopHomeBleScan(logWhenStopped: false);
+    await _showHomePairingDialog(selected);
+  }
+
+  Future<ScanResult?> _showHomeScanResultsSheet(List<ScanResult> results) {
+    return showModalBottomSheet<ScanResult>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            border: const Border(
+              top: BorderSide(color: AppDialogStyle.borderColor),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.textPrimary.withValues(alpha: 0.045),
+                blurRadius: 14,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 5,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'Hubungkan Tongkat',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Pilih Smart Cane yang ditemukan di sekitar.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          for (final result in results) ...[
+                            _HomeBleDeviceTile(
+                              name: _displayHomeDeviceName(result),
+                              remoteId: result.device.remoteId.toString(),
+                              rssi: result.rssi,
+                              onTap: () => Navigator.pop(context, result),
+                            ),
+                            if (result != results.last)
+                              const SizedBox(height: 10),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _showHomePairingDialog(ScanResult result) async {
+    _homeCaneCodeController.clear();
+    _homeCanePinController.clear();
+
+    final submitted = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      useSafeArea: true,
+      isDismissible: !_isHomePairingCane,
+      enableDrag: !_isHomePairingCane,
+      builder: (context) {
+        final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+        return AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: bottomInset),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(16),
+              ),
+              border: const Border(
+                top: BorderSide(color: AppDialogStyle.borderColor),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.textPrimary.withValues(alpha: 0.045),
+                  blurRadius: 14,
+                  offset: const Offset(0, -5),
+                ),
+              ],
+            ),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: AppColors.infoLight.withValues(alpha: 0.62),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.bluetooth_rounded,
+                            color: AppColors.primaryDark,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Hubungkan Tongkat',
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _displayHomeDeviceName(result),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    _HomePairingTextField(
+                      controller: _homeCaneCodeController,
+                      icon: Icons.badge_rounded,
+                      label: 'Kode Tongkat',
+                      keyboardType: TextInputType.text,
+                    ),
+                    const SizedBox(height: 12),
+                    _HomePairingTextField(
+                      controller: _homeCanePinController,
+                      icon: Icons.pin_rounded,
+                      label: 'PIN Tongkat',
+                      keyboardType: TextInputType.number,
+                      obscureText: true,
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(context, true),
+                      icon: const Icon(Icons.link_rounded),
+                      label: const Text('Hubungkan'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryDark,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (submitted == true) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      await _pairHomeCaneWithPin();
+    }
+  }
+
+  Future<void> _pairHomeCaneWithPin() async {
+    final selectedResult = _homeSelectedCaneResult;
+    final caneCode = _homeCaneCodeController.text.trim();
+    final pin = _homeCanePinController.text.trim();
+
+    if (selectedResult == null) {
+      _showHomeBleSnackBar(
+        'Silakan pilih perangkat tongkat terlebih dahulu.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (caneCode.isEmpty || pin.isEmpty) {
+      _showHomeBleSnackBar('Kode tongkat dan PIN wajib diisi.', isError: true);
+      return;
+    }
+
+    await _checkHomeBluetoothStatus();
+    await _requestHomeBlePermissions();
+
+    if (!_isBluetoothOn || !_hasBlePermission) {
+      _showHomeBleSnackBar(
+        'Bluetooth atau izin aplikasi belum siap.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isHomePairingCane = true;
+      _homeBleStatus = 'Menghubungkan tongkat...';
+    });
+
+    try {
+      await _connectHomeBleDevice(selectedResult.device);
+      if (_bleService.connectedDevice == null) {
+        _showHomeBleSnackBar(
+          'Gagal terhubung ke perangkat tongkat.',
+          isError: true,
+        );
+        return;
+      }
+
+      final bleName = _homeDeviceName(selectedResult.device);
+      if (mounted) {
+        setState(() => _homeBleStatus = 'Terhubung ke $bleName');
+      }
+
+      try {
+        final paired = await _sendHomePairingPin(
+          device: selectedResult.device,
+          caneCode: caneCode,
+          pin: pin,
+        );
+
+        if (!paired) {
+          debugPrint('[HOME-BLE] PIN pairing tidak tervalidasi.');
+        }
+      } catch (error) {
+        debugPrint('[HOME-BLE] Validasi pairing dilewati: $error');
+      }
+
+      try {
+        await _saveHomeCanePairingToFirestore(
+          caneCode: caneCode,
+          bleName: bleName,
+          remoteId: selectedResult.device.remoteId.toString(),
+        );
+        await _bleService.saveRememberedCane(
+          caneCode: caneCode,
+          bleName: bleName,
+          remoteId: selectedResult.device.remoteId.toString(),
+        );
+      } catch (error) {
+        debugPrint(
+          '[HOME-BLE] Koneksi berhasil, penyimpanan pairing gagal: $error',
+        );
+      }
+
+      if (!mounted) return;
+      setState(() => _homeBleStatus = 'Terhubung ke $bleName');
+      _showHomeBleSnackBar('Perangkat berhasil terhubung.');
+    } catch (error) {
+      if (_bleService.isConnected) {
+        final bleName = _bleService.connectedBleName ?? 'Smart Cane';
+        if (mounted) {
+          setState(() => _homeBleStatus = 'Terhubung ke $bleName');
+        }
+        _showHomeBleSnackBar('Perangkat berhasil terhubung.');
+        debugPrint('[HOME-BLE] Koneksi berhasil dengan catatan: $error');
+        return;
+      }
+
+      _updateHomeBleStatus('Pairing tongkat gagal');
+      _showHomeBleSnackBar(
+        'Proses koneksi tongkat gagal. Silakan coba kembali.',
+        isError: true,
+      );
+      debugPrint('[HOME-BLE] Pairing gagal: $error');
+    } finally {
+      if (mounted) setState(() => _isHomePairingCane = false);
+    }
+  }
+
+  Future<void> _connectHomeBleDevice(BluetoothDevice device) async {
+    await _stopHomeBleScan(logWhenStopped: false);
+    await _bleService.connectToDevice(
+      device,
+      log: (message) => debugPrint(message),
+      updateStatus: _updateHomeBleStatus,
+    );
+    _syncHomeBleServiceState();
+  }
+
+  Future<void> _disconnectHomeBleDevice() async {
+    await _bleService.disconnect(
+      log: (message) => debugPrint(message),
+      updateStatus: _updateHomeBleStatus,
+    );
+    await _bleService.clearRememberedCane();
+    _syncHomeBleServiceState();
+    _showHomeBleSnackBar('Koneksi tongkat diputus.');
+  }
+
+  Future<bool> _sendHomePairingPin({
+    required BluetoothDevice device,
+    required String caneCode,
+    required String pin,
+  }) async {
+    final services = await device.discoverServices(
+      subscribeToServicesChanged: false,
+    );
+
+    BluetoothCharacteristic? pairingCharacteristic;
+    for (final service in services) {
+      if (service.uuid != _smartCaneServiceUuid) continue;
+      for (final characteristic in service.characteristics) {
+        if (characteristic.uuid == _pairingCharacteristicUuid) {
+          pairingCharacteristic = characteristic;
+          break;
+        }
+      }
+    }
+
+    if (pairingCharacteristic == null) return false;
+
+    final bytes = utf8.encode('$caneCode|$pin');
+    await pairingCharacteristic.write(
+      bytes,
+      withoutResponse: pairingCharacteristic.properties.writeWithoutResponse,
+    );
+
+    if (pairingCharacteristic.properties.read) {
+      final responseBytes = await pairingCharacteristic.read();
+      if (responseBytes.isNotEmpty) {
+        final responseText = utf8.decode(responseBytes, allowMalformed: true);
+        try {
+          final response = jsonDecode(responseText);
+          if (response is Map && response['ok'] == true) return true;
+          if (response is Map && response['ok'] == false) return false;
+        } catch (_) {
+          return responseText.toLowerCase().contains('ok');
+        }
+      }
+    }
+
+    return true;
+  }
+
+  Future<void> _saveHomeCanePairingToFirestore({
+    required String caneCode,
+    required String bleName,
+    required String remoteId,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final firestore = FirebaseFirestore.instance;
+    final now = FieldValue.serverTimestamp();
+    final caneRef = firestore.collection('smart_canes').doc(caneCode);
+    final userCaneRef = firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('smart_canes')
+        .doc(caneCode);
+
+    await firestore.runTransaction((transaction) async {
+      transaction.set(caneRef, {
+        'deviceId': caneCode,
+        'bleName': bleName,
+        'lastRemoteId': remoteId,
+        'ownerUid': user.uid,
+        'allowedUsers': FieldValue.arrayUnion([user.uid]),
+        'pairedPhonesCount': FieldValue.increment(1),
+        'lastPairedAt': now,
+        'updatedAt': now,
+      }, SetOptions(merge: true));
+
+      transaction.set(userCaneRef, {
+        'deviceId': caneCode,
+        'bleName': bleName,
+        'remoteId': remoteId,
+        'pairedAt': now,
+        'lastConnectedAt': now,
+        'role': 'owner',
+      }, SetOptions(merge: true));
+    });
+  }
+
+  void _updateHomeBleStatus(String status) {
+    if (!mounted) return;
+    setState(() => _homeBleStatus = status);
+  }
+
+  void _showHomeBleSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: AppTextStyles.bodySmall.copyWith(color: Colors.white),
+          ),
+          backgroundColor: isError ? AppColors.error : AppColors.success,
+        ),
+      );
+  }
+
+  String _homeDeviceName(BluetoothDevice device) {
+    final platformName = device.platformName.trim();
+    final name = platformName.isNotEmpty ? platformName : device.advName.trim();
+    return name.isEmpty ? 'Unknown BLE Device' : name;
+  }
+
+  String _displayHomeDeviceName(ScanResult result) {
+    final name = _homeDeviceName(result.device);
+    return name == 'Unknown BLE Device' ? 'Perangkat tanpa nama' : name;
+  }
+
+  List<ScanResult> _visibleHomeScanResults() {
+    final results = _homeScanResults.values
+        .where(
+          (result) => _homeDeviceName(result.device) != 'Unknown BLE Device',
+        )
+        .toList();
+    results.sort((a, b) {
+      final aName = _homeDeviceName(a.device).toLowerCase();
+      final bName = _homeDeviceName(b.device).toLowerCase();
+      final aLikelyCane = aName.contains('temanarah');
+      final bLikelyCane = bName.contains('temanarah');
+      if (aLikelyCane != bLikelyCane) return aLikelyCane ? -1 : 1;
+      return b.rssi.compareTo(a.rssi);
+    });
+    return results.take(12).toList();
   }
 
   void _navigateToEbook() {
     Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
-  }
-
-  void _navigateToSmartcane() {
-    Navigator.pushNamed(context, AppRoutes.tunaNetraSmartcane);
   }
 
   void _navigateToSettings() {
@@ -455,36 +1179,26 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       _isSendingSos = true;
     });
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: Row(
-          children: [
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.error),
-            ),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Text(
-                'Mengirim SOS...',
-                style: AppTextStyles.bodyLarge.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    var sosSent = false;
+    Object? sosError;
 
     try {
       await speakSafe('Mengirim SOS darurat');
       await _sosService.sendSosAlert();
+      sosSent = true;
+    } catch (e) {
+      sosError = e;
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSendingSos = false;
+        });
+      }
+    }
 
-      if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
+    if (!mounted) return;
+
+    if (sosSent) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('SOS berhasil dikirim ke keluarga'),
@@ -493,23 +1207,17 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         ),
       );
       _queueSosStatusAnnouncement('SOS berhasil dikirim ke keluarga');
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Gagal mengirim SOS: ${_formatSosError(e)}'),
+          content: Text(
+            'Gagal mengirim SOS: ${_formatSosError(sosError ?? 'tidak diketahui')}',
+          ),
           backgroundColor: AppColors.error,
           duration: const Duration(seconds: 4),
         ),
       );
       _queueSosStatusAnnouncement('SOS gagal dikirim');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSendingSos = false;
-        });
-      }
     }
   }
 
@@ -585,31 +1293,16 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         ? familyName!
         : (familyEmail?.isNotEmpty == true ? familyEmail! : 'Keluarga');
 
-    final accepted = await showDialog<bool>(
+    final accepted = await showAppConfirmDialog(
       context: context,
+      title: 'Konfirmasi Keluarga',
+      description: '$displayName ingin terhubung dan memonitor akun Anda.',
+      icon: Icons.family_restroom_rounded,
+      iconColor: AppColors.primaryDark,
+      cancelText: 'Tolak',
+      confirmText: 'Terima',
+      confirmButtonColor: AppColors.primaryDark,
       barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          'Konfirmasi Keluarga',
-          style: AppTextStyles.heading3.copyWith(fontWeight: FontWeight.w800),
-        ),
-        content: Text(
-          '$displayName ingin terhubung dan memonitor akun Anda.',
-          style: AppTextStyles.bodyLarge,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Tolak'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            icon: const Icon(Icons.check_rounded, size: 18),
-            label: const Text('Terima'),
-          ),
-        ],
-      ),
     );
 
     if (!mounted || accepted == null) {
@@ -654,60 +1347,73 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withOpacity(0.08),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Stack(
-          children: [
-            // Animated rotating circles background
-            ...List.generate(4, (index) {
-              return AnimatedBuilder(
-                animation: _rotationController,
-                builder: (context, child) {
-                  final angle =
-                      _rotationController.value * 2 * math.pi +
-                      (index * math.pi / 2);
-                  final size = 120.0 + (index * 40);
-                  final distance = 150.0 + (index * 30);
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: Stack(
+        children: [
+          FadeTransition(opacity: _fadeAnimation, child: _buildMainContent()),
+          if (_isSendingSos) _buildSosLoadingOverlay(),
+        ],
+      ),
+    );
+  }
 
-                  return Positioned(
-                    left:
-                        MediaQuery.of(context).size.width / 2 +
-                        math.cos(angle) * distance -
-                        size / 2,
-                    top:
-                        MediaQuery.of(context).size.height / 3 +
-                        math.sin(angle) * distance -
-                        size / 2,
-                    child: Container(
-                      width: size,
-                      height: size,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            AppColors.primaryLight.withOpacity(0.06),
-                            Colors.transparent,
-                          ],
-                        ),
+  Widget _buildSosLoadingOverlay() {
+    return Positioned.fill(
+      child: AbsorbPointer(
+        absorbing: true,
+        child: Container(
+          color: AppDialogStyle.barrierColor,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 30),
+          child: Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(maxWidth: 360),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(AppDialogStyle.borderRadius),
+              border: Border.all(color: AppDialogStyle.borderColor),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.10),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppColors.error.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(9),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        AppColors.error,
                       ),
                     ),
-                  );
-                },
-              );
-            }),
-
-            // Main content with fade animation
-            FadeTransition(opacity: _fadeAnimation, child: _buildMainContent()),
-          ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Mengirim SOS...',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -715,329 +1421,280 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   Widget _buildMainContent() {
     return SafeArea(
-      child: Column(
-        children: [
-          // Clean & Elegant Header
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [const Color(0xFF0D47A1), const Color(0xFF1565C0)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 18),
+            _buildSmartCaneStatusCard(),
+            const SizedBox(height: 16),
+            _buildPrimaryActions(),
+            const SizedBox(height: 18),
+            Text(
+              'Menu',
+              style: AppTextStyles.bodyLarge.copyWith(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
               ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0D47A1).withOpacity(0.2),
-                  blurRadius: 25,
-                  offset: const Offset(0, 8),
-                ),
-              ],
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+            const SizedBox(height: 10),
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.45,
               children: [
-                // Left: Greeting + Name + Weather
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Selamat Datang',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: Colors.white.withOpacity(0.85),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            _userName,
-                            maxLines: 1,
-                            style: AppTextStyles.heading1.copyWith(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      // Weather Info
-                      if (_weatherData != null)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '${WeatherService.getWeatherEmoji(_weatherData!.weatherCondition)} ${_weatherData!.temperature.toStringAsFixed(1)}°C',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.white,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '|',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.white.withOpacity(0.5),
-                                      fontSize: 9,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '${_weatherData!.humidity}%',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.white.withOpacity(0.8),
-                                      fontSize: 9,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '|',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.white.withOpacity(0.5),
-                                      fontSize: 9,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '${_weatherData!.windSpeed.toStringAsFixed(0)} km/h',
-                                    style: AppTextStyles.bodySmall.copyWith(
-                                      color: Colors.white.withOpacity(0.8),
-                                      fontSize: 9,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (_isLoadingWeather)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 8),
-                                child: SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 1.5,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white.withOpacity(0.6),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        )
-                      else if (_isLoadingWeather)
-                        SizedBox(
-                          height: 18,
-                          child: Center(
-                            child: SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white.withOpacity(0.5),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                _SafetyMenuCard(
+                  icon: Icons.menu_book_rounded,
+                  title: 'Buku Panduan',
+                  subtitle: 'Panduan penggunaan',
+                  color: AppColors.textSecondary,
+                  onTap: _navigateToEbook,
                 ),
-                const SizedBox(width: 12),
-                SizedBox(
-                  width: 42,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      SizedBox(
-                        width: 38,
-                        height: 56,
-                        child: Stack(
-                          alignment: Alignment.topCenter,
-                          children: [
-                            Positioned(
-                              top: 0,
-                              child: Container(
-                                width: 14,
-                                height: 5,
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.85),
-                                  borderRadius: const BorderRadius.only(
-                                    topLeft: Radius.circular(2),
-                                    topRight: Radius.circular(2),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              top: 5,
-                              left: 2,
-                              right: 2,
-                              bottom: 0,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.06),
-                                  border: Border.all(
-                                    color: Colors.white.withOpacity(0.85),
-                                    width: 2,
-                                  ),
-                                  borderRadius: BorderRadius.circular(7),
-                                ),
-                              ),
-                            ),
-                            Container(
-                              margin: const EdgeInsets.only(top: 5),
-                              width: 34,
-                              height: 51,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              clipBehavior: Clip.antiAlias,
-                              child: Stack(
-                                children: [
-                                  Align(
-                                    alignment: Alignment.bottomCenter,
-                                    child: Container(
-                                      width: double.infinity,
-                                      height: _smartCaneBatteryFillHeight,
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.bottomCenter,
-                                          end: Alignment.topCenter,
-                                          colors: _smartCaneBatteryGradient,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  Center(
-                                    child: Text(
-                                      _smartCaneBatteryLabel,
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: Colors.white,
-                                        fontSize:
-                                            _latestSmartCaneBatteryData == null
-                                            ? 24
-                                            : 13,
-                                        fontWeight: FontWeight.w900,
-                                        shadows: [
-                                          Shadow(
-                                            color: Colors.black.withOpacity(
-                                              0.35,
-                                            ),
-                                            blurRadius: 3,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
+                _SafetyMenuCard(
+                  icon: Icons.settings_rounded,
+                  title: 'Pengaturan',
+                  subtitle: 'Akun dan aplikasi',
+                  color: AppColors.textSecondary,
+                  onTap: _navigateToSettings,
                 ),
               ],
             ),
-          ),
+          ],
+        ),
+      ),
+    );
+  }
 
-          // Main Content
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                children: [
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 16,
-                    mainAxisSpacing: 16,
-                    children: [
-                      _ModernMenuCard(
-                        icon: Icons.map_rounded,
-                        title: 'Navigasi',
-                        gradient: AppColors.primaryGradient,
-                        onTap: _navigateToNavigation,
-                        onHover: () {},
-                      ),
-                      _ModernMenuCard(
-                        icon: Icons.bluetooth_rounded,
-                        title: 'Bluetooth',
-                        gradient: AppColors.successGradient,
-                        onTap: _navigateToBluetooth,
-                        onHover: () {},
-                      ),
-                      _ModernMenuCard(
-                        icon: Icons.book_rounded,
-                        title: 'Buku Panduan',
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF8B5CF6), Color(0xFF7C3AED)],
-                        ),
-                        onTap: _navigateToEbook,
-                        onHover: () {},
-                      ),
-                      _ModernMenuCard(
-                        icon: Icons.accessibility_new_rounded,
-                        title: 'SmartCane',
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFEC4899), Color(0xFFDB2777)],
-                        ),
-                        onTap: _navigateToSmartcane,
-                        onHover: () {},
-                      ),
-                      _ModernMenuCard(
-                        icon: Icons.settings_rounded,
-                        title: 'Pengaturan',
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF64748B), Color(0xFF475569)],
-                        ),
-                        onTap: _navigateToSettings,
-                        onHover: () {},
-                      ),
-                      _ModernMenuCard(
-                        icon: Icons.warning_rounded,
-                        title: 'SOS',
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFEF4444), Color(0xFFDC2626)],
-                        ),
-                        onTap: _triggerEmergency,
-                        onHover: () {},
-                      ),
-                    ],
-                  ),
-                ],
+  Widget _buildHeader() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Selamat datang',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
+              const SizedBox(height: 3),
+              Text(
+                _userName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.heading3.copyWith(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+        _buildWeatherBadge(),
+      ],
+    );
+  }
+
+  Widget _buildWeatherBadge() {
+    if (_weatherData == null) {
+      return Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: _isLoadingWeather
+            ? const Padding(
+                padding: EdgeInsets.all(12),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(
+                Icons.cloud_off_rounded,
+                color: AppColors.textTertiary,
+              ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            WeatherService.getWeatherEmoji(_weatherData!.weatherCondition),
+            style: const TextStyle(fontSize: 16),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '${_weatherData!.temperature.toStringAsFixed(0)} C',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSmartCaneStatusCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withOpacity(0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: _smartCaneStatusColor.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  _isSmartCaneConnected
+                      ? Icons.check_circle_rounded
+                      : Icons.sync_problem_rounded,
+                  color: _smartCaneStatusColor,
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _smartCanePrimaryStatus,
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      _smartCaneSecondaryStatus,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _StatusPill(
+                  icon: _isSmartCaneConnected
+                      ? Icons.bluetooth_connected_rounded
+                      : Icons.bluetooth_searching_rounded,
+                  label: 'Koneksi',
+                  value: _bluetoothStatusLabel,
+                  color: _isSmartCaneConnected
+                      ? AppColors.success
+                      : AppColors.primaryDark,
+                  onTap: _handleHomeConnectionTap,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatusPill(
+                  icon: Icons.sensors_rounded,
+                  label: 'SmartCane',
+                  value: _sensorStatusLabel,
+                  color: _hasRecentSensorData
+                      ? AppColors.success
+                      : AppColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _StatusPill(
+                  icon: Icons.battery_full_rounded,
+                  label: 'Baterai',
+                  value: _smartCaneBatteryPercentage == null
+                      ? 'Belum terbaca'
+                      : _smartCaneBatteryLabel,
+                  color: _batteryStatusColor,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _StatusPill(
+                  icon: Icons.location_on_rounded,
+                  label: 'Lokasi',
+                  value: _gpsStatusLabel,
+                  color: AppColors.info,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPrimaryActions() {
+    return Column(
+      children: [
+        _PrimaryActionButton(
+          icon: Icons.navigation_rounded,
+          title: 'Mulai Navigasi',
+          subtitle: _navigationStatusLabel,
+          color: AppColors.primaryDark,
+          onTap: _navigateToNavigation,
+        ),
+        const SizedBox(height: 12),
+        _PrimaryActionButton(
+          icon: Icons.warning_amber_rounded,
+          title: _isSendingSos ? 'Mengirim SOS...' : 'Kirim SOS',
+          subtitle: 'Hubungi keluarga saat kondisi darurat',
+          color: AppColors.error,
+          onTap: _triggerEmergency,
+        ),
+      ],
     );
   }
 
@@ -1046,6 +1703,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     WidgetsBinding.instance.removeObserver(this);
     _liveTrackingService.stopHomeLocationTracking();
     _weatherRefreshTimer?.cancel();
+    _homeCaneCodeController.dispose();
+    _homeCanePinController.dispose();
+    _homeScanSubscription?.cancel();
+    _homeScanStateSubscription?.cancel();
+    _homeAdapterStateSubscription?.cancel();
+    _bleService.removeListener(_syncHomeBleServiceState);
     _smartCaneButtonSubscription?.cancel();
     _smartCaneBatterySubscription?.cancel();
     _authStateSub?.cancel();
@@ -1058,19 +1721,265 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   }
 }
 
-class _ModernMenuCard extends StatelessWidget {
+class _StatusPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+  final VoidCallback? onTap;
+
+  const _StatusPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Container(
+      constraints: const BoxConstraints(minHeight: 70),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.caption.copyWith(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.caption.copyWith(
+              fontSize: 13,
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+              height: 1.2,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (onTap == null) return content;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: content,
+      ),
+    );
+  }
+}
+
+class _HomeBleDeviceTile extends StatelessWidget {
+  const _HomeBleDeviceTile({
+    required this.name,
+    required this.remoteId,
+    required this.rssi,
+    required this.onTap,
+  });
+
+  final String name;
+  final String remoteId;
+  final int rssi;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.infoLight.withValues(alpha: 0.62),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.bluetooth_rounded,
+                  color: AppColors.primaryDark,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      remoteId,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '$rssi dBm',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomePairingTextField extends StatefulWidget {
+  const _HomePairingTextField({
+    required this.controller,
+    required this.icon,
+    required this.label,
+    required this.keyboardType,
+    this.obscureText = false,
+  });
+
+  final TextEditingController controller;
+  final IconData icon;
+  final String label;
+  final TextInputType keyboardType;
+  final bool obscureText;
+
+  @override
+  State<_HomePairingTextField> createState() => _HomePairingTextFieldState();
+}
+
+class _HomePairingTextFieldState extends State<_HomePairingTextField> {
+  late bool _obscureText;
+
+  @override
+  void initState() {
+    super.initState();
+    _obscureText = widget.obscureText;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: widget.controller,
+      keyboardType: widget.keyboardType,
+      obscureText: _obscureText,
+      style: AppTextStyles.bodySmall.copyWith(
+        color: AppColors.textPrimary,
+        fontWeight: FontWeight.w700,
+      ),
+      decoration: InputDecoration(
+        labelText: widget.label,
+        labelStyle: AppTextStyles.caption.copyWith(
+          color: AppColors.textSecondary,
+          fontWeight: FontWeight.w700,
+        ),
+        prefixIcon: Icon(widget.icon, color: AppColors.primaryDark, size: 20),
+        suffixIcon: widget.obscureText
+            ? IconButton(
+                onPressed: () {
+                  setState(() => _obscureText = !_obscureText);
+                },
+                icon: Icon(
+                  _obscureText
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded,
+                  color: AppColors.textSecondary,
+                  size: 20,
+                ),
+              )
+            : null,
+        filled: true,
+        fillColor: const Color(0xFFF8FAFC),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(13),
+          borderSide: BorderSide(color: AppColors.primaryDark, width: 1.3),
+        ),
+      ),
+    );
+  }
+}
+
+class _PrimaryActionButton extends StatelessWidget {
   final IconData icon;
   final String title;
-  final LinearGradient gradient;
+  final String subtitle;
+  final Color color;
   final VoidCallback onTap;
-  final VoidCallback onHover;
 
-  const _ModernMenuCard({
+  const _PrimaryActionButton({
     required this.icon,
     required this.title,
-    required this.gradient,
+    required this.subtitle,
+    required this.color,
     required this.onTap,
-    required this.onHover,
   });
 
   @override
@@ -1079,67 +1988,137 @@ class _ModernMenuCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        onHover: (hovering) {
-          if (hovering) onHover();
-        },
-        borderRadius: BorderRadius.circular(26),
-        child: Container(
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Colors.white, Colors.white.withOpacity(0.95)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(26),
+            color: color,
+            borderRadius: BorderRadius.circular(18),
             boxShadow: [
               BoxShadow(
-                color: gradient.colors.first.withOpacity(0.2),
-                blurRadius: 25,
-                spreadRadius: 0,
-                offset: const Offset(0, 12),
-              ),
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 15,
-                spreadRadius: -5,
+                color: color.withOpacity(0.18),
+                blurRadius: 16,
                 offset: const Offset(0, 8),
               ),
             ],
-            border: Border.all(
-              color: gradient.colors.first.withOpacity(0.15),
-              width: 1,
-            ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(20),
+                width: 42,
+                height: 42,
                 decoration: BoxDecoration(
-                  gradient: gradient,
-                  borderRadius: BorderRadius.circular(22),
-                  boxShadow: [
-                    BoxShadow(
-                      color: gradient.colors.first.withOpacity(0.4),
-                      blurRadius: 15,
-                      offset: const Offset(0, 8),
+                  color: Colors.white.withOpacity(0.16),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(icon, color: Colors.white, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.button.copyWith(
+                        fontSize: 18,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: Colors.white.withOpacity(0.88),
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
                     ),
                   ],
                 ),
-                child: Icon(icon, size: 42, color: Colors.white),
               ),
-              const SizedBox(height: 14),
-              ShaderMask(
-                shaderCallback: (bounds) => gradient.createShader(bounds),
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.3,
-                  ),
-                  textAlign: TextAlign.center,
+              const SizedBox(width: 10),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white.withOpacity(0.86),
+                size: 26,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SafetyMenuCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _SafetyMenuCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Ink(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(icon, size: 20, color: color),
+              ),
+              const Spacer(),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.bodySmall.copyWith(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  height: 1.15,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],

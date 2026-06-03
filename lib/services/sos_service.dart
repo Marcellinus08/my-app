@@ -62,6 +62,9 @@ class SosService {
       }
 
       final batteryLevel = _readInt(liveTracking?['batteryLevel']);
+      final smartCaneBatteryLevel = _readInt(
+        liveTracking?['smartCaneBatteryLevel'],
+      );
       final currentTripId = _readString(liveTracking?['currentTripId']) ?? '';
       final familyUids = await getConnectedFamilyUids(uid);
 
@@ -76,6 +79,7 @@ class SosService {
         lat: lat,
         lng: lng,
         batteryLevel: batteryLevel,
+        smartCaneBatteryLevel: smartCaneBatteryLevel,
         currentTripId: currentTripId,
       );
 
@@ -107,6 +111,7 @@ class SosService {
                   'lat': lat,
                   'lng': lng,
                   'batteryLevel': batteryLevel,
+                  'smartCaneBatteryLevel': smartCaneBatteryLevel,
                   'currentTripId': currentTripId,
                   'sosId': sosId,
                 }),
@@ -271,6 +276,7 @@ class SosService {
     required double? lat,
     required double? lng,
     required int? batteryLevel,
+    required int? smartCaneBatteryLevel,
     required String currentTripId,
   }) async {
     final docRef = await _firestore.collection('sos_alerts').add({
@@ -280,6 +286,7 @@ class SosService {
       'lat': lat,
       'lng': lng,
       'batteryLevel': batteryLevel,
+      'smartCaneBatteryLevel': smartCaneBatteryLevel,
       'currentTripId': currentTripId.isEmpty ? null : currentTripId,
       'status': 'active',
       'createdAt': FieldValue.serverTimestamp(),

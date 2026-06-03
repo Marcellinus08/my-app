@@ -1,9 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../services/pairing_service.dart';
 import '../../utils/constants.dart';
+import '../../widgets/app_dialog.dart';
 
 class FamilyConnectedTunaNetraScreen extends StatefulWidget {
   const FamilyConnectedTunaNetraScreen({super.key});
@@ -49,7 +51,27 @@ class _FamilyConnectedTunaNetraScreenState
           .get();
 
       if (doc.exists) {
-        users.add({'uid': doc.id, ...?doc.data()});
+        final userData = {'uid': doc.id, ...?doc.data()};
+        
+        // Try to get connectedAt from family_members subcollection
+        try {
+          final familyMemberDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(uid)
+              .collection('family_members')
+              .doc(FirebaseAuth.instance.currentUser?.uid ?? '')
+              .get();
+
+          if (familyMemberDoc.exists) {
+            final memberData = familyMemberDoc.data() ?? {};
+            // Use linkedAt from subcollection as connectedAt
+            userData['connectedAt'] = memberData['linkedAt'];
+          }
+        } catch (e) {
+          debugPrint('Error fetching family_members data: $e');
+        }
+
+        users.add(userData);
       }
     }
 
@@ -61,158 +83,143 @@ class _FamilyConnectedTunaNetraScreenState
     final familyUid = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withOpacity(0.08),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(context),
-              Expanded(
-                child: familyUid == null || familyUid.isEmpty
-                    ? _buildEmptyState('Akun keluarga belum terdeteksi')
-                    : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                        stream: FirebaseFirestore.instance
-                            .collection('users')
-                            .doc(familyUid)
-                            .snapshots(),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          }
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(
+              child: familyUid == null || familyUid.isEmpty
+                  ? _buildEmptyState('Akun keluarga belum terdeteksi')
+                  : StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                      stream: FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(familyUid)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
 
-                          if (snapshot.hasError) {
-                            return _buildEmptyState(
-                              'Gagal memuat akun terhubung',
-                            );
-                          }
+                        if (snapshot.hasError) {
+                          return _buildEmptyState(
+                            'Gagal memuat akun terhubung',
+                          );
+                        }
 
-                          final data = snapshot.data?.data() ?? {};
-                          final pairedUids = _readPairedUids(data);
+                        final data = snapshot.data?.data() ?? {};
+                        final pairedUids = _readPairedUids(data);
 
-                          if (pairedUids.isEmpty) {
-                            return _buildEmptyState(
-                              'Belum ada tunanetra yang terhubung',
-                            );
-                          }
+                        if (pairedUids.isEmpty) {
+                          return _buildEmptyState(
+                            'Belum ada tunanetra yang terhubung',
+                          );
+                        }
 
-                          return FutureBuilder<List<Map<String, dynamic>>>(
-                            future: _loadConnectedUsers(pairedUids),
-                            builder: (context, usersSnapshot) {
-                              if (usersSnapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Center(
-                                  child: CircularProgressIndicator(),
-                                );
-                              }
+                        return FutureBuilder<List<Map<String, dynamic>>>(
+                          future: _loadConnectedUsers(pairedUids),
+                          builder: (context, usersSnapshot) {
+                            if (usersSnapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
 
-                              final users = usersSnapshot.data ?? [];
-                              if (users.isEmpty) {
-                                return _buildEmptyState(
-                                  'Data tunanetra terhubung belum tersedia',
-                                );
-                              }
+                            final users = usersSnapshot.data ?? [];
+                            if (users.isEmpty) {
+                              return _buildEmptyState(
+                                'Data tunanetra terhubung belum tersedia',
+                              );
+                            }
 
-                              return ListView.builder(
-                                padding: const EdgeInsets.fromLTRB(
-                                  20,
-                                  0,
-                                  20,
-                                  20,
-                                ),
-                                itemCount: users.length,
-                                itemBuilder: (context, index) {
+                            return ListView(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                              children: [
+                                _buildFamilyHelpCard(),
+                                const SizedBox(height: 16),
+                                _buildSectionTitle('Pengguna Terhubung'),
+                                const SizedBox(height: 12),
+                                ...users.asMap().entries.map((entry) {
                                   return _buildTunaNetraCard(
                                     context,
-                                    users[index],
+                                    entry.value,
                                   );
-                                },
-                              );
-                            },
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
+                                }),
+                              ],
+                            );
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader() {
     return Container(
-      margin: const EdgeInsets.all(20),
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+      margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Colors.white.withOpacity(0.95)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.textSecondary.withOpacity(0.15),
-            blurRadius: 25,
-            offset: const Offset(0, 10),
+            color: AppColors.textPrimary.withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
-        border: Border.all(
-          color: AppColors.textSecondary.withOpacity(0.1),
-          width: 1,
-        ),
       ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.arrow_back_rounded,
-                color: Colors.white,
-                size: 24,
+          Material(
+            color: AppColors.primaryDark,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => Navigator.pop(context),
+              borderRadius: BorderRadius.circular(12),
+              child: const SizedBox(
+                width: 42,
+                height: 42,
+                child: Icon(
+                  Icons.arrow_back_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ShaderMask(
-                  shaderCallback: (bounds) =>
-                      AppColors.primaryGradient.createShader(bounds),
-                  child: Text(
-                    'Akun Pengguna',
-                    style: AppTextStyles.heading2.copyWith(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                    ),
+                Text(
+                  'Pengguna',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.heading3.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
                   ),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 3),
                 Text(
-                  'Pengguna yang terhubung',
-                  style: AppTextStyles.bodySmall.copyWith(
+                  'Kelola pengguna yang terhubung',
+                  style: AppTextStyles.caption.copyWith(
                     color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ],
@@ -231,44 +238,43 @@ class _FamilyConnectedTunaNetraScreenState
     final initial = (name?.isNotEmpty == true ? name! : 'T')[0].toUpperCase();
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Colors.white.withOpacity(0.95)],
-        ),
-        borderRadius: BorderRadius.circular(24),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: AppColors.textPrimary.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
         ],
-        border: Border.all(color: AppColors.primary.withOpacity(0.1), width: 1),
       ),
       child: Column(
         children: [
           Row(
             children: [
               Container(
-                width: 56,
-                height: 56,
-                decoration: const BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  shape: BoxShape.circle,
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryDark.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Center(
                   child: Text(
                     initial,
-                    style: AppTextStyles.heading3.copyWith(
-                      color: Colors.white,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.primaryDark,
                       fontWeight: FontWeight.w800,
+                      fontSize: 16,
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -279,17 +285,17 @@ class _FamilyConnectedTunaNetraScreenState
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
                         child: Text(
-                          name?.isNotEmpty == true
-                              ? name!
-                              : 'Pengguna',
+                          name?.isNotEmpty == true ? name! : 'Pengguna',
                           maxLines: 1,
                           style: AppTextStyles.bodyLarge.copyWith(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     SizedBox(
                       width: double.infinity,
                       child: FittedBox(
@@ -298,8 +304,9 @@ class _FamilyConnectedTunaNetraScreenState
                         child: Text(
                           email?.isNotEmpty == true ? email! : '-',
                           maxLines: 1,
-                          style: AppTextStyles.bodyMedium.copyWith(
+                          style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.textSecondary,
+                            fontSize: 12.5,
                           ),
                         ),
                       ),
@@ -309,15 +316,21 @@ class _FamilyConnectedTunaNetraScreenState
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+          const SizedBox(height: 12),
           _buildInfoRow(
             icon: Icons.phone_rounded,
             label: 'Nomor Telepon',
             value: phone?.isNotEmpty == true ? phone! : '-',
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
+          _buildInfoRow(
+            icon: Icons.calendar_today_rounded,
+            label: 'Terhubung sejak',
+            value: _formatDate(user['connectedAt'] ?? user['createdAt']),
+          ),
+          const SizedBox(height: 12),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
@@ -330,13 +343,12 @@ class _FamilyConnectedTunaNetraScreenState
                           ? name!
                           : 'Pengguna',
                     ),
-              icon: const Icon(Icons.link_off_rounded),
+              icon: const Icon(Icons.link_off_rounded, size: 19),
               label: const Text('Putuskan Koneksi'),
               style: ElevatedButton.styleFrom(
+                elevation: 0,
                 backgroundColor: AppColors.error,
                 foregroundColor: Colors.white,
-                elevation: 2,
-                shadowColor: AppColors.error.withOpacity(0.28),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -355,29 +367,16 @@ class _FamilyConnectedTunaNetraScreenState
     required String tunaNetraName,
   }) async {
     final messenger = ScaffoldMessenger.of(context);
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Putuskan Koneksi'),
-        content: Text(
-          'Apakah Anda yakin ingin memutuskan koneksi dengan $tunaNetraName?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Putuskan'),
-          ),
-        ],
-      ),
+      title: 'Putuskan Koneksi',
+      description: 'Apakah Anda yakin ingin memutuskan koneksi dengan $tunaNetraName?',
+      icon: Icons.link_off_rounded,
+      iconColor: AppColors.warning,
+      cancelText: 'Batal',
+      confirmText: 'Putuskan',
+      confirmButtonColor: AppColors.error,
+      isDangerous: true,
     );
 
     if (confirmed != true) return;
@@ -425,12 +424,13 @@ class _FamilyConnectedTunaNetraScreenState
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(8),
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(10),
+            color: AppColors.primaryDark.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: AppColors.primary, size: 18),
+          child: Icon(icon, color: AppColors.primaryDark, size: 19),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -441,14 +441,16 @@ class _FamilyConnectedTunaNetraScreenState
                 label,
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.textSecondary,
+                  fontSize: 12.5,
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 3),
               Text(
                 value,
-                style: AppTextStyles.bodyMedium.copyWith(
+                style: AppTextStyles.bodyLarge.copyWith(
                   color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -458,44 +460,119 @@ class _FamilyConnectedTunaNetraScreenState
     );
   }
 
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
+        title,
+        style: AppTextStyles.bodyLarge.copyWith(
+          color: AppColors.textPrimary,
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(dynamic timestamp) {
+    if (timestamp == null) return '-';
+
+    try {
+      DateTime date;
+      if (timestamp is Timestamp) {
+        date = timestamp.toDate();
+      } else if (timestamp is DateTime) {
+        date = timestamp;
+      } else {
+        return '-';
+      }
+
+      return DateFormat('dd-MM-yyyy').format(date);
+    } catch (e) {
+      return '-';
+    }
+  }
+
+  Widget _buildFamilyHelpCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFDCE8F7)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.035),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.infoLight.withValues(alpha: 0.58),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(
+              Icons.shield_outlined,
+              color: AppColors.primaryDark,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Pengguna terhubung dapat membantu memantau lokasi dan menerima notifikasi darurat.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 12.5,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyState(String message) {
     return Center(
       child: Container(
-        margin: const EdgeInsets.all(20),
-        padding: const EdgeInsets.all(32),
+        margin: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.white, Colors.white.withOpacity(0.95)],
-          ),
-          borderRadius: BorderRadius.circular(24),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withOpacity(0.08),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
+              color: AppColors.textPrimary.withValues(alpha: 0.04),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
             ),
           ],
-          border: Border.all(
-            color: AppColors.primary.withOpacity(0.1),
-            width: 1,
-          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(22),
-              decoration: const BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                shape: BoxShape.circle,
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.primaryDark.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
               ),
               child: const Icon(
                 Icons.accessibility_new_rounded,
-                color: Colors.white,
-                size: 44,
+                color: AppColors.primaryDark,
+                size: 28,
               ),
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             Text(
               message,
               textAlign: TextAlign.center,

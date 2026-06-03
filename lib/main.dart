@@ -14,14 +14,10 @@ import 'screens/auth/login_screen.dart';
 import 'screens/auth/register_screen.dart';
 import 'screens/tunanetra/tunanetra_home_screen.dart';
 import 'screens/tunanetra/navigation_screen.dart';
-import 'screens/tunanetra/bluetooth_screen.dart';
 import 'screens/tunanetra/ebook_screen.dart';
-import 'screens/tunanetra/smartcane_monitoring_screen.dart';
 import 'screens/tunanetra/settings_screen.dart';
 import 'screens/family/family_home_screen.dart';
 import 'screens/family/family_history_screen.dart';
-import 'screens/family/family_members_list_screen.dart';
-import 'screens/family/family_member_detail_screen.dart';
 import 'screens/family/emergency_sos_screen.dart';
 import 'screens/family/family_manage_places_screen.dart';
 
@@ -262,10 +258,7 @@ class _MyAppState extends State<MyApp> {
         // Tunanetra routes
         AppRoutes.tunaNetraHome: (context) => const TunaNetraHomeScreen(),
         AppRoutes.tunaNetraNavigation: (context) => const NavigationScreen(),
-        AppRoutes.tunaNetraBluetooth: (context) => const BluetoothScreen(),
         AppRoutes.tunaNetraEbook: (context) => const EbookScreen(),
-        AppRoutes.tunaNetraSmartcane: (context) =>
-            const SmartcaneMonitoringScreen(),
         AppRoutes.tunaNetraSettings: (context) =>
             const TunaNetraSettingsScreen(),
 
@@ -353,6 +346,7 @@ Map<String, dynamic>? _extractSosRouteData(Map<String, dynamic>? args) {
       'lat': args['lat'],
       'lng': args['lng'],
       'batteryLevel': args['batteryLevel'],
+      'smartCaneBatteryLevel': args['smartCaneBatteryLevel'],
       'currentTripId': args['currentTripId'],
       'sosId': args['sosId'],
     };
@@ -374,6 +368,7 @@ Map<String, dynamic> _sosMonitoringArgs(Map<String, dynamic> payload) {
     'lat': payload['lat'],
     'lng': payload['lng'],
     'batteryLevel': payload['batteryLevel'],
+    'smartCaneBatteryLevel': payload['smartCaneBatteryLevel'],
     'currentTripId': payload['currentTripId'],
     'userName': payload['userName'] ?? 'Pengguna',
     'sosId': payload['sosId'],

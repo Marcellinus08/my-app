@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
 import '../../utils/constants.dart';
+import '../../widgets/app_dialog.dart';
 
 class PasswordSettingsScreen extends StatefulWidget {
   const PasswordSettingsScreen({super.key});
@@ -40,6 +41,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
 
     await showDialog<void>(
       context: context,
+      barrierColor: AppDialogStyle.barrierColor,
       barrierDismissible: !isSaving,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -91,14 +93,23 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
 
             return AlertDialog(
               scrollable: true,
-              insetPadding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 24,
-              ),
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.transparent,
+              insetPadding: AppDialogStyle.insetPadding,
+              titlePadding: AppDialogStyle.titlePadding,
+              contentPadding: AppDialogStyle.contentPadding,
+              actionsPadding: AppDialogStyle.actionPadding,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(
+                  AppDialogStyle.borderRadius,
+                ),
+                side: const BorderSide(color: AppDialogStyle.borderColor),
               ),
-              title: const Text('Ganti Sandi'),
+              title: _buildPasswordDialogTitle(
+                icon: Icons.lock_reset_rounded,
+                iconColor: AppColors.primaryDark,
+                title: 'Ganti Sandi',
+              ),
               content: Form(
                 key: formKey,
                 child: Column(
@@ -208,40 +219,73 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                 ),
               ),
               actions: [
-                TextButton(
-                  onPressed: isSaving
-                      ? null
-                      : () async {
-                          FocusManager.instance.primaryFocus?.unfocus();
-                          await Future<void>.delayed(
-                            const Duration(milliseconds: 50),
-                          );
-                          if (!context.mounted) return;
-                          Navigator.of(
-                            dialogContext,
-                            rootNavigator: true,
-                          ).maybePop();
-                        },
-                  child: const Text('Batal'),
-                ),
-                ElevatedButton(
-                  onPressed: isSaving ? null : submit,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: isSaving
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                await Future<void>.delayed(
+                                  const Duration(milliseconds: 50),
+                                );
+                                if (!context.mounted) return;
+                                Navigator.of(
+                                  dialogContext,
+                                  rootNavigator: true,
+                                ).maybePop();
+                              },
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.textSecondary,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                        )
-                      : const Text('Simpan'),
+                        ),
+                        child: Text(
+                          'Batal',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: isSaving ? null : submit,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryDark,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: isSaving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            : Text(
+                                'Simpan',
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             );
@@ -253,6 +297,38 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
     currentPasswordController.dispose();
     newPasswordController.dispose();
     confirmPasswordController.dispose();
+  }
+
+  Widget _buildPasswordDialogTitle({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: iconColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: iconColor, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Future<void> _showResetPasswordDialog() async {
@@ -268,251 +344,159 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
       return;
     }
 
-    var isSending = false;
-
-    await showDialog<void>(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      barrierDismissible: !isSending,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> sendResetEmail() async {
-              setDialogState(() => isSending = true);
-              var dialogWasClosed = false;
-              final navigator = Navigator.of(dialogContext);
-              final messenger = ScaffoldMessenger.of(this.context);
-
-              try {
-                await _authService.sendPasswordResetEmail(email);
-
-                if (!mounted) return;
-                dialogWasClosed = true;
-                navigator.pop();
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text('Tautan atur ulang sandi dikirim ke $email'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              } catch (e) {
-                if (!mounted) return;
-
-                final message = e is Exception
-                    ? e.toString().replaceAll('Exception: ', '')
-                    : e.toString();
-
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(message),
-                    backgroundColor: Colors.redAccent,
-                  ),
-                );
-              } finally {
-                if (!dialogWasClosed && context.mounted) {
-                  setDialogState(() => isSending = false);
-                }
-              }
-            }
-
-            return AlertDialog(
-              scrollable: true,
-              insetPadding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 24,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-              ),
-              title: const Text('Atur Ulang Sandi'),
-              content: Text(
-                'Kirim tautan atur ulang sandi ke email: $email?',
-                style: AppTextStyles.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSending
-                      ? null
-                      : () async {
-                          FocusManager.instance.primaryFocus?.unfocus();
-                          await Future<void>.delayed(
-                            const Duration(milliseconds: 50),
-                          );
-                          if (!context.mounted) return;
-                          Navigator.of(
-                            dialogContext,
-                            rootNavigator: true,
-                          ).maybePop();
-                        },
-                  child: const Text('Batal'),
-                ),
-                ElevatedButton(
-                  onPressed: isSending ? null : sendResetEmail,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: isSending
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Colors.white,
-                            ),
-                          ),
-                        )
-                      : const Text('Kirim Tautan'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      title: 'Atur ulang sandi?',
+      description: 'Kirim tautan atur ulang sandi ke email $email.',
+      icon: Icons.email_rounded,
+      iconColor: AppColors.primaryDark,
+      cancelText: 'Batal',
+      confirmText: 'Kirim Tautan',
+      confirmButtonColor: AppColors.primaryDark,
     );
+
+    if (confirmed != true) return;
+
+    try {
+      await _authService.sendPasswordResetEmail(email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Tautan atur ulang sandi dikirim ke $email'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      final message = e is Exception
+          ? e.toString().replaceAll('Exception: ', '')
+          : e.toString();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withOpacity(0.08),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                children: [
+                  _buildSecurityInfoCard(),
+                  const SizedBox(height: 16),
+                  _buildSectionTitle('Keamanan Akun'),
+                  const SizedBox(height: 12),
+                  _buildActionGroup(
+                    children: [
+                      _buildPasswordAction(
+                        icon: Icons.lock_reset_rounded,
+                        title: 'Ganti Sandi',
+                        subtitle:
+                            'Ubah kata sandi menggunakan kata sandi lama.',
+                        color: AppColors.primaryDark,
+                        onTap: _showChangePasswordDialog,
+                      ),
+                      const _PasswordDivider(),
+                      _buildPasswordAction(
+                        icon: Icons.email_rounded,
+                        title: 'Atur Ulang Sandi',
+                        subtitle: 'Kirim link reset kata sandi melalui email.',
+                        color: AppColors.primary,
+                        onTap: _showResetPasswordDialog,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Pastikan email akun Anda aktif untuk menerima link reset kata sandi.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 12.5,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Container(
-                margin: const EdgeInsets.all(20),
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.white, Colors.white.withOpacity(0.95)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.textSecondary.withOpacity(0.15),
-                      blurRadius: 25,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                  border: Border.all(
-                    color: AppColors.textSecondary.withOpacity(0.1),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) =>
-                                AppColors.primaryGradient.createShader(bounds),
-                            child: Text(
-                              'Kata Sandi',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 26,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Kelola keamanan akses akun',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Material(
+            color: AppColors.primaryDark,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => Navigator.pop(context),
+              borderRadius: BorderRadius.circular(12),
+              child: const SizedBox(
+                width: 42,
+                height: 42,
+                child: Icon(
+                  Icons.arrow_back_rounded,
+                  color: Colors.white,
+                  size: 23,
                 ),
               ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.white,
-                            Colors.white.withOpacity(0.95),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withOpacity(0.08),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                        border: Border.all(
-                          color: AppColors.primary.withOpacity(0.1),
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          _buildPasswordAction(
-                            icon: Icons.lock_reset_rounded,
-                            title: 'Ganti Sandi',
-                            color: AppColors.primary,
-                            onTap: _showChangePasswordDialog,
-                          ),
-                          Divider(
-                            height: 1,
-                            indent: 20,
-                            endIndent: 20,
-                            color: AppColors.textSecondary.withOpacity(0.1),
-                          ),
-                          _buildPasswordAction(
-                            icon: Icons.email_rounded,
-                            title: 'Atur Ulang Sandi',
-                            color: AppColors.accent,
-                            onTap: _showResetPasswordDialog,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Kata Sandi',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.heading3.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Kelola keamanan akun',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -520,25 +504,166 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
   Widget _buildPasswordAction({
     required IconData icon,
     required String title,
+    required String subtitle,
     required Color color,
     required VoidCallback onTap,
   }) {
-    return ListTile(
-      contentPadding: const EdgeInsets.all(20),
-      leading: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.14),
-          borderRadius: BorderRadius.circular(14),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: color, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        height: 1.18,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textSecondary,
+                        fontSize: 12.5,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: AppColors.textSecondary,
+                  size: 14,
+                ),
+              ),
+            ],
+          ),
         ),
-        child: Icon(icon, color: color, size: 28),
       ),
-      title: Text(
+    );
+  }
+
+  Widget _buildSecurityInfoCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD7E3F4)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.035),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.infoLight.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: const Icon(
+              Icons.shield_outlined,
+              color: AppColors.primaryDark,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Jaga keamanan akun Anda dengan memperbarui kata sandi secara berkala.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 12.5,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionGroup({required List<Widget> children}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.035),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: children),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
         title,
-        style: AppTextStyles.bodyLarge.copyWith(fontWeight: FontWeight.w700),
+        style: AppTextStyles.bodyLarge.copyWith(
+          color: AppColors.textPrimary,
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
+        ),
       ),
-      trailing: Icon(Icons.arrow_forward_ios_rounded, color: color, size: 20),
-      onTap: onTap,
+    );
+  }
+}
+
+class _PasswordDivider extends StatelessWidget {
+  const _PasswordDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Divider(
+      height: 1,
+      thickness: 1,
+      indent: 66,
+      color: Color(0xFFEFF3F7),
     );
   }
 }

@@ -52,6 +52,7 @@ class NotificationService {
   Map<String, dynamic>? _activeSosData;
   Map<String, dynamic>? _initialSosPayload;
   Map<String, dynamic>? _initialSosMonitoringPayload;
+  final Set<String> _shownOneShotSosIds = {};
   bool _fullScreenIntentAllowed = true;
   bool _messageHandlersInitialized = false;
   bool _localNotificationsInitialized = false;
@@ -138,6 +139,28 @@ class NotificationService {
     );
   }
 
+  static NotificationDetails _buildSosOneShotNotificationDetails() {
+    return NotificationDetails(
+      android: AndroidNotificationDetails(
+        sosEmergencyChannelId,
+        sosEmergencyChannelName,
+        channelDescription: sosEmergencyChannelDescription,
+        importance: Importance.max,
+        priority: Priority.max,
+        category: AndroidNotificationCategory.alarm,
+        visibility: NotificationVisibility.public,
+        enableVibration: true,
+        vibrationPattern: _sosVibrationPattern,
+        playSound: true,
+        sound: _sosNotificationSound,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+        onlyAlertOnce: true,
+        ongoing: false,
+        autoCancel: true,
+      ),
+    );
+  }
+
   static const NotificationDetails _sosSilentNotificationDetails =
       NotificationDetails(
         android: AndroidNotificationDetails(
@@ -194,8 +217,7 @@ class NotificationService {
       if (_isSosMessage(message)) {
         debugPrint('SOS FCM received');
         final data = Map<String, dynamic>.from(message.data);
-        showSosLocalNotification(data);
-        handleSosNotification(message);
+        unawaited(_handleForegroundSosMessage(message, data));
       }
     });
 
@@ -465,13 +487,36 @@ class NotificationService {
   }
 
   Future<void> showSosLocalNotification(Map<String, dynamic> data) async {
+    if (!await _shouldShowSosForCurrentUser(data)) return;
     await createSosEmergencyChannel();
     await _showSosLocalNotificationFromData(data);
     _startSosAlarmLoop(data);
   }
 
+  Future<void> showSosOneShotNotification(Map<String, dynamic> data) async {
+    if (kIsWeb) return;
+    if (data['type'] != 'sos') return;
+    if (!await _shouldShowSosForCurrentUser(data)) return;
+
+    final sosId =
+        _readStringFromMap(data, 'sosId') ??
+        _readStringFromMap(data, 'alertId') ??
+        _readStringFromMap(data, 'id');
+    if (sosId != null && !_shownOneShotSosIds.add(sosId)) {
+      debugPrint('[NotificationService] one-shot SOS already shown: $sosId');
+      return;
+    }
+
+    await createSosEmergencyChannel();
+    await _showSosNotificationFromData(
+      data,
+      details: _buildSosOneShotNotificationDetails(),
+    );
+  }
+
   Future<void> showSosFullScreenNotification(Map<String, dynamic> data) async {
     if (kIsWeb) return;
+    if (!await _shouldShowSosForCurrentUser(data)) return;
 
     debugPrint('showing full-screen SOS notification');
     await createSosEmergencyChannel();
@@ -663,6 +708,9 @@ class NotificationService {
   }
 
   Future<void> handleSosNotification(RemoteMessage message) async {
+    final data = Map<String, dynamic>.from(message.data);
+    if (!await _shouldShowSosForCurrentUser(data)) return;
+
     final context = _navigatorKey?.currentContext;
     if (context == null) {
       debugPrint('[NotificationService] Navigator context null for SOS dialog');
@@ -704,6 +752,16 @@ class NotificationService {
     );
   }
 
+  Future<void> _handleForegroundSosMessage(
+    RemoteMessage message,
+    Map<String, dynamic> data,
+  ) async {
+    if (!await _shouldShowSosForCurrentUser(data)) return;
+    stopSosAlarmLoop(cancelNotification: true);
+    await showSosOneShotNotification(data);
+    await handleSosNotification(message);
+  }
+
   void navigateToFamilyMonitoringFromSos(RemoteMessage message) {
     _navigateToFamilyMonitoringFromData(
       Map<String, dynamic>.from(message.data),
@@ -741,6 +799,10 @@ class NotificationService {
       'lat': _readStringFromMap(data, 'lat'),
       'lng': _readStringFromMap(data, 'lng'),
       'batteryLevel': _readStringFromMap(data, 'batteryLevel'),
+      'smartCaneBatteryLevel': _readStringFromMap(
+        data,
+        'smartCaneBatteryLevel',
+      ),
       'currentTripId': _readStringFromMap(data, 'currentTripId'),
       'userName': _readStringFromMap(data, 'userName') ?? 'Pengguna',
       'sosId': _readStringFromMap(data, 'sosId'),
@@ -956,6 +1018,36 @@ class NotificationService {
     return _isFamilyUserType(userType);
   }
 
+  Future<bool> _shouldShowSosForCurrentUser(Map<String, dynamic> data) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      debugPrint('[NotificationService] skip SOS: currentUser null');
+      return false;
+    }
+
+    final senderUid = _readStringFromMap(data, 'userId');
+    if (senderUid == user.uid) {
+      debugPrint('[NotificationService] skip SOS: current user is sender');
+      return false;
+    }
+
+    final isFamily = await _isCurrentUserFamily(user.uid);
+    if (!isFamily) {
+      debugPrint('[NotificationService] skip SOS: current user is not family');
+      return false;
+    }
+
+    final familyUid =
+        _readStringFromMap(data, 'familyUid') ??
+        _readStringFromMap(data, 'familyId');
+    if (familyUid != null && familyUid != user.uid) {
+      debugPrint('[NotificationService] skip SOS: familyUid mismatch');
+      return false;
+    }
+
+    return true;
+  }
+
   bool _isFamilyUserType(String? userType) {
     return userType == 'family' || userType == 'UserType.family';
   }
@@ -993,6 +1085,10 @@ class NotificationService {
       'lat': _readStringFromMap(data, 'lat'),
       'lng': _readStringFromMap(data, 'lng'),
       'batteryLevel': _readStringFromMap(data, 'batteryLevel'),
+      'smartCaneBatteryLevel': _readStringFromMap(
+        data,
+        'smartCaneBatteryLevel',
+      ),
       'currentTripId': _readStringFromMap(data, 'currentTripId'),
       'sosId':
           _readStringFromMap(data, 'sosId') ??

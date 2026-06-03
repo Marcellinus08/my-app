@@ -7,6 +7,7 @@ import '../../services/pairing_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
 import '../../services/user_service.dart';
 import '../../models/user_models.dart';
+import '../../widgets/app_dialog.dart';
 
 class TunaNetraProfileScreen extends StatefulWidget {
   const TunaNetraProfileScreen({super.key});
@@ -60,7 +61,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
         }
       }
     } catch (e) {
-      print('❌ Error loading user data: $e');
+      debugPrint('[TunaNetraProfile] Error loading user data: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -112,7 +113,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
         }
       }
     } catch (e) {
-      print('❌ Error saving user data: $e');
+      debugPrint('[TunaNetraProfile] Error saving user data: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -140,268 +141,216 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
 
   /// Regenerate pairing code
   Future<void> _regeneratePairingCode() async {
-    showDialog(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Buat Kode Penghubung Baru?'),
-        content: const Text(
-          'Kode penghubung yang lama tidak akan bisa digunakan lagi. Lanjutkan?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Batal'),
+      title: 'Buat kode baru?',
+      description:
+          'Kode penghubung lama tidak bisa digunakan lagi setelah diganti.',
+      icon: Icons.refresh_rounded,
+      iconColor: AppColors.primaryDark,
+      cancelText: 'Batal',
+      confirmText: 'Buat Kode',
+      confirmButtonColor: AppColors.primaryDark,
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final uid = _authService.currentUserId;
+      if (uid != null) {
+        final newCode = _generatePairingCode();
+        await _pairingService.savePairingCode(uid, newCode);
+
+        if (mounted) {
+          setState(() {
+            _user = TunaNetraUser(
+              uid: _user!.uid,
+              email: _user!.email,
+              name: _user!.name,
+              phoneNumber: _user!.phoneNumber,
+              familyContacts: _user!.familyContacts,
+              pairingCode: newCode,
+              createdAt: _user!.createdAt,
+              isEmailVerified: _user!.isEmailVerified,
+            );
+          });
+
+          ScaffoldMessenger.of(this.context).showSnackBar(
+            const SnackBar(
+              content: Text('Kode penghubung berhasil dibuat'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('[TunaNetraProfile] Error regenerating pairing code: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(this.context).showSnackBar(
+          SnackBar(
+            content: Text('Gagal membuat kode penghubung: $e'),
+            backgroundColor: Colors.redAccent,
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              try {
-                final uid = _authService.currentUserId;
-                if (uid != null) {
-                  final newCode = _generatePairingCode();
-                  await _pairingService.savePairingCode(uid, newCode);
+        );
+      }
+    }
+  }
 
-                  if (mounted) {
-                    setState(() {
-                      _user = TunaNetraUser(
-                        uid: _user!.uid,
-                        email: _user!.email,
-                        name: _user!.name,
-                        phoneNumber: _user!.phoneNumber,
-                        familyContacts: _user!.familyContacts,
-                        pairingCode: newCode,
-                        createdAt: _user!.createdAt,
-                        isEmailVerified: _user!.isEmailVerified,
-                      );
-                    });
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Kode penghubung berhasil dibuat'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  }
-                }
-              } catch (e) {
-                print('❌ Error regenerating pairing code: $e');
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Gagal membuat kode penghubung: $e'),
-                      backgroundColor: Colors.redAccent,
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _user == null
+                  ? _buildEmptyState()
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                      children: [
+                        _buildSectionTitle('Informasi Profil'),
+                        const SizedBox(height: 12),
+                        if (_isEditing) _buildEditForm() else _buildInfoCard(),
+                        const SizedBox(height: 16),
+                        _buildActionButton(),
+                      ],
                     ),
-                  );
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Material(
+            color: AppColors.primaryDark,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () {
+                if (_isEditing) {
+                  setState(() => _isEditing = false);
+                  _loadUserData();
+                  return;
                 }
-              }
-            },
-            child: const Text('Lanjutkan', style: TextStyle(color: Colors.red)),
+                Navigator.pop(context);
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 42,
+                height: 42,
+                child: Icon(
+                  _isEditing ? Icons.close_rounded : Icons.arrow_back_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isEditing ? 'Ubah Profil' : 'Profil Saya',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.heading3.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _isEditing ? 'Ubah data pribadi' : 'Kelola informasi akun',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withOpacity(0.08),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
+        title,
+        style: AppTextStyles.bodyLarge.copyWith(
+          color: AppColors.textPrimary,
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Container(
-                margin: const EdgeInsets.all(20),
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.white, Colors.white.withOpacity(0.95)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.textSecondary.withOpacity(0.15),
-                      blurRadius: 25,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                  border: Border.all(
-                    color: AppColors.textSecondary.withOpacity(0.1),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        if (_isEditing) {
-                          setState(() => _isEditing = false);
-                          _loadUserData(); // Reset to original values
-                        } else {
-                          Navigator.pop(context);
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          _isEditing
-                              ? Icons.close_rounded
-                              : Icons.arrow_back_rounded,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) =>
-                                AppColors.primaryGradient.createShader(bounds),
-                            child: Text(
-                              _isEditing ? 'Ubah Profil' : 'Profil Saya',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 26,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _isEditing
-                                ? 'Ubah data pribadi'
-                                : 'Kelola informasi akun',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Content
-              Expanded(
-                child: _isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _user == null
-                    ? Center(
-                        child: Text(
-                          'Data pengguna tidak ditemukan',
-                          style: AppTextStyles.bodyLarge,
-                        ),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                        children: [
-                          // User Info Card
-                          if (!_isEditing)
-                            _buildInfoCard()
-                          else
-                            _buildEditForm(),
-                          const SizedBox(height: 20),
-                          // Action Button
-                          if (!_isEditing)
-                            GestureDetector(
-                              onTap: () {
-                                setState(() => _isEditing = true);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  gradient: AppColors.primaryGradient,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.primary.withOpacity(0.3),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(
-                                      Icons.edit_rounded,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Ubah Profil',
-                                      style: AppTextStyles.bodyLarge.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          else
-                            GestureDetector(
-                              onTap: _saveUserData,
-                              child: Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  gradient: AppColors.primaryGradient,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.primary.withOpacity(0.3),
-                                      blurRadius: 15,
-                                      offset: const Offset(0, 8),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Icon(
-                                      Icons.check_rounded,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Simpan Perubahan',
-                                      style: AppTextStyles.bodyLarge.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-              ),
-            ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Text(
+        'Data pengguna tidak ditemukan',
+        style: AppTextStyles.bodySmall.copyWith(
+          color: AppColors.textSecondary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton() {
+    final label = _isEditing ? 'Simpan Perubahan' : 'Ubah Profil';
+    final icon = _isEditing ? Icons.check_rounded : Icons.edit_rounded;
+    final onTap = _isEditing
+        ? _saveUserData
+        : () => setState(() => _isEditing = true);
+
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 19),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: AppColors.primaryDark,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
+          textStyle: AppTextStyles.bodySmall.copyWith(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
           ),
         ),
       ),
@@ -410,22 +359,18 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
 
   Widget _buildInfoCard() {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Colors.white.withOpacity(0.95)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: AppColors.textPrimary.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
         ],
-        border: Border.all(color: AppColors.primary.withOpacity(0.1), width: 1),
       ),
       child: Column(
         children: [
@@ -433,20 +378,16 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             icon: Icons.person_rounded,
             label: 'Nama',
             value: _user!.name,
-            color: AppColors.primary,
+            color: AppColors.primaryDark,
           ),
-          const SizedBox(height: 16),
-          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
-          const SizedBox(height: 16),
+          const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.email_rounded,
             label: 'Email',
             value: _user!.email,
             color: AppColors.accent,
           ),
-          const SizedBox(height: 16),
-          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
-          const SizedBox(height: 16),
+          const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.phone_rounded,
             label: 'No. Telepon',
@@ -455,27 +396,21 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
                 : _user!.phoneNumber,
             color: AppColors.success,
           ),
-          const SizedBox(height: 16),
-          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
-          const SizedBox(height: 16),
+          const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.badge_rounded,
             label: 'Tipe',
             value: 'Pengguna',
             color: AppColors.warning,
           ),
-          const SizedBox(height: 16),
-          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
-          const SizedBox(height: 16),
+          const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.calendar_today_rounded,
             label: 'Bergabung',
             value: _formatDate(_user!.createdAt),
-            color: AppColors.primary,
+            color: AppColors.primaryDark,
           ),
-          const SizedBox(height: 16),
-          Divider(color: AppColors.textSecondary.withOpacity(0.1), height: 1),
-          const SizedBox(height: 16),
+          const _ProfileDivider(),
           _buildPairingCodeRow(),
         ],
       ),
@@ -486,14 +421,19 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(
-            color: AppColors.accent.withOpacity(0.1),
+            color: AppColors.infoLight.withValues(alpha: 0.58),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(Icons.vpn_key_rounded, color: AppColors.accent, size: 20),
+          child: const Icon(
+            Icons.vpn_key_rounded,
+            color: AppColors.primaryDark,
+            size: 22,
+          ),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -502,33 +442,63 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
                 'Kode Penghubung',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.textSecondary,
+                  fontSize: 12.5,
+                  height: 1.25,
                 ),
               ),
               const SizedBox(height: 4),
-              Text(
-                _user!.pairingCode.isEmpty
-                    ? 'Tidak ada kode'
-                    : _user!.pairingCode,
-                style: AppTextStyles.bodyLarge.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontFamily: 'Courier',
+              SizedBox(
+                width: double.infinity,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Text(
+                      _user!.pairingCode.isEmpty
+                          ? 'Tidak ada kode'
+                          : _user!.pairingCode,
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                        fontFamily: 'Courier',
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
         ),
-        GestureDetector(
-          onTap: _regeneratePairingCode,
-          child: Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.accent.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              Icons.refresh_rounded,
-              color: AppColors.accent,
-              size: 18,
+        const SizedBox(width: 8),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _regeneratePairingCode,
+            borderRadius: BorderRadius.circular(10),
+            child: Ink(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: AppColors.infoLight.withValues(alpha: 0.58),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Icon(
+                Icons.refresh_rounded,
+                color: AppColors.primaryDark,
+                size: 18,
+              ),
             ),
           ),
         ),
@@ -545,14 +515,15 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: color, size: 20),
+          child: Icon(icon, color: color, size: 22),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -560,7 +531,9 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
               Text(
                 label,
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
+                  color: AppColors.textTertiary,
+                  fontSize: 12.5,
+                  height: 1.25,
                 ),
               ),
               const SizedBox(height: 4),
@@ -573,7 +546,10 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
                     value,
                     maxLines: 1,
                     style: AppTextStyles.bodyLarge.copyWith(
-                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
                     ),
                   ),
                 ),
@@ -587,22 +563,18 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
 
   Widget _buildEditForm() {
     return Container(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Colors.white.withOpacity(0.95)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: AppColors.textPrimary.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
         ],
-        border: Border.all(color: AppColors.primary.withOpacity(0.1), width: 1),
       ),
       child: Column(
         children: [
@@ -612,7 +584,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             icon: Icons.person_rounded,
             hint: 'Masukkan nama lengkap',
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           _buildEditField(
             label: 'Email',
             controller: _emailController,
@@ -620,7 +592,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             hint: 'Masukkan email',
             keyboardType: TextInputType.emailAddress,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           _buildEditField(
             label: 'No. Telepon',
             controller: _phoneController,
@@ -645,35 +617,44 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
       children: [
         Text(
           label,
-          style: AppTextStyles.bodyMedium.copyWith(
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+          style: AppTextStyles.bodySmall.copyWith(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textTertiary,
           ),
         ),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
           keyboardType: keyboardType,
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textPrimary,
+            fontSize: 14.5,
+            fontWeight: FontWeight.w700,
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, color: AppColors.primary),
+            prefixIcon: Icon(icon, color: AppColors.primaryDark, size: 20),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.primary, width: 2),
+              borderSide: const BorderSide(
+                color: AppColors.primaryDark,
+                width: 1.4,
+              ),
             ),
             filled: true,
-            fillColor: Colors.white,
+            fillColor: const Color(0xFFF8FAFC),
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
+              horizontal: 14,
+              vertical: 13,
             ),
           ),
         ),
@@ -688,5 +669,18 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     _emailController.dispose();
     _phoneController.dispose();
     super.dispose();
+  }
+}
+
+class _ProfileDivider extends StatelessWidget {
+  const _ProfileDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      color: const Color(0xFFE2E8F0).withValues(alpha: 0.78),
+    );
   }
 }

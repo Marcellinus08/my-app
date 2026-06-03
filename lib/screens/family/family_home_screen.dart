@@ -68,7 +68,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   String? _debugErrorMessage;
   Timer? _liveTrackingFreshnessTimer;
   DateTime _liveTrackingNow = DateTime.now();
-  late AnimationController _rotationController;
   late Animation<double> _fadeAnimation;
   late AnimationController _fadeController;
 
@@ -100,11 +99,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-
-    _rotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 25),
-    )..repeat();
 
     _fadeAnimation = Tween<double>(
       begin: 0.0,
@@ -332,6 +326,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             });
 
             if (activeDoc != null && activeData != null) {
+              NotificationService.instance.stopSosAlarmLoop();
               _notifyActiveSos(activeDoc.id, activeData);
             } else {
               _lastNotifiedSosId = null;
@@ -347,7 +342,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     if (_lastNotifiedSosId == sosId) return;
     _lastNotifiedSosId = sosId;
 
-    NotificationService.instance.showSosFullScreenNotification(data);
+    NotificationService.instance.stopSosAlarmLoop(cancelNotification: true);
+    unawaited(NotificationService.instance.showSosOneShotNotification(data));
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -437,52 +433,176 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Future<void> _onAddUserPressed() async {
-    final controller = TextEditingController();
+    var pairingCodeInput = '';
 
     final pairingCode = await showDialog<String>(
       context: context,
+      barrierColor: const Color.fromRGBO(15, 23, 42, 0.4),
       builder: (dialogContext) {
         return AlertDialog(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
           ),
-          title: Text(
-            'Tambah Pengguna',
-            style: AppTextStyles.heading3.copyWith(fontWeight: FontWeight.w800),
-          ),
-          content: TextField(
-            controller: controller,
-            textCapitalization: TextCapitalization.characters,
-            decoration: InputDecoration(
-              labelText: 'Kode Pairing',
-              hintText: 'Masukkan kode dari TunaNetra',
-              prefixIcon: const Icon(Icons.vpn_key_rounded),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.person_add_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
               ),
-            ),
-            onSubmitted: (_) {
-              Navigator.pop(dialogContext, controller.text.trim());
-            },
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Tambah Pengguna',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodyLarge.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Masukkan kode pairing dari akun pengguna tunanetra.',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Kode pairing',
+                  hintText: 'Contoh: ABC123',
+                  labelStyle: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                  hintStyle: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textTertiary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.vpn_key_rounded,
+                    color: AppColors.primary,
+                    size: 18,
+                  ),
+                  filled: true,
+                  fillColor: const Color(0xFFF8FAFC),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(
+                      color: AppColors.primary,
+                      width: 1.2,
+                    ),
+                  ),
+                ),
+                onChanged: (value) {
+                  pairingCodeInput = value;
+                },
+                onSubmitted: (_) {
+                  Navigator.pop(dialogContext, pairingCodeInput.trim());
+                },
+              ),
+            ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('Batal'),
-            ),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(dialogContext, controller.text.trim());
-              },
-              icon: const Icon(Icons.send_rounded, size: 18),
-              label: const Text('Kirim'),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      FocusScope.of(dialogContext).unfocus();
+                      Navigator.pop(dialogContext);
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.textSecondary,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: Text(
+                      'Batal',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      FocusScope.of(dialogContext).unfocus();
+                      Navigator.pop(dialogContext, pairingCodeInput.trim());
+                    },
+                    icon: const Icon(Icons.send_rounded, size: 16),
+                    label: const Text('Kirim'),
+                    style: ElevatedButton.styleFrom(
+                      elevation: 0,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         );
       },
     );
-
-    controller.dispose();
 
     if (pairingCode == null) return;
     final normalizedCode = pairingCode.toUpperCase().trim();
@@ -601,7 +721,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     );
   }
 
-  void _openSosLocation() {
+  Future<void> _openSosLocation() async {
     final userId =
         _readString(_activeSosData?['userId']) ??
         _readString(widget.initialSosData?['userId']) ??
@@ -626,13 +746,70 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       return;
     }
 
-    Navigator.push(
+    final didResolveSos = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (ctx) =>
             FamilyHistoryScreen(targetUid: userId, familyId: _resolvedFamilyId),
       ),
     );
+
+    if (!mounted) return;
+    if (didResolveSos == true) {
+      setState(() {
+        _activeSosDoc = null;
+        _activeSosData = null;
+        _lastNotifiedSosId = null;
+      });
+    }
+    await _refreshActiveSosOnce();
+  }
+
+  Future<void> _refreshActiveSosOnce() async {
+    final familyId = _resolvedFamilyId.isNotEmpty
+        ? _resolvedFamilyId
+        : (widget.familyId.trim().isNotEmpty
+              ? widget.familyId.trim()
+              : (AuthService().currentUserId ?? ''));
+
+    if (familyId.isEmpty) return;
+
+    try {
+      final snapshot = await _firestore
+          .collection('sos_alerts')
+          .where('familyUids', arrayContains: familyId)
+          .where('status', isEqualTo: 'active')
+          .orderBy('createdAt', descending: true)
+          .limit(1)
+          .get(const GetOptions(source: Source.server));
+
+      if (!mounted) return;
+
+      if (snapshot.docs.isEmpty) {
+        setState(() {
+          _activeSosDoc = null;
+          _activeSosData = null;
+        });
+        return;
+      }
+
+      final activeDoc = snapshot.docs.first;
+      final activeData = {
+        ...activeDoc.data(),
+        'type': 'sos',
+        'sosId': activeDoc.id,
+        'familyUid': familyId,
+      };
+
+      setState(() {
+        _activeSosDoc = activeDoc;
+        _activeSosData = activeData;
+      });
+
+      NotificationService.instance.stopSosAlarmLoop();
+    } catch (error) {
+      debugPrint('[FamilyHome] Refresh active SOS failed: $error');
+    }
   }
 
   Future<void> resolveSosAlert() async {
@@ -735,7 +912,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     _pairingRequestSub?.cancel();
     _familyDocSub?.cancel();
     _liveTrackingFreshnessTimer?.cancel();
-    _rotationController.dispose();
     _fadeController.dispose();
     _locationService.dispose();
     super.dispose();
@@ -744,229 +920,278 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withOpacity(0.08),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: Stack(
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: FadeTransition(opacity: _fadeAnimation, child: _buildMainContent()),
+    );
+  }
+
+  Widget _buildMainContent() {
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Animated rotating circles background
-            ...List.generate(4, (index) {
-              return AnimatedBuilder(
-                animation: _rotationController,
-                builder: (context, child) {
-                  final angle =
-                      _rotationController.value * 2 * math.pi +
-                      (index * math.pi / 2);
-                  final size = 120.0 + (index * 40);
-                  final distance = 150.0 + (index * 30);
-
-                  return Positioned(
-                    left:
-                        MediaQuery.of(context).size.width / 2 +
-                        math.cos(angle) * distance -
-                        size / 2,
-                    top:
-                        MediaQuery.of(context).size.height / 3 +
-                        math.sin(angle) * distance -
-                        size / 2,
-                    child: Container(
-                      width: size,
-                      height: size,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: RadialGradient(
-                          colors: [
-                            AppColors.primaryLight.withOpacity(0.06),
-                            Colors.transparent,
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            }),
-
-            // Main content with fade animation
-            FadeTransition(opacity: _fadeAnimation, child: _buildMainContent()),
+            _buildHeader(),
+            const SizedBox(height: 18),
+            _buildFamilyOverviewCard(),
+            const SizedBox(height: 14),
+            _buildAddUserAction(),
+            if (_activeSosData != null) ...[
+              const SizedBox(height: 14),
+              _buildActiveSosBanner(),
+            ],
+            const SizedBox(height: 18),
+            Text(
+              'Pengguna Dipantau',
+              style: AppTextStyles.bodyLarge.copyWith(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (_isLoadingUsers)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 44),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_monitoredUsers.isEmpty)
+              _buildEmptyState()
+            else
+              _buildUsersList(),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMainContent() {
-    return SafeArea(
-      child: Column(
-        children: [
-          // Clean & Elegant Header
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [const Color(0xFF0D47A1), const Color(0xFF1565C0)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0D47A1).withOpacity(0.2),
-                  blurRadius: 25,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Left: Greeting + Family Name
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Selamat Datang',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: Colors.white.withOpacity(0.85),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            _familyName,
-                            maxLines: 1,
-                            style: AppTextStyles.heading1.copyWith(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Monitoring ${_monitoredUsers.length} pengguna',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: Colors.white.withOpacity(0.8),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                GestureDetector(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const FamilySettingsScreen(),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                      borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withOpacity(0.25),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.settings_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+  int get _activeMonitoredCount {
+    var total = 0;
+    for (final user in _monitoredUsers) {
+      final uid = user['uid'] as String? ?? '';
+      if (_isUserOnline(uid)) total++;
+    }
+    return total;
+  }
 
-          if (_activeSosData != null) _buildActiveSosBanner(),
-
-          // Monitored Users List
-          Expanded(
-            child: _isLoadingUsers
-                ? Center(
-                    child: CircularProgressIndicator(
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        AppColors.primary,
-                      ),
-                    ),
-                  )
-                : _monitoredUsers.isEmpty
-                ? _buildEmptyState()
-                : _buildUsersList(),
-          ),
-
-          // Add User Button at Bottom
-          Container(
-            padding: const EdgeInsets.all(20),
-            child: GestureDetector(
-              onTap: _isSubmittingPairingRequest ? null : _onAddUserPressed,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.3),
-                      blurRadius: 15,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.person_add_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      _isSubmittingPairingRequest
-                          ? 'Mengirim Permintaan...'
-                          : 'Tambah Pengguna',
-                      style: AppTextStyles.bodyLarge.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
+  Widget _buildHeader() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Selamat datang',
+                style: AppTextStyles.caption.copyWith(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+              const SizedBox(height: 3),
+              Text(
+                _familyName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTextStyles.heading3.copyWith(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const FamilySettingsScreen(),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: Ink(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Icon(
+                Icons.settings_rounded,
+                color: AppColors.primaryDark,
+                size: 22,
+              ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFamilyOverviewCard() {
+    final activeCount = _activeMonitoredCount;
+    final totalCount = _monitoredUsers.length;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
         ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primaryDark.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.family_restroom_rounded,
+                  color: AppColors.primaryDark,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pemantauan keluarga',
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Pantau lokasi dan kondisi pengguna secara real-time.',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _FamilyStatusPill(
+                  icon: Icons.people_alt_rounded,
+                  label: 'Dipantau',
+                  value: '$totalCount pengguna',
+                  color: AppColors.primaryDark,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _FamilyStatusPill(
+                  icon: Icons.circle_rounded,
+                  label: 'Status',
+                  value: activeCount > 0 ? '$activeCount aktif' : 'Belum aktif',
+                  color: activeCount > 0
+                      ? AppColors.success
+                      : AppColors.warning,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddUserAction() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _isSubmittingPairingRequest ? null : _onAddUserPressed,
+        borderRadius: BorderRadius.circular(18),
+        child: Ink(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            color: AppColors.primaryDark,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.primaryDark.withValues(alpha: 0.16),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  _isSubmittingPairingRequest
+                      ? Icons.sync_rounded
+                      : Icons.person_add_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  _isSubmittingPairingRequest
+                      ? 'Mengirim Permintaan...'
+                      : 'Tambah Pengguna',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.button.copyWith(
+                    fontSize: 18,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Colors.white.withValues(alpha: 0.86),
+                size: 26,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -976,69 +1201,112 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(20, 8, 20, 10),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.error,
+        color: const Color(0xFFEF4444),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: AppColors.error.withOpacity(0.25),
+            color: const Color(0xFFEF4444).withValues(alpha: 0.16),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Icon(Icons.warning_rounded, color: Colors.white, size: 24),
-              const SizedBox(width: 10),
+              const Icon(Icons.warning_rounded, color: Colors.white, size: 28),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   'SOS Aktif - $userName membutuhkan bantuan',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.bodyLarge.copyWith(
                     color: Colors.white,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
-                    fontSize: 15,
+                    height: 1.35,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _openSosLocation,
-                  icon: const Icon(Icons.location_on_rounded, size: 18),
-                  label: const Text('Lihat Lokasi'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: AppColors.error,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+                child: _buildSosActionButton(
+                  icon: Icons.location_on_rounded,
+                  label: 'Lihat Lokasi',
+                  onTap: _openSosLocation,
+                  isFilled: true,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: resolveSosAlert,
-                  icon: const Icon(Icons.check_circle_rounded, size: 18),
-                  label: const Text('Tandai Ditangani'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white, width: 1.5),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+                child: _buildSosActionButton(
+                  icon: Icons.check_circle_rounded,
+                  label: 'Tandai Ditangani',
+                  onTap: resolveSosAlert,
                 ),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSosActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isFilled = false,
+  }) {
+    final foregroundColor = isFilled ? const Color(0xFFEF4444) : Colors.white;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 50,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: isFilled ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: isFilled
+                ? null
+                : Border.all(color: Colors.white, width: 1.2),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: foregroundColor),
+              const SizedBox(width: 6),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: foregroundColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1161,12 +1429,14 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Widget _buildUsersList() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Column(
-        children: List.generate(_monitoredUsers.length, (index) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...List.generate(_monitoredUsers.length, (index) {
           final user = _monitoredUsers[index];
           final uid = user['uid'] as String? ?? '';
+          final phoneNumber = _readString(user['phoneNumber']);
+          final email = _readString(user['email']);
           final location = _latestLocations[uid];
           final isOnline = _isUserOnline(uid);
           final phoneBatteryLevel = _getLiveBatteryLevel(uid);
@@ -1185,51 +1455,23 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
               );
             },
             child: Container(
-              margin: const EdgeInsets.only(bottom: 16),
+              margin: const EdgeInsets.only(bottom: 14),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Colors.white, Colors.white.withOpacity(0.95)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(24),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.12),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
+                    color: AppColors.textPrimary.withValues(alpha: 0.045),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
                   ),
                 ],
-                border: Border.all(
-                  color: AppColors.primary.withOpacity(0.1),
-                  width: 1.5,
-                ),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
               child: Column(
                 children: [
-                  // Header Section with Battery
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          AppColors.primary.withOpacity(0.06),
-                          AppColors.primary.withOpacity(0.02),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: const BorderRadius.only(
-                        topLeft: Radius.circular(24),
-                        topRight: Radius.circular(24),
-                      ),
-                      border: Border(
-                        bottom: BorderSide(
-                          color: AppColors.primary.withOpacity(0.08),
-                          width: 1,
-                        ),
-                      ),
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
                     child: _buildUserCardHeader(
                       user: user,
                       isOnline: isOnline,
@@ -1237,29 +1479,28 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                       phoneBatteryLevel: phoneBatteryLevel,
                     ),
                   ),
-
-                  // Contact Information
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                     child: Column(
                       children: [
-                        // Phone Number
-                        if (user['phoneNumber'] != null &&
-                            (user['phoneNumber'] as String).isNotEmpty)
+                        if (phoneNumber != null)
                           Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
+                            padding: const EdgeInsets.only(bottom: 9),
                             child: Row(
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.all(8),
+                                  width: 34,
+                                  height: 34,
                                   decoration: BoxDecoration(
-                                    color: Colors.blue.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
+                                    color: AppColors.infoLight.withValues(
+                                      alpha: 0.62,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: Icon(
                                     Icons.phone_rounded,
                                     size: 18,
-                                    color: Colors.blue,
+                                    color: AppColors.primaryDark,
                                   ),
                                 ),
                                 const SizedBox(width: 10),
@@ -1272,18 +1513,26 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                                         'Nomor Telepon',
                                         style: AppTextStyles.bodySmall.copyWith(
                                           color: AppColors.textSecondary,
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w500,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                       const SizedBox(height: 2),
-                                      Text(
-                                        user['phoneNumber'] ?? '-',
-                                        style: AppTextStyles.bodyMedium
-                                            .copyWith(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 13,
-                                            ),
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            phoneNumber,
+                                            maxLines: 1,
+                                            style: AppTextStyles.bodyMedium
+                                                .copyWith(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 13,
+                                                ),
+                                          ),
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -1292,21 +1541,22 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                             ),
                           ),
 
-                        // Email
-                        if (user['email'] != null &&
-                            (user['email'] as String).isNotEmpty)
+                        if (email != null)
                           Row(
                             children: [
                               Container(
-                                padding: const EdgeInsets.all(8),
+                                width: 34,
+                                height: 34,
                                 decoration: BoxDecoration(
-                                  color: Colors.green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(8),
+                                  color: AppColors.successLight.withValues(
+                                    alpha: 0.62,
+                                  ),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Icon(
                                   Icons.email_rounded,
                                   size: 18,
-                                  color: Colors.green,
+                                  color: AppColors.success,
                                 ),
                               ),
                               const SizedBox(width: 10),
@@ -1318,19 +1568,26 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                                       'Email',
                                       style: AppTextStyles.bodySmall.copyWith(
                                         color: AppColors.textSecondary,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w500,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
-                                    Text(
-                                      user['email'] ?? '-',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                          email,
+                                          maxLines: 1,
+                                          style: AppTextStyles.bodyMedium
+                                              .copyWith(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 12,
+                                              ),
+                                        ),
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ],
                                 ),
@@ -1341,17 +1598,14 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                     ),
                   ),
 
-                  // Device Status Section
                   if (location != null) ...[
                     Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.symmetric(horizontal: 14),
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.05),
+                        color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppColors.primary.withOpacity(0.1),
-                        ),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1365,7 +1619,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                           Container(
                             width: 1,
                             height: 28,
-                            color: AppColors.primary.withOpacity(0.1),
+                            color: const Color(0xFFE2E8F0),
                           ),
                           _buildDeviceStatusInfo(
                             icon: Icons.wifi_rounded,
@@ -1376,7 +1630,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                           Container(
                             width: 1,
                             height: 28,
-                            color: AppColors.primary.withOpacity(0.1),
+                            color: const Color(0xFFE2E8F0),
                           ),
                           _buildDeviceStatusInfo(
                             icon: Icons.directions_walk_rounded,
@@ -1394,10 +1648,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                     const SizedBox(height: 12),
                   ],
 
-                  // Last Activity Time
                   if (location != null)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
                       child: Row(
                         children: [
                           Icon(
@@ -1406,76 +1659,61 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                             color: AppColors.textSecondary,
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            'Lokasi terakhir: ${_formatTimeAgo(location.timestamp)}',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                              fontSize: 11,
+                          Expanded(
+                            child: Text(
+                              'Lokasi terakhir: ${_formatTimeAgo(location.timestamp)}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textSecondary,
+                                fontSize: 11,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
 
-                  // Action Button
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
                     child: Row(
                       children: [
                         _buildManagePlacesButton(user),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         Expanded(
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onTap: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (ctx) => FamilyHistoryScreen(
-                                      targetUid: user['uid'],
-                                      familyId: _resolvedFamilyId,
-                                    ),
+                          child: _buildUserCardActionButton(
+                            icon: Icons.map_rounded,
+                            label: 'Lihat Lokasi',
+                            isPrimary: true,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (ctx) => FamilyHistoryScreen(
+                                    targetUid: user['uid'],
+                                    familyId: _resolvedFamilyId,
                                   ),
-                                );
-                              },
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
                                 ),
-                                decoration: BoxDecoration(
-                                  gradient: AppColors.primaryGradient,
-                                  borderRadius: BorderRadius.circular(12),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.primary.withOpacity(0.2),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildUserCardActionButton(
+                            icon: Icons.history_rounded,
+                            label: 'Riwayat',
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (ctx) => FamilyHistoryDetailScreen(
+                                    targetUid: user['uid'],
+                                    familyId: _resolvedFamilyId,
+                                  ),
                                 ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.map_rounded,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      'Lihat Detail Lokasi',
-                                      style: AppTextStyles.bodyMedium.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -1486,6 +1724,70 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             ),
           );
         }),
+      ],
+    );
+  }
+
+  Widget _buildUserCardActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool isPrimary = false,
+  }) {
+    final backgroundColor = isPrimary
+        ? AppColors.primaryDark
+        : AppColors.primaryLight.withValues(alpha: 0.14);
+    final foregroundColor = isPrimary ? Colors.white : AppColors.primaryDark;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+            border: isPrimary
+                ? null
+                : Border.all(
+                    color: AppColors.primaryDark.withValues(alpha: 0.12),
+                  ),
+            boxShadow: isPrimary
+                ? [
+                    BoxShadow(
+                      color: AppColors.primaryDark.withValues(alpha: 0.12),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: foregroundColor, size: 18),
+              const SizedBox(width: 6),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: foregroundColor,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1509,23 +1811,19 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             );
           },
           child: Container(
-            width: 48,
-            height: 48,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
+              color: AppColors.primaryLight.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.18),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+              border: Border.all(
+                color: AppColors.primaryDark.withValues(alpha: 0.12),
+              ),
             ),
             child: const Icon(
               Icons.add_location_alt_rounded,
-              color: Colors.white,
-              size: 24,
+              color: AppColors.primaryDark,
+              size: 22,
             ),
           ),
         ),
@@ -1548,29 +1846,19 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     );
 
     final avatar = Container(
-      width: 56,
-      height: 56,
+      width: 48,
+      height: 48,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.primary, AppColors.primary.withValues(alpha: 0.7)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: AppColors.primaryDark,
         shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.2),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
       ),
       child: Center(
         child: Text(
           avatarText,
           style: AppTextStyles.heading2.copyWith(
             color: Colors.white,
-            fontSize: 24,
+            fontSize: 22,
+            fontWeight: FontWeight.w800,
           ),
         ),
       ),
@@ -1594,25 +1882,18 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           Row(
             children: [
               Container(
-                width: 10,
-                height: 10,
+                width: 8,
+                height: 8,
                 decoration: BoxDecoration(
-                  color: isOnline ? Colors.green : Colors.orange,
+                  color: isOnline ? AppColors.success : AppColors.warning,
                   shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: isOnline ? Colors.green : Colors.orange,
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 7),
               Text(
                 isOnline ? 'Aktif' : 'Tidak aktif',
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: isOnline ? Colors.green : Colors.orange,
+                  color: isOnline ? AppColors.success : AppColors.warning,
                   fontWeight: FontWeight.w700,
                   fontSize: 12,
                 ),
@@ -1624,12 +1905,12 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     );
 
     final identity = Row(
-      children: [avatar, const SizedBox(width: 14), userInfo],
+      children: [avatar, const SizedBox(width: 12), userInfo],
     );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [identity, const SizedBox(height: 14), batteryIndicators],
+      children: [identity, const SizedBox(height: 10), batteryIndicators],
     );
   }
 
@@ -1668,95 +1949,67 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     final batteryColor = hasBattery
         ? _getBatteryColor(batteryLevel)
         : AppColors.textSecondary;
-    final percentText = hasBattery ? '${batteryLevel.toInt()}%' : '?';
+    final percentText = hasBattery
+        ? '${batteryLevel.toInt()}%'
+        : 'Belum terbaca';
     final fillWidth = hasBattery ? math.max(0.08, batteryLevel / 100.0) : 0.0;
 
     return Semantics(
       label: '$semanticLabel: $percentText',
-      child: SizedBox(
-        height: 40,
-        child: Stack(
-          clipBehavior: Clip.none,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 56),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Positioned(
-              right: -4,
-              top: 17,
-              child: Container(
-                width: 5,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: batteryColor.withValues(alpha: 0.42),
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(3),
-                    bottomRight: Radius.circular(3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  percentText,
+                  maxLines: 1,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: hasBattery ? AppColors.textPrimary : batteryColor,
+                    fontSize: hasBattery ? 15 : 11.5,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ),
             ),
-            Positioned.fill(
-              right: 1,
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
               child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.65),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: batteryColor.withValues(alpha: 0.48),
-                    width: 2,
-                  ),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (hasBattery)
-                      Align(
+                height: 4,
+                color: const Color(0xFFE2E8F0),
+                child: hasBattery
+                    ? Align(
                         alignment: Alignment.centerLeft,
                         child: FractionallySizedBox(
                           widthFactor: fillWidth,
                           heightFactor: 1,
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                                colors: [
-                                  batteryColor,
-                                  batteryColor.withValues(alpha: 0.72),
-                                ],
-                              ),
-                            ),
-                          ),
+                          child: Container(color: batteryColor),
                         ),
-                      ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Row(
-                        children: [
-                          Text(
-                            label,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            percentText,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: hasBattery
-                                  ? AppColors.textPrimary
-                                  : AppColors.textSecondary,
-                              fontSize: hasBattery ? 14 : 20,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                      )
+                    : const SizedBox.shrink(),
               ),
             ),
           ],
@@ -1798,7 +2051,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
 
   bool _isLiveTrackingFresh(Timestamp? updatedAt) {
     if (updatedAt == null) return false;
-    return _liveTrackingNow.difference(updatedAt.toDate()).inSeconds <= 30;
+    return _liveTrackingNow.difference(updatedAt.toDate()).inSeconds <= 120;
   }
 
   Widget _buildDeviceStatusInfo({
@@ -1861,5 +2114,74 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     } else {
       return '${difference.inDays} hari yang lalu';
     }
+  }
+}
+
+class _FamilyStatusPill extends StatelessWidget {
+  const _FamilyStatusPill({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 70),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.caption.copyWith(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: AppTextStyles.caption.copyWith(
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

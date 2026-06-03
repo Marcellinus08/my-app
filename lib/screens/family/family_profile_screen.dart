@@ -163,142 +163,136 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withOpacity(0.08),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                children: [
+                  _buildSectionTitle('Informasi Profil'),
+                  const SizedBox(height: 12),
+                  if (_isLoading) ...[
+                    const SizedBox(height: 24),
+                    const Center(child: CircularProgressIndicator()),
+                  ] else if (_familyProfile == null) ...[
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Text(
+                        _loadError ?? 'Data profil keluarga tidak tersedia.',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    if (_isEditing) _buildEditForm() else _buildProfileCard(),
+                    const SizedBox(height: 16),
+                    _buildActionButton(),
+                  ],
+                ],
+              ),
+            ),
+          ],
         ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              Container(
-                margin: const EdgeInsets.all(20),
-                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.white, Colors.white.withOpacity(0.95)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.textSecondary.withOpacity(0.15),
-                      blurRadius: 25,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                  border: Border.all(
-                    color: AppColors.textSecondary.withOpacity(0.1),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        if (_isEditing) {
-                          setState(() {
-                            _isEditing = false;
-                            _syncControllers(_familyProfile);
-                          });
-                        } else {
-                          Navigator.pop(context);
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          _isEditing
-                              ? Icons.close_rounded
-                              : Icons.arrow_back_rounded,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) =>
-                                AppColors.primaryGradient.createShader(bounds),
-                            child: Text(
-                              _isEditing ? 'Edit Profil' : 'Profil Saya',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 24,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _isEditing
-                                ? 'Ubah data keluarga'
-                                : 'Kelola informasi akun',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                  children: [
-                    if (_isLoading) ...[
-                      const SizedBox(height: 24),
-                      const Center(child: CircularProgressIndicator()),
-                    ] else if (_familyProfile == null) ...[
-                      const SizedBox(height: 24),
-                      Container(
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withOpacity(0.06),
-                              blurRadius: 16,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: Text(
-                          _loadError ?? 'Data profil keluarga tidak tersedia.',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      if (_isEditing) _buildEditForm() else _buildProfileCard(),
-                      const SizedBox(height: 20),
-                      _buildActionButton(),
-                    ],
-                    const SizedBox(height: 30),
-                  ],
-                ),
-              ),
-            ],
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Material(
+            color: AppColors.primaryDark,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () {
+                if (_isEditing) {
+                  setState(() {
+                    _isEditing = false;
+                    _syncControllers(_familyProfile);
+                  });
+                  return;
+                }
+                Navigator.pop(context);
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                width: 42,
+                height: 42,
+                child: Icon(
+                  _isEditing ? Icons.close_rounded : Icons.arrow_back_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isEditing ? 'Ubah Profil' : 'Profil Saya',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.heading3.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _isEditing ? 'Ubah data keluarga' : 'Kelola informasi akun',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 2),
+      child: Text(
+        title,
+        style: AppTextStyles.bodyLarge.copyWith(
+          color: AppColors.textPrimary,
+          fontSize: 16,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
@@ -309,36 +303,35 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
     final createdAtLabel = _formatDate(profile['createdAt']);
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.primary.withOpacity(0.12)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: AppColors.textPrimary.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildInfoRow(
-            icon: Icons.family_restroom_rounded,
+            icon: Icons.person_rounded,
             label: 'Nama',
             value: profile['name']?.toString() ?? 'Keluarga',
-            color: AppColors.primary,
+            color: AppColors.primaryDark,
           ),
-          _buildDivider(),
+          const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.email_rounded,
             label: 'Email',
             value: profile['email']?.toString() ?? '-',
             color: AppColors.accent,
           ),
-          _buildDivider(),
+          const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.phone_rounded,
             label: 'No. Telepon',
@@ -347,31 +340,21 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
                 : profile['phoneNumber'].toString(),
             color: AppColors.success,
           ),
-          _buildDivider(),
+          const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.badge_rounded,
             label: 'Tipe',
             value: _formatUserType(profile['userType']),
             color: AppColors.warning,
           ),
-          _buildDivider(),
+          const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.calendar_today_rounded,
             label: 'Bergabung',
             value: createdAtLabel,
-            color: AppColors.primary,
+            color: AppColors.primaryDark,
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildDivider() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 16),
-      child: Divider(
-        color: AppColors.textSecondary.withOpacity(0.1),
-        height: 1,
       ),
     );
   }
@@ -385,14 +368,15 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(12),
+          width: 42,
+          height: 42,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: color, size: 20),
+          child: Icon(icon, color: color, size: 22),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -400,7 +384,9 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
               Text(
                 label,
                 style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
+                  color: AppColors.textTertiary,
+                  fontSize: 12.5,
+                  height: 1.25,
                 ),
               ),
               const SizedBox(height: 4),
@@ -413,8 +399,10 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
                     value,
                     maxLines: 1,
                     style: AppTextStyles.bodyLarge.copyWith(
-                      fontWeight: FontWeight.w700,
                       color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
                     ),
                   ),
                 ),
@@ -428,16 +416,16 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
 
   Widget _buildEditForm() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppColors.primary.withOpacity(0.12)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: AppColors.textPrimary.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
@@ -446,19 +434,19 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
           _buildEditField(
             label: 'Nama',
             controller: _nameController,
-            icon: Icons.family_restroom_rounded,
+            icon: Icons.person_rounded,
             hint: 'Masukkan nama keluarga',
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           _buildEditField(
             label: 'Email',
             controller: _emailController,
             icon: Icons.email_rounded,
-            hint: 'Email akun',
+            hint: 'Masukkan email',
             keyboardType: TextInputType.emailAddress,
             readOnly: true,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           _buildEditField(
             label: 'No. Telepon',
             controller: _phoneController,
@@ -484,9 +472,10 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
       children: [
         Text(
           label,
-          style: AppTextStyles.bodyMedium.copyWith(
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+          style: AppTextStyles.bodySmall.copyWith(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textTertiary,
           ),
         ),
         const SizedBox(height: 8),
@@ -494,28 +483,36 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
           controller: controller,
           keyboardType: keyboardType,
           readOnly: readOnly,
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textPrimary,
+            fontSize: 14.5,
+            fontWeight: FontWeight.w700,
+          ),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Icon(icon, color: AppColors.primary),
+            prefixIcon: Icon(icon, color: AppColors.primaryDark, size: 20),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: AppColors.primary, width: 2),
+              borderSide: const BorderSide(
+                color: AppColors.primaryDark,
+                width: 1.4,
+              ),
             ),
             filled: true,
             fillColor: readOnly
-                ? AppColors.textSecondary.withOpacity(0.05)
-                : Colors.white,
+                ? const Color(0xFFF1F5F9)
+                : const Color(0xFFF8FAFC),
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
+              horizontal: 14,
+              vertical: 13,
             ),
           ),
         ),
@@ -524,60 +521,45 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
   }
 
   Widget _buildActionButton() {
-    return GestureDetector(
-      onTap: _isSaving
-          ? null
-          : () {
-              if (_isEditing) {
-                _saveFamilyProfile();
-              } else {
-                setState(() => _isEditing = true);
-              }
-            },
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: AppColors.primaryGradient,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (_isSaving)
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            else
-              Icon(
-                _isEditing ? Icons.check_rounded : Icons.edit_rounded,
-                color: Colors.white,
-                size: 20,
-              ),
-            const SizedBox(width: 8),
-            Text(
-              _isEditing
-                  ? (_isSaving ? 'Menyimpan...' : 'Simpan Perubahan')
-                  : 'Edit Profil',
-              style: AppTextStyles.bodyLarge.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+    final label = _isEditing ? 'Simpan Perubahan' : 'Ubah Profil';
+    final icon = _isEditing ? Icons.check_rounded : Icons.edit_rounded;
+    final onTap = _isEditing
+        ? _saveFamilyProfile
+        : () => setState(() => _isEditing = true);
+
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton.icon(
+        onPressed: onTap,
+        icon: Icon(icon, size: 19),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          elevation: 0,
+          backgroundColor: AppColors.primaryDark,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 18),
+          textStyle: AppTextStyles.bodySmall.copyWith(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _ProfileDivider extends StatelessWidget {
+  const _ProfileDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      margin: const EdgeInsets.symmetric(vertical: 12),
+      color: const Color(0xFFE2E8F0).withValues(alpha: 0.78),
     );
   }
 }

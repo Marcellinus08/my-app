@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/family_place_service.dart';
 import '../../utils/constants.dart';
+import '../../widgets/app_dialog.dart';
 
 class FamilyManagePlacesScreen extends StatefulWidget {
   final String? ownerUid;
@@ -38,16 +39,16 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
   bool _isSaving = false;
 
   TextStyle get _fieldTextStyle => AppTextStyles.bodyLarge.copyWith(
-    fontSize: 16,
+    fontSize: 14,
     color: AppColors.textPrimary,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w700,
     height: 1.3,
   );
 
   TextStyle get _fieldHintStyle => AppTextStyles.bodyLarge.copyWith(
-    fontSize: 16,
-    color: AppColors.textSecondary.withValues(alpha: 0.85),
-    fontWeight: FontWeight.w400,
+    fontSize: 14,
+    color: AppColors.textSecondary,
+    fontWeight: FontWeight.w600,
     height: 1.3,
   );
 
@@ -124,26 +125,16 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
   }
 
   Future<void> _deletePlace(String placeId) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Hapus tempat ini?'),
-        content: const Text('Tempat yang dihapus tidak dapat dikembalikan.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Hapus'),
-          ),
-        ],
-      ),
+      title: 'Hapus tempat?',
+      description: 'Tempat yang dihapus tidak dapat dikembalikan.',
+      icon: Icons.location_off_rounded,
+      iconColor: AppColors.error,
+      cancelText: 'Batal',
+      confirmText: 'Hapus',
+      confirmButtonColor: AppColors.error,
+      isDangerous: true,
     );
 
     if (confirmed != true) return;
@@ -177,25 +168,13 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withValues(alpha: 0.08),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildHeader(),
-              Expanded(child: _buildContent()),
-            ],
-          ),
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            Expanded(child: _buildContent()),
+          ],
         ),
       ),
     );
@@ -203,65 +182,57 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
 
   Widget _buildHeader() {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Colors.white.withValues(alpha: 0.95)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withValues(alpha: 0.15),
-            blurRadius: 25,
-            offset: const Offset(0, 10),
+            color: AppColors.textPrimary.withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.1),
-          width: 1,
-        ),
       ),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.of(context).maybePop(),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.arrow_back_rounded,
-                color: Colors.white,
-                size: 24,
+          Material(
+            color: AppColors.primaryDark,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => Navigator.of(context).maybePop(),
+              borderRadius: BorderRadius.circular(12),
+              child: const SizedBox(
+                width: 42,
+                height: 42,
+                child: Icon(
+                  Icons.arrow_back_rounded,
+                  color: Colors.white,
+                  size: 23,
+                ),
               ),
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                ShaderMask(
-                  shaderCallback: (bounds) =>
-                      AppColors.primaryGradient.createShader(bounds),
-                  child: Text(
-                    'Kelola Tempat',
-                    style: AppTextStyles.heading2.copyWith(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                Text(
+                  'Kelola Tempat',
+                  style: AppTextStyles.heading2.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   _isLoading
                       ? 'Memuat data...'
@@ -272,6 +243,8 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                       : 'Tempat privat pengguna',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -351,9 +324,9 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
 
   Widget _buildFormCard() {
     return Container(
-      decoration: _cardDecoration(AppColors.primary),
+      decoration: _cardDecoration(),
       child: Padding(
-        padding: const EdgeInsets.all(22),
+        padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: Column(
@@ -362,25 +335,19 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
-                      gradient: AppColors.primaryGradient,
+                      color: AppColors.primaryDark.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.24),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
                     ),
                     child: const Icon(
                       Icons.add_location_alt_rounded,
-                      color: Colors.white,
-                      size: 24,
+                      color: AppColors.primaryDark,
+                      size: 23,
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -388,6 +355,7 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                         Text(
                           'Tambah Tempat Privat',
                           style: AppTextStyles.bodyLarge.copyWith(
+                            fontSize: 17,
                             fontWeight: FontWeight.w800,
                             color: AppColors.textPrimary,
                           ),
@@ -397,7 +365,8 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                           'Simpan tujuan khusus untuk pengguna',
                           style: AppTextStyles.bodySmall.copyWith(
                             color: AppColors.textSecondary,
-                            fontSize: 12,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
                       ],
@@ -405,7 +374,7 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 18),
               TextFormField(
                 controller: _nameController,
                 textInputAction: TextInputAction.next,
@@ -418,7 +387,7 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                     ? 'Nama tempat wajib diisi'
                     : null,
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _addressController,
                 textInputAction: TextInputAction.next,
@@ -431,7 +400,7 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                     ? 'Alamat wajib diisi'
                     : null,
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: _selectedCategory,
                 style: _fieldTextStyle,
@@ -456,7 +425,7 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                   setState(() => _selectedCategory = value);
                 },
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
               TextFormField(
                 controller: _gmapLinkController,
                 textInputAction: TextInputAction.done,
@@ -464,29 +433,26 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                 decoration: _inputDecoration(
                   hintText: 'Link Google Maps',
                   prefixIcon: Icons.link_rounded,
-                  helperText:
-                      'Pastikan terdapat titik koordinat di link.',
+                  helperText: 'Pastikan link berisi koordinat lokasi.',
                 ),
                 validator: (value) => value == null || value.trim().isEmpty
                     ? 'Link Google Maps wajib diisi'
                     : null,
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                  ),
+                  color: AppColors.infoLight.withValues(alpha: 0.46),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFD7EAFB)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Icon(
                       Icons.info_outline_rounded,
-                      color: AppColors.primary,
+                      color: AppColors.primaryDark,
                       size: 18,
                     ),
                     const SizedBox(width: 8),
@@ -494,15 +460,16 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                       child: Text(
                         'Contoh: https://www.google.com/maps?q=-6.977308,107.632249',
                         style: AppTextStyles.caption.copyWith(
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w600,
+                          color: AppColors.primaryDark,
+                          fontWeight: FontWeight.w700,
+                          height: 1.3,
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               Material(
                 color: Colors.transparent,
                 child: InkWell(
@@ -513,13 +480,15 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                     opacity: _isSaving ? 0.72 : 1,
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
                       decoration: BoxDecoration(
-                        gradient: AppColors.primaryGradient,
+                        color: AppColors.primaryDark,
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.22),
+                            color: AppColors.primaryDark.withValues(
+                              alpha: 0.14,
+                            ),
                             blurRadius: 12,
                             offset: const Offset(0, 6),
                           ),
@@ -611,12 +580,13 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
 
                 return Card(
                   elevation: 0,
+                  margin: EdgeInsets.zero,
                   color: Colors.transparent,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: Container(
-                    decoration: _cardDecoration(AppColors.primary, radius: 16),
+                    decoration: _cardDecoration(radius: 16),
                     child: ListTile(
                       dense: true,
                       minLeadingWidth: 42,
@@ -627,19 +597,12 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
                         height: 42,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
+                          color: AppColors.primaryLight.withValues(alpha: 0.16),
                           borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.16),
-                              blurRadius: 10,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
                         ),
                         child: Icon(
                           _getCategoryIcon(category),
-                          color: Colors.white,
+                          color: AppColors.primaryDark,
                           size: 21,
                         ),
                       ),
@@ -710,8 +673,8 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
     String? helperText,
   }) {
     final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
-      borderSide: BorderSide(color: AppColors.primary.withValues(alpha: 0.12)),
+      borderRadius: BorderRadius.circular(13),
+      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
     );
 
     return InputDecoration(
@@ -719,13 +682,13 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
       hintStyle: _fieldHintStyle,
       helperText: helperText,
       floatingLabelBehavior: FloatingLabelBehavior.never,
-      prefixIcon: Icon(prefixIcon, color: AppColors.primary, size: 20),
+      prefixIcon: Icon(prefixIcon, color: AppColors.primaryDark, size: 19),
       filled: true,
-      fillColor: AppColors.primaryLight.withValues(alpha: 0.06),
+      fillColor: const Color(0xFFF8FAFC),
       border: border,
       enabledBorder: border,
       focusedBorder: border.copyWith(
-        borderSide: BorderSide(color: AppColors.primary, width: 1.4),
+        borderSide: BorderSide(color: AppColors.primaryDark, width: 1.3),
       ),
       errorBorder: border.copyWith(
         borderSide: BorderSide(color: AppColors.error, width: 1.2),
@@ -733,26 +696,22 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
       focusedErrorBorder: border.copyWith(
         borderSide: BorderSide(color: AppColors.error, width: 1.4),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
     );
   }
 
-  BoxDecoration _cardDecoration(Color accentColor, {double radius = 24}) {
+  BoxDecoration _cardDecoration({double radius = 18}) {
     return BoxDecoration(
-      gradient: LinearGradient(
-        colors: [Colors.white, Colors.white.withValues(alpha: 0.95)],
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-      ),
+      color: Colors.white,
       borderRadius: BorderRadius.circular(radius),
       boxShadow: [
         BoxShadow(
-          color: accentColor.withValues(alpha: 0.08),
-          blurRadius: 20,
-          offset: const Offset(0, 8),
+          color: const Color(0xFF0F172A).withValues(alpha: 0.045),
+          blurRadius: 14,
+          offset: const Offset(0, 6),
         ),
       ],
-      border: Border.all(color: accentColor.withValues(alpha: 0.1)),
+      border: Border.all(color: const Color(0xFFE2E8F0)),
     );
   }
 

@@ -19,6 +19,7 @@ import '../../services/sos_service.dart';
 import '../../services/stt_service.dart';
 import '../../services/tts_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
+import '../../widgets/app_dialog.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -143,11 +144,9 @@ class _NavigationScreenState extends State<NavigationScreen>
   void initState() {
     super.initState();
     _mapController = MapController();
-    _userLocation = defaultLocation;
-    _animatedUserLocation = defaultLocation;
     _locationAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 300),
     )..addListener(_onLocationAnimationTick);
     _latestSmartCaneSensorData = _smartCaneBleService.latestSensorData;
     _smartCaneSensorSubscription = _smartCaneBleService.sensorDataStream.listen(
@@ -163,15 +162,16 @@ class _NavigationScreenState extends State<NavigationScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _getUserLocation();
       _loadPlaces();
-
       await speakSafe(
-        "Halaman navigasi dibuka. Tekan dan tahan tombol tongkat untuk memberi perintah suara.",
+        'Halaman navigasi dibuka. Tekan dan tahan tombol tongkat untuk memberi perintah suara.',
       );
     });
   }
 
   void _startVoiceNavigation() {
-    if (_navigationSttStarting || _navigationSttActive || !mounted) return;
+    if (_navigationSttStarting || _navigationSttActive || !mounted) {
+      return;
+    }
 
     _navigationSttStarting = true;
 
@@ -180,11 +180,12 @@ class _NavigationScreenState extends State<NavigationScreen>
           (result) {
             if (_isSpeaking) return;
 
-            final text = result.toLowerCase();
-            String cleanedText = text.replaceAll('-', ' ').toLowerCase();
-            print("🎤 NAV: $cleanedText");
+            final text = result.toString().toLowerCase();
+            if (text.trim().isEmpty) return;
 
-            _handleNavigationCommand(cleanedText);
+            print('🎤 NAV: $text');
+
+            _handleNavigationCommand(text);
           },
           onStatus: (status) {
             _navigationSttActive = status == 'listening';
@@ -201,54 +202,82 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   Future<void> _stopNavigationStt() async {
     _navigationSttActive = false;
+    _navigationSttStarting = false;
     await _sttService.stopListening();
   }
 
-  void _handleNavigationCommand(String command) async {
-    if (command.length < 2) return;
+  Future<void> _handleNavigationCommand(String command) async {
+    final cleanedCommand = command.trim();
+    if (cleanedCommand.length < 2) return;
 
-    if (TunaNetraVoiceCommands.isHomeCommand(command)) {
-      await _stopNavigationStt();
-      await speakSafe("Membuka halaman utama");
-      await _endNavigationSession();
+    await _stopNavigationStt();
+
+    if (TunaNetraVoiceCommands.isHomeCommand(cleanedCommand)) {
+      await speakSafe('Membuka halaman utama');
       if (!mounted) return;
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        AppRoutes.tunaNetraHome,
-        (route) => false,
-        arguments: {'announceHomeOpened': true},
-      );
+      Navigator.of(
+        context,
+      ).pushNamedAndRemoveUntil(AppRoutes.tunaNetraHome, (route) => false);
       return;
     }
 
-    if (TunaNetraVoiceCommands.isSosCommand(command)) {
+    if (TunaNetraVoiceCommands.isSosCommand(cleanedCommand)) {
       await _triggerNavigationSos();
       return;
     }
 
+    if (cleanedCommand.contains('henti') ||
+        cleanedCommand.contains('stop') ||
+        cleanedCommand.contains('keluar')) {
+      await speakSafe('Navigasi dihentikan');
+      await _endNavigationSession();
+      return;
+    }
+
+    final matchedPlace = _findPlaceFromCommand(cleanedCommand);
+    if (matchedPlace != null) {
+      if (!mounted) return;
+      setState(() {
+        _selectedPlace = matchedPlace;
+        _isLoadingRoute = true;
+        _routeLoadError = '';
+      });
+
+      await speakSafe('Memilih ${_formatPlaceName(matchedPlace.name)}');
+      _startLocationStreaming();
+      return;
+    }
+
+    await speakSafe('Perintah tidak dikenali');
+  }
+
+  PlaceModel? _findPlaceFromCommand(String command) {
+    final normalizedCommand = _normalizeSearchText(command);
+
     for (final place in _places) {
-      if (command.contains(place.name.replaceAll('-', ' ').toLowerCase())) {
-        await _stopNavigationStt();
+      final normalizedName = _normalizeSearchText(place.name);
+      final normalizedCategory = _normalizeSearchText(place.category);
+      final normalizedAddress = _normalizeSearchText(place.address);
 
-        setState(() {
-          _selectedPlace = place;
-        });
-
-        _startLocationStreaming();
-        await _loadRoute();
-
-        return;
+      if (normalizedCommand.contains(normalizedName) ||
+          normalizedName.contains(normalizedCommand) ||
+          normalizedCommand.contains(normalizedCategory) ||
+          normalizedCategory.contains(normalizedCommand) ||
+          normalizedCommand.contains(normalizedAddress) ||
+          normalizedAddress.contains(normalizedCommand)) {
+        return place;
       }
     }
 
-    if (command.contains("berhenti")) {
-      await _stopNavigationStt();
+    return null;
+  }
 
-      await speakSafe("Navigasi dihentikan");
-
-      await _endNavigationSession();
-
-      Navigator.pop(context);
-    }
+  String _normalizeSearchText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s-]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
   void _onLocationAnimationTick() {
@@ -1397,17 +1426,39 @@ class _NavigationScreenState extends State<NavigationScreen>
     try {
       await _saveFinalRoutePointIfAvailable();
 
+      // Get the last known position for end coordinates
+      double? endLat;
+      double? endLng;
+
+      final gpsPosition = _lastKnownGpsPosition;
+      if (gpsPosition != null && !_isUsingPredictedPosition) {
+        endLat = gpsPosition.latitude;
+        endLng = gpsPosition.longitude;
+      } else if (_animatedUserLocation.latitude != 0.0 ||
+          _animatedUserLocation.longitude != 0.0) {
+        endLat = _animatedUserLocation.latitude;
+        endLng = _animatedUserLocation.longitude;
+      } else if (_userLocation.latitude != 0.0 ||
+          _userLocation.longitude != 0.0) {
+        endLat = _userLocation.latitude;
+        endLng = _userLocation.longitude;
+      }
+
       if (completed) {
         await _navigationHistoryService.finishTrip(
           tripId: tripId,
           durationSeconds: durationSeconds,
           totalDistanceMeters: totalDistanceMeters,
+          endLat: endLat,
+          endLng: endLng,
         );
       } else {
         await _navigationHistoryService.cancelTrip(
           tripId: tripId,
           durationSeconds: durationSeconds,
           totalDistanceMeters: totalDistanceMeters,
+          endLat: endLat,
+          endLng: endLng,
         );
       }
       debugPrint(
@@ -1533,22 +1584,12 @@ class _NavigationScreenState extends State<NavigationScreen>
   String get _ultrasonicSensorText {
     final data = _latestSmartCaneSensorData;
     if (!_smartCaneBleService.isConnected) {
-      return 'Halangan terdeteksi di depan.Belok sedikit ke kanan.';
+      return 'Halangan terdeteksi di depan. Belok sedikit ke kanan.';
     }
     if (data == null) {
       return 'Sensor ultrasonik: menunggu data sensor.';
     }
     return data.displayText;
-  }
-
-  void _zoomIn() {
-    if (!_isMapReady) return;
-    _safeMoveMap(_mapController.camera.center, _mapController.camera.zoom + 1);
-  }
-
-  void _zoomOut() {
-    if (!_isMapReady) return;
-    _safeMoveMap(_mapController.camera.center, _mapController.camera.zoom - 1);
   }
 
   void _goToCurrentLocation() {
@@ -1621,48 +1662,67 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   /// Show route info panel (bottom sheet)
   void _showRouteInfoPanel() {
+    final destinationName = _selectedPlace == null
+        ? 'Tujuan'
+        : _formatPlaceName(_selectedPlace!.name);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: AppDialogStyle.barrierColor,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateBottomSheet) => Container(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(24),
-              topRight: Radius.circular(24),
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+            ),
+            border: const Border(
+              top: BorderSide(color: AppDialogStyle.borderColor),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 20,
+                color: AppColors.textPrimary.withValues(alpha: 0.045),
+                blurRadius: 14,
                 offset: const Offset(0, -5),
               ),
             ],
           ),
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
+                Center(
+                  child: Container(
+                    width: 46,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
-                        gradient: AppColors.primaryGradient,
+                        color: AppColors.primaryLight.withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.route_rounded,
-                        color: Colors.white,
-                        size: 24,
+                        color: AppColors.primaryDark,
+                        size: 23,
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1671,90 +1731,135 @@ class _NavigationScreenState extends State<NavigationScreen>
                           Text(
                             'Rute Perjalanan',
                             style: AppTextStyles.bodyLarge.copyWith(
-                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                              fontWeight: FontWeight.w800,
                               fontSize: 18,
                             ),
                           ),
+                          const SizedBox(height: 2),
                           Text(
-                            'Ke ${_selectedPlace?.name ?? 'Tujuan'}',
+                            'Ke $destinationName',
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.textSecondary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                // Route details
-                _buildRouteDetailItem(
-                  icon: Icons.straighten_rounded,
-                  label: 'Total Jarak',
-                  value: '${_routeDistanceKm.toStringAsFixed(1)} km',
-                  color: Colors.blue,
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildRouteMetricCard(
+                        icon: Icons.straighten_rounded,
+                        label: 'Total Jarak',
+                        value: '${_routeDistanceKm.toStringAsFixed(1)} km',
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildRouteMetricCard(
+                        icon: Icons.directions_walk_rounded,
+                        label: 'Durasi',
+                        value:
+                            '${_routeDurationMinutes.toStringAsFixed(0)} menit',
+                        color: const Color(0xFF16A34A),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                _buildRouteDetailItem(
-                  icon: Icons.directions_walk_rounded,
-                  label: 'Durasi Jalan Kaki',
-                  value: '${_routeDurationMinutes.toStringAsFixed(0)} menit',
-                  color: Colors.green,
-                ),
-                const SizedBox(height: 16),
-                _buildRouteDetailItem(
-                  icon: Icons.my_location_rounded,
-                  label: 'Asal',
-                  value: 'Posisi Anda Saat Ini',
-                  color: Colors.orange,
-                ),
-                const SizedBox(height: 16),
-                _buildRouteDetailItem(
-                  icon: _getCategoryIcon(_selectedPlace?.category),
-                  label: 'Tujuan',
-                  value: _selectedPlace?.name ?? '-',
-                  color: Colors.red,
-                ),
-                const SizedBox(height: 24),
-                // Calculate arrival time
+                const SizedBox(height: 14),
                 Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.primary.withOpacity(0.1),
-                        AppColors.primary.withOpacity(0.05),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.2),
-                      width: 1,
-                    ),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Tiba di',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
+                      _buildRouteInfoRow(
+                        icon: Icons.my_location_rounded,
+                        label: 'Asal',
+                        value: 'Posisi Anda Saat Ini',
+                        color: const Color(0xFFB45309),
+                      ),
+                      const Divider(
+                        height: 1,
+                        thickness: 1,
+                        indent: 52,
+                        color: Color(0xFFEFF3F7),
+                      ),
+                      _buildRouteInfoRow(
+                        icon: _getCategoryIcon(_selectedPlace?.category),
+                        label: 'Tujuan',
+                        value: destinationName,
+                        color: AppColors.primaryDark,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryLight.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: Icon(
+                          Icons.schedule_rounded,
+                          color: AppColors.primaryDark,
+                          size: 21,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _calculateArrivalTime(),
-                        style: AppTextStyles.heading2.copyWith(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tiba di',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _calculateArrivalTime(),
+                              style: AppTextStyles.heading2.copyWith(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primaryDark,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 24),
               ],
             ),
           ),
@@ -1763,53 +1868,99 @@ class _NavigationScreenState extends State<NavigationScreen>
     );
   }
 
-  /// Build route detail item widget
-  Widget _buildRouteDetailItem({
+  Widget _buildRouteMetricCard({
     required IconData icon,
     required String label,
     required String value,
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.2), width: 1),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 19),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            value,
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRouteInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 32,
+            height: 32,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.2),
+              color: color.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(icon, color: color, size: 18),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+            child: Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Flexible(
+            flex: 2,
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.fade,
             ),
           ),
         ],
@@ -2166,104 +2317,157 @@ class _NavigationScreenState extends State<NavigationScreen>
         ? '${(displayDistance / 1000).toStringAsFixed(1)} km'
         : '${displayDistance.toStringAsFixed(0)} m';
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.white, Colors.white.withOpacity(0.96)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.12),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.14),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        children: [
-          // Turn emoji/icon
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: BorderRadius.circular(12),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.25),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+    final stepText =
+        '${_currentInstructionIndex + 1} dari ${_navigationInstructions.length} langkah';
+    final routeSummary =
+        '${_routeDistanceKm.toStringAsFixed(1)} km · ${_routeDurationMinutes.toStringAsFixed(0)} menit';
+
+    return GestureDetector(
+      onTap: _showRouteInfoPanel,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.textPrimary.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
             ),
-            child: Center(
-              child: Text(emoji, style: const TextStyle(fontSize: 26)),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Center(
+                child: Text(emoji, style: const TextStyle(fontSize: 21)),
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          // Instruction details
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  instruction.instruction,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                    color: AppColors.textPrimary,
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    instruction.instruction,
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.fade,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.directions_rounded,
-                      size: 12,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Setelah $distanceText',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.directions_rounded,
+                        size: 12,
+                        color: AppColors.primaryDark,
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '(${_currentInstructionIndex + 1}/${_navigationInstructions.length})',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.primary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(width: 4),
+                      Text(
+                        'Setelah $distanceText',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
+                      const SizedBox(width: 6),
+                      Text(
+                        stepText,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.primaryDark,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    routeSummary,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   /// Get icon based on place category
   IconData _getCategoryIcon(String? category) {
-    switch (category?.toLowerCase()) {
+    final normalized = category
+        ?.trim()
+        .toLowerCase()
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ');
+
+    if (normalized == null || normalized.isEmpty) {
+      return Icons.location_on_rounded;
+    }
+
+    if (normalized.contains('rumah') || normalized == 'home') {
+      return Icons.home_rounded;
+    }
+    if (normalized.contains('kos') ||
+        normalized.contains('kost') ||
+        normalized.contains('tempat tinggal')) {
+      return Icons.apartment_rounded;
+    }
+    if (normalized.contains('halte') ||
+        normalized.contains('bus') ||
+        normalized.contains('trans')) {
+      return Icons.directions_bus_rounded;
+    }
+    if (normalized.contains('stasiun') ||
+        normalized.contains('station') ||
+        normalized.contains('train')) {
+      return Icons.train_rounded;
+    }
+    if (normalized.contains('toko') ||
+        normalized.contains('minimarket') ||
+        normalized.contains('market')) {
+      return Icons.storefront_rounded;
+    }
+
+    switch (normalized) {
+      case 'rumah':
+      case 'home':
+        return Icons.home_rounded;
+      case 'kos':
+      case 'kost':
+      case 'tempat tinggal':
+        return Icons.apartment_rounded;
+      case 'halte bus':
+      case 'halte':
+      case 'bus_stop':
+        return Icons.directions_bus_rounded;
+      case 'stasiun':
+      case 'train_station':
+        return Icons.train_rounded;
+      case 'toko':
+      case 'minimarket':
+      case 'market':
+        return Icons.storefront_rounded;
       case 'mall':
         return Icons.shopping_bag_rounded;
       case 'mosque':
@@ -2284,8 +2488,6 @@ class _NavigationScreenState extends State<NavigationScreen>
         return Icons.local_pharmacy_rounded;
       case 'police':
         return Icons.local_police_rounded;
-      case 'market':
-        return Icons.storefront_rounded;
       case 'gas_station':
         return Icons.local_gas_station_rounded;
       default:
@@ -2307,330 +2509,450 @@ class _NavigationScreenState extends State<NavigationScreen>
   /// Build list screen menampilkan semua places
   Widget _buildPlacesListScreen() {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFFFAFBFC),
-              AppColors.primaryLight.withOpacity(0.08),
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Header
-              Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.white, Colors.white.withOpacity(0.95)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.15),
-                      blurRadius: 25,
-                      offset: const Offset(0, 10),
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildPlacesHeader(),
+            Expanded(
+              child: _isLoadingPlaces
+                  ? _buildPlacesLoadingState()
+                  : _places.isEmpty
+                  ? _buildPlacesEmptyState()
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                      itemCount: _places.length,
+                      itemBuilder: (context, index) {
+                        return _buildPlaceListItem(_places[index]);
+                      },
                     ),
-                  ],
-                  border: Border.all(
-                    color: AppColors.primary.withOpacity(0.1),
-                    width: 1,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlacesHeader() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Material(
+            color: AppColors.primaryDark,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () => Navigator.pop(context),
+              borderRadius: BorderRadius.circular(12),
+              child: const SizedBox(
+                width: 42,
+                height: 42,
+                child: Icon(
+                  Icons.arrow_back_rounded,
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pilih Tempat',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.heading3.copyWith(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: 0,
                   ),
                 ),
-                child: Row(
-                  children: [
-                    GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
+                const SizedBox(height: 3),
+                Text(
+                  _isLoadingPlaces
+                      ? 'Memuat tempat tujuan'
+                      : '${_places.length} tempat tersedia',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlacesLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 42,
+            height: 42,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryDark),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Memuat tempat tujuan...',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlacesEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(
+                Icons.location_off_rounded,
+                size: 32,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Belum ada tempat',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.heading3.copyWith(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tambahkan tempat tujuan agar navigasi bisa digunakan.',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 14,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceListItem(PlaceModel place) {
+    final isFamilyPlace = place.isPrivate;
+    const familyAccent = Color(0xFF0F766E);
+    const familyAccentSoft = Color(0xFFECFDF5);
+    final accentColor = isFamilyPlace ? familyAccent : AppColors.info;
+    final borderColor = isFamilyPlace
+        ? familyAccent.withValues(alpha: 0.16)
+        : const Color(0xFFE2E8F0);
+    final categoryLabel = _formatPlaceCategory(place.category);
+    final addressText = _formatPlaceAddress(
+      place.address,
+      categoryLabel,
+      name: place.name,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _selectedPlace = place;
+              _isLoadingRoute = true;
+            });
+
+            // Start continuous location streaming immediately.
+            // Route will load automatically from first streaming GPS update.
+            _startLocationStreaming();
+
+            // Center map ke lokasi user (bukan tempat tujuan)
+            Future.delayed(const Duration(milliseconds: 300), () {
+              _safeMoveMap(_userLocation, 18.0);
+            });
+          },
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: borderColor),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.textPrimary.withValues(alpha: 0.035),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Stack(
+              children: [
+                if (isFamilyPlace)
+                  Positioned.fill(
+                    left: 0,
+                    right: null,
+                    child: Container(
+                      width: 2.5,
+                      color: familyAccent.withValues(alpha: 0.82),
+                    ),
+                  ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    isFamilyPlace ? 16 : 13,
+                    11,
+                    12,
+                    11,
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
                         decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
+                          color: isFamilyPlace
+                              ? familyAccentSoft.withValues(alpha: 0.86)
+                              : AppColors.infoLight.withValues(alpha: 0.54),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: Colors.white,
-                          size: 24,
+                        child: Icon(
+                          _getCategoryIcon(place.category),
+                          color: accentColor,
+                          size: 21,
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) =>
-                                AppColors.primaryGradient.createShader(bounds),
-                            child: Text(
-                              'Pilih Tempat',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 26,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _isLoadingPlaces
-                                ? 'Memuat tempat...'
-                                : '${_places.length} Tempat Tersedia',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Content
-              Expanded(
-                child: _isLoadingPlaces
-                    ? Center(
+                      const SizedBox(width: 12),
+                      Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const CircularProgressIndicator(),
-                            const SizedBox(height: 16),
                             Text(
-                              'Memuat tempat...',
+                              _formatPlaceName(place.name),
+                              maxLines: 2,
+                              overflow: TextOverflow.fade,
                               style: AppTextStyles.bodyLarge.copyWith(
-                                color: AppColors.textSecondary,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.textPrimary,
+                                height: 1.18,
                               ),
                             ),
-                          ],
-                        ),
-                      )
-                    : _places.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.location_off_rounded,
-                              size: 80,
-                              color: Colors.grey[400],
-                            ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 3),
                             Text(
-                              'Tidak ada tempat tersedia',
-                              style: AppTextStyles.heading3.copyWith(
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Silakan tambahkan tempat terlebih dahulu',
+                              addressText,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                               style: AppTextStyles.bodySmall.copyWith(
-                                color: Colors.grey[500],
+                                color: AppColors.textSecondary,
+                                fontSize: 12.5,
+                                height: 1.28,
                               ),
                             ),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        itemCount: _places.length,
-                        itemBuilder: (context, index) {
-                          final place = _places[index];
-                          final isPrivatePlace = place.isPrivate;
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedPlace = place;
-                                    _isLoadingRoute = true;
-                                  });
-
-                                  // Start continuous location streaming immediately.
-                                  // Route will load automatically from first streaming GPS update.
-                                  _startLocationStreaming();
-
-                                  // Center map ke lokasi user (bukan tempat tujuan)
-                                  Future.delayed(
-                                    const Duration(milliseconds: 300),
-                                    () {
-                                      _safeMoveMap(_userLocation, 18.0);
-                                    },
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(16),
-                                child: Container(
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: isPrivatePlace
-                                          ? [
-                                              AppColors.primary,
-                                              const Color(0xFF1565C0),
-                                            ]
-                                          : [
-                                              Colors.white,
-                                              Colors.white.withOpacity(0.95),
-                                            ],
-                                    ),
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: isPrivatePlace
-                                            ? AppColors.primary.withOpacity(
-                                                0.24,
-                                              )
-                                            : Colors.black.withOpacity(0.08),
-                                        blurRadius: 15,
-                                        offset: const Offset(0, 8),
-                                      ),
-                                    ],
-                                    border: Border.all(
-                                      color: isPrivatePlace
-                                          ? Colors.white.withOpacity(0.28)
-                                          : AppColors.primary.withOpacity(0.1),
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      // Icon Container
-                                      Container(
-                                        padding: const EdgeInsets.all(14),
-                                        decoration: BoxDecoration(
-                                          gradient: isPrivatePlace
-                                              ? LinearGradient(
-                                                  colors: [
-                                                    Colors.white,
-                                                    Colors.white.withOpacity(
-                                                      0.92,
-                                                    ),
-                                                  ],
-                                                )
-                                              : AppColors.primaryGradient,
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: isPrivatePlace
-                                                  ? Colors.black.withOpacity(
-                                                      0.12,
-                                                    )
-                                                  : AppColors.primary
-                                                        .withOpacity(0.3),
-                                              blurRadius: 12,
-                                              offset: const Offset(0, 6),
-                                            ),
-                                          ],
-                                        ),
-                                        child: Icon(
-                                          _getCategoryIcon(place.category),
-                                          color: isPrivatePlace
-                                              ? AppColors.primary
-                                              : Colors.white,
-                                          size: 28,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      // Place Details
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              place.name,
-                                              style: AppTextStyles.bodyLarge
-                                                  .copyWith(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.w700,
-                                                    color: isPrivatePlace
-                                                        ? Colors.white
-                                                        : AppColors.textPrimary,
-                                                  ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              place.address,
-                                              style: AppTextStyles.bodySmall
-                                                  .copyWith(
-                                                    color: isPrivatePlace
-                                                        ? Colors.white
-                                                              .withOpacity(0.82)
-                                                        : AppColors
-                                                              .textSecondary,
-                                                    fontSize: 13,
-                                                  ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 8),
-                                            Text(
-                                              place.category.toUpperCase(),
-                                              style: TextStyle(
-                                                color: isPrivatePlace
-                                                    ? Colors.white
-                                                    : AppColors.primary,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      // Arrow Icon
-                                      Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: isPrivatePlace
-                                              ? Colors.white.withOpacity(0.16)
-                                              : AppColors.primary.withOpacity(
-                                                  0.1,
-                                                ),
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                        ),
-                                        child: Icon(
-                                          Icons.arrow_forward_rounded,
-                                          color: isPrivatePlace
-                                              ? Colors.white
-                                              : AppColors.primary,
-                                          size: 20,
-                                        ),
-                                      ),
-                                    ],
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Text(
+                                  categoryLabel.toUpperCase(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: accentColor.withValues(alpha: 0.82),
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0,
                                   ),
                                 ),
-                              ),
+                                if (isFamilyPlace) ...[
+                                  const SizedBox(width: 6),
+                                  _buildFamilyPlaceBadge(),
+                                ],
+                              ],
                             ),
-                          );
-                        },
+                          ],
+                        ),
                       ),
-              ),
-            ],
+                      const SizedBox(width: 7),
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.arrow_forward_rounded,
+                          color: AppColors.textSecondary.withValues(alpha: 0.9),
+                          size: 17,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildFamilyPlaceBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFECFDF5).withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: const Color(0xFFBBF7D0).withValues(alpha: 0.8),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.people_alt_rounded,
+            size: 10,
+            color: Color(0xFF0F766E),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            'Dari keluarga',
+            style: AppTextStyles.caption.copyWith(
+              color: const Color(0xFF0F766E),
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              height: 1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatPlaceName(String value) {
+    final trimmed = value.trim();
+    if (_isPlaceholderText(trimmed)) return 'Tempat tujuan';
+    var normalized = trimmed.replaceAll(
+      RegExp(r'\balun\s+alun\b', caseSensitive: false),
+      'alun-alun',
+    );
+    normalized = normalized.replaceAll(
+      RegExp(r'\bhalte\s+damri\s+kota\s+baru\s+p.*$', caseSensitive: false),
+      'Halte Damri Kota Baru',
+    );
+    return _toTitleCase(normalized);
+  }
+
+  String _toTitleCase(String value) {
+    return value
+        .split(' ')
+        .where((word) => word.trim().isNotEmpty)
+        .map((word) {
+          final lower = word.toLowerCase();
+          return lower
+              .split('-')
+              .map((part) {
+                if (part.isEmpty) return part;
+                return '${part[0].toUpperCase()}${part.substring(1)}';
+              })
+              .join('-');
+        })
+        .join(' ');
+  }
+
+  String _formatPlaceCategory(String value) {
+    final trimmed = value.trim();
+    if (_isPlaceholderText(trimmed)) return 'Tempat';
+    final normalized = trimmed.toLowerCase().replaceAll('_', ' ');
+    if (normalized.contains('halte') || normalized.contains('bus')) {
+      return 'Halte Bus';
+    }
+    if (normalized.contains('train') ||
+        normalized.contains('stasiun') ||
+        normalized.contains('station')) {
+      return 'Stasiun';
+    }
+    if (normalized.contains('rumah') || normalized == 'home') {
+      return 'Rumah';
+    }
+    return _toTitleCase(normalized);
+  }
+
+  String _formatPlaceAddress(String value, String category, {String? name}) {
+    final trimmed = value.trim();
+    if (_isPlaceholderText(trimmed)) {
+      final normalizedName = (name ?? '').trim().toLowerCase();
+      if (normalizedName.contains('indomaret')) {
+        return 'Minimarket terdekat';
+      }
+      if (normalizedName.contains('kos') || normalizedName.contains('kost')) {
+        return 'Lokasi kos pengguna';
+      }
+      if (category.toLowerCase().contains('rumah')) {
+        return 'Lokasi rumah utama';
+      }
+      if (category.toLowerCase().contains('tinggal') ||
+          category.toLowerCase().contains('kos')) {
+        return 'Lokasi tempat tinggal';
+      }
+      return 'Alamat tempat tujuan';
+    }
+
+    final parts = trimmed
+        .split(',')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length <= 3) return trimmed;
+    return parts.take(3).join(', ');
+  }
+
+  bool _isPlaceholderText(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.isEmpty ||
+        normalized == '-' ||
+        normalized == 'xxx' ||
+        normalized == 'unknown' ||
+        normalized == 'unknown place';
   }
 
   /// Build map screen setelah memilih place
@@ -2639,32 +2961,42 @@ class _NavigationScreenState extends State<NavigationScreen>
     required String text,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFFF59E0B),
-        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFFFF7E6),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: const Color(0xFFF2C56B)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.16),
-            blurRadius: 10,
+            color: AppColors.textPrimary.withValues(alpha: 0.05),
+            blurRadius: 9,
             offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Row(
         children: [
-          Icon(icon, color: Colors.white, size: 16),
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: const Color(0xFFB45309), size: 15),
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: const Color(0xFF92400E),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                height: 1.25,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+              overflow: TextOverflow.clip,
             ),
           ),
         ],
@@ -2674,9 +3006,23 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   Widget _buildMapScreen() {
     final topInset = MediaQuery.of(context).padding.top;
-    final fusionBadgeTop = topInset + 125;
+    final fusionBadgeTop = topInset + 94;
     final passedRoutePoints = _getPassedRoutePoints();
     final remainingRoutePoints = _getRemainingRoutePoints();
+    final hasActiveInstruction =
+        _navigationInstructions.isNotEmpty &&
+        _currentInstructionIndex < _navigationInstructions.length &&
+        !_isLoadingRoute &&
+        _routeLoadError.isEmpty;
+    final destinationName = _selectedPlace == null
+        ? 'Navigasi'
+        : _formatPlaceName(_selectedPlace!.name);
+    final destinationAddress = _selectedPlace == null
+        ? 'Pilih tempat untuk memulai navigasi'
+        : _formatPlaceAddress(
+            _selectedPlace!.address,
+            _selectedPlace!.category,
+          );
 
     return Scaffold(
       body: Stack(
@@ -2733,30 +3079,31 @@ class _NavigationScreenState extends State<NavigationScreen>
                     // User current location marker
                     Marker(
                       point: _animatedUserLocation,
-                      width: 100,
-                      height: 110,
+                      width: 86,
+                      height: 92,
                       child: Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Container(
-                              width: 50,
-                              height: 50,
+                              width: 42,
+                              height: 42,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: RadialGradient(
-                                  colors: [
-                                    Colors.green.shade400,
-                                    Colors.green.shade600,
-                                  ],
-                                ),
+                                color: const Color(0xFF22C55E),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.green.withOpacity(0.6),
+                                    color: AppColors.textPrimary.withValues(
+                                      alpha: 0.16,
+                                    ),
                                     blurRadius: 12,
-                                    spreadRadius: 2,
+                                    offset: const Offset(0, 5),
                                   ),
                                 ],
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 3,
+                                ),
                               ),
                               child: Center(
                                 child: Transform.rotate(
@@ -2764,25 +3111,27 @@ class _NavigationScreenState extends State<NavigationScreen>
                                   child: const Icon(
                                     Icons.navigation_rounded,
                                     color: Colors.white,
-                                    size: 24,
+                                    size: 21,
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 6),
+                            const SizedBox(height: 4),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.green.shade600,
-                                borderRadius: BorderRadius.circular(6),
+                                color: const Color(0xFF16A34A),
+                                borderRadius: BorderRadius.circular(7),
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.green.withOpacity(0.4),
+                                    color: AppColors.textPrimary.withValues(
+                                      alpha: 0.08,
+                                    ),
                                     blurRadius: 8,
-                                    offset: const Offset(0, 2),
+                                    offset: const Offset(0, 3),
                                   ),
                                 ],
                               ),
@@ -2791,8 +3140,8 @@ class _NavigationScreenState extends State<NavigationScreen>
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.3,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0,
                                 ),
                               ),
                             ),
@@ -2837,13 +3186,14 @@ class _NavigationScreenState extends State<NavigationScreen>
                                 height: 44,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  gradient: AppColors.primaryGradient,
+                                  color: AppColors.primaryDark,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppColors.primary.withOpacity(0.5),
+                                      color: AppColors.textPrimary.withValues(
+                                        alpha: 0.12,
+                                      ),
                                       blurRadius: 10,
                                       offset: const Offset(0, 4),
-                                      spreadRadius: 1,
                                     ),
                                   ],
                                   border: Border.all(
@@ -2868,18 +3218,19 @@ class _NavigationScreenState extends State<NavigationScreen>
                               Container(
                                 padding: EdgeInsets.symmetric(
                                   horizontal: 6,
-                                  vertical: 2,
+                                  vertical: 3,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(4),
+                                  color: AppColors.primaryDark,
+                                  borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Text(
-                                  _selectedPlace!.name,
+                                  destinationName,
                                   style: const TextStyle(
                                     color: Colors.white,
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.bold,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -2898,8 +3249,8 @@ class _NavigationScreenState extends State<NavigationScreen>
 
           Positioned(
             top: fusionBadgeTop,
-            left: 16,
-            right: 16,
+            left: 20,
+            right: 20,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -2908,7 +3259,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                   text: _ultrasonicSensorText,
                 ),
                 if (_isOffRouteWarningVisible) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   _buildNavigationAlertBadge(
                     icon: Icons.route_outlined,
                     text: _lastRerouteAt != null
@@ -2928,75 +3279,68 @@ class _NavigationScreenState extends State<NavigationScreen>
             child: SafeArea(
               bottom: false,
               child: Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(20),
+                margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 11,
+                ),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.white, Colors.white.withOpacity(0.95)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primary.withOpacity(0.15),
-                      blurRadius: 25,
-                      offset: const Offset(0, 10),
+                      color: AppColors.textPrimary.withValues(alpha: 0.045),
+                      blurRadius: 14,
+                      offset: const Offset(0, 6),
                     ),
                   ],
-                  border: Border.all(
-                    color: AppColors.primary.withOpacity(0.1),
-                    width: 1,
-                  ),
                 ),
                 child: Row(
                   children: [
-                    // Back button
-                    GestureDetector(
-                      onTap: () {
-                        unawaited(_endNavigationSession());
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          gradient: AppColors.primaryGradient,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: Colors.white,
-                          size: 24,
+                    Material(
+                      color: AppColors.primaryDark,
+                      borderRadius: BorderRadius.circular(12),
+                      child: InkWell(
+                        onTap: () {
+                          unawaited(_endNavigationSession());
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: const SizedBox(
+                          width: 42,
+                          height: 42,
+                          child: Icon(
+                            Icons.arrow_back_rounded,
+                            color: Colors.white,
+                            size: 24,
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    // Selected place info
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          ShaderMask(
-                            shaderCallback: (bounds) =>
-                                AppColors.primaryGradient.createShader(bounds),
-                            child: Text(
-                              _selectedPlace?.name ?? 'Navigasi',
-                              style: AppTextStyles.heading2.copyWith(
-                                color: Colors.white,
-                                fontSize: 26,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
                           Text(
-                            _selectedPlace != null
-                                ? _selectedPlace!.address
-                                : 'Pilih tempat untuk memulai navigasi',
+                            destinationName,
+                            style: AppTextStyles.heading3.copyWith(
+                              color: AppColors.textPrimary,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            destinationAddress,
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.textSecondary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -3010,103 +3354,38 @@ class _NavigationScreenState extends State<NavigationScreen>
             ),
           ),
 
-          // Zoom controls (Right side)
+          // Current location control (Right side)
           Positioned(
-            bottom: 200,
+            bottom: 154,
             right: 16,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Zoom in button
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.95),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.textPrimary.withValues(alpha: 0.09),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _zoomIn,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        child: Icon(
-                          Icons.add_rounded,
-                          color: AppColors.primary,
-                          size: 24,
-                        ),
-                      ),
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: _goToCurrentLocation,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    child: Icon(
+                      Icons.my_location_rounded,
+                      color: Colors.green.shade600,
+                      size: 22,
                     ),
                   ),
                 ),
-                const SizedBox(height: 10),
-                // Zoom out button
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.95),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _zoomOut,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        child: Icon(
-                          Icons.remove_rounded,
-                          color: AppColors.primary,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                // Go to current location
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.95),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _goToCurrentLocation,
-                      borderRadius: BorderRadius.circular(12),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        child: Icon(
-                          Icons.my_location_rounded,
-                          color: Colors.green.shade600,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
 
@@ -3114,39 +3393,29 @@ class _NavigationScreenState extends State<NavigationScreen>
           if (_selectedPlace != null)
             Positioned(
               bottom: 20,
-              left: 16,
-              right: 16,
+              left: 20,
+              right: 20,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Next instruction card (Turn-by-turn guidance)
-                  if (_navigationInstructions.isNotEmpty &&
-                      _currentInstructionIndex <
-                          _navigationInstructions.length &&
-                      !_isLoadingRoute &&
-                      _routeLoadError.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _buildNextInstructionCard(),
-                    ),
+                  if (hasActiveInstruction) _buildNextInstructionCard(),
 
                   // Route info panel
                   _isLoadingRoute
                       ? Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.white,
-                                Colors.white.withOpacity(0.95),
-                              ],
-                            ),
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
-                                blurRadius: 20,
-                                offset: const Offset(0, 5),
+                                color: AppColors.textPrimary.withValues(
+                                  alpha: 0.08,
+                                ),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
                               ),
                             ],
                           ),
@@ -3155,7 +3424,9 @@ class _NavigationScreenState extends State<NavigationScreen>
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.1),
+                                  color: AppColors.primaryLight.withValues(
+                                    alpha: 0.16,
+                                  ),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: SizedBox(
@@ -3178,7 +3449,8 @@ class _NavigationScreenState extends State<NavigationScreen>
                                     Text(
                                       'Menghitung Rute...',
                                       style: AppTextStyles.bodyLarge.copyWith(
-                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.textPrimary,
+                                        fontWeight: FontWeight.w800,
                                       ),
                                     ),
                                     const SizedBox(height: 4),
@@ -3198,17 +3470,16 @@ class _NavigationScreenState extends State<NavigationScreen>
                       ? Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.red.withOpacity(0.1),
+                            color: Colors.white,
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: Colors.red.withOpacity(0.3),
-                              width: 1.5,
-                            ),
+                            border: Border.all(color: const Color(0xFFF3C8C8)),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
+                                color: AppColors.textPrimary.withValues(
+                                  alpha: 0.08,
+                                ),
+                                blurRadius: 14,
+                                offset: const Offset(0, 6),
                               ),
                             ],
                           ),
@@ -3217,12 +3488,12 @@ class _NavigationScreenState extends State<NavigationScreen>
                               Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.2),
+                                  color: AppColors.error.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: const Icon(
+                                child: Icon(
                                   Icons.error_outline_rounded,
-                                  color: Colors.red,
+                                  color: AppColors.error,
                                   size: 24,
                                 ),
                               ),
@@ -3235,8 +3506,8 @@ class _NavigationScreenState extends State<NavigationScreen>
                                     Text(
                                       'Rute Tidak Dapat Dihitung',
                                       style: AppTextStyles.bodyLarge.copyWith(
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.red[700],
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.error,
                                         fontSize: 15,
                                       ),
                                     ),
@@ -3257,48 +3528,45 @@ class _NavigationScreenState extends State<NavigationScreen>
                             ],
                           ),
                         )
-                      : _routeDistanceKm > 0
+                      : _routeDistanceKm > 0 && !hasActiveInstruction
                       ? GestureDetector(
                           onTap: _showRouteInfoPanel,
                           child: Container(
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  Colors.white,
-                                  Colors.white.withOpacity(0.95),
-                                ],
-                              ),
+                              color: Colors.white,
                               borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                              ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.15),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 5),
+                                  color: AppColors.textPrimary.withValues(
+                                    alpha: 0.08,
+                                  ),
+                                  blurRadius: 14,
+                                  offset: const Offset(0, 6),
                                 ),
                               ],
-                              border: Border.all(
-                                color: AppColors.primary.withOpacity(0.1),
-                                width: 1,
-                              ),
                             ),
                             child: Row(
                               children: [
-                                // Route icon
                                 Container(
-                                  padding: const EdgeInsets.all(12),
+                                  width: 48,
+                                  height: 48,
                                   decoration: BoxDecoration(
-                                    gradient: AppColors.primaryGradient,
-                                    borderRadius: BorderRadius.circular(12),
+                                    color: AppColors.primaryLight.withValues(
+                                      alpha: 0.16,
+                                    ),
+                                    borderRadius: BorderRadius.circular(13),
                                   ),
-                                  child: const Icon(
+                                  child: Icon(
                                     Icons.route_rounded,
-                                    color: Colors.white,
-                                    size: 24,
+                                    color: AppColors.primaryDark,
+                                    size: 25,
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-                                // Route details
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -3306,22 +3574,23 @@ class _NavigationScreenState extends State<NavigationScreen>
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Text(
-                                        'Rute ke ${_selectedPlace?.name ?? "Tujuan"}',
+                                        'Tujuan: $destinationName',
                                         style: AppTextStyles.bodyLarge.copyWith(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 15,
+                                          color: AppColors.textPrimary,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 16,
                                         ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.fade,
                                       ),
                                       const SizedBox(height: 6),
                                       Row(
                                         children: [
                                           Text(
                                             '${_routeDistanceKm.toStringAsFixed(1)} km',
-                                            style: const TextStyle(
-                                              color: Colors.blue,
-                                              fontWeight: FontWeight.w600,
+                                            style: TextStyle(
+                                              color: AppColors.primaryDark,
+                                              fontWeight: FontWeight.w800,
                                               fontSize: 14,
                                             ),
                                           ),
@@ -3329,15 +3598,14 @@ class _NavigationScreenState extends State<NavigationScreen>
                                           Container(
                                             width: 1,
                                             height: 16,
-                                            color: AppColors.primary
-                                                .withOpacity(0.3),
+                                            color: const Color(0xFFE2E8F0),
                                           ),
                                           const SizedBox(width: 12),
                                           Text(
                                             '${_routeDurationMinutes.toStringAsFixed(0).split(".")[0]} menit',
                                             style: const TextStyle(
-                                              color: Colors.green,
-                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF16A34A),
+                                              fontWeight: FontWeight.w800,
                                               fontSize: 14,
                                             ),
                                           ),
@@ -3346,11 +3614,18 @@ class _NavigationScreenState extends State<NavigationScreen>
                                     ],
                                   ),
                                 ),
-                                // Arrow icon
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: AppColors.primary,
-                                  size: 28,
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(11),
+                                  ),
+                                  child: Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: AppColors.primaryDark,
+                                    size: 26,
+                                  ),
                                 ),
                               ],
                             ),

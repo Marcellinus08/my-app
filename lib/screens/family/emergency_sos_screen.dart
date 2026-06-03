@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../../services/notification_service.dart';
 import '../../utils/constants.dart';
+import '../../widgets/app_dialog.dart';
 
 class EmergencySosScreen extends StatelessWidget {
   final Map<String, dynamic> sosData;
@@ -16,103 +17,53 @@ class EmergencySosScreen extends StatelessWidget {
     debugPrint('SOS full-screen opened');
 
     final userName = _readString('userName') ?? 'Pengguna';
-    final lat = _readString('lat');
-    final lng = _readString('lng');
+    final lat = _compactCoordinate(_readString('lat'));
+    final lng = _compactCoordinate(_readString('lng'));
     final batteryLevel = _readString('batteryLevel');
-    final createdAt = _readString('createdAt');
+    final smartCaneBatteryLevel = _readString('smartCaneBatteryLevel');
+    final sentAtTextFuture = _sentAtText();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF7F1D1D),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF450A0A), Color(0xFF991B1B), Color(0xFFDC2626)],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-            child: Column(
-              children: [
-                const Spacer(),
-                const Icon(
-                  Icons.warning_amber_rounded,
-                  color: Colors.white,
-                  size: 112,
-                ),
-                const SizedBox(height: 18),
-                const Text(
-                  'SOS DARURAT',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 38,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0,
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: SafeArea(
+        child: FutureBuilder<String>(
+          future: sentAtTextFuture,
+          initialData: _sentAtTextFromPayload() ?? 'Memuat waktu...',
+          builder: (context, snapshot) {
+            final sentAtText = snapshot.data ?? 'Belum tersedia';
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _EmergencyHeader(userName: userName, sentAtText: sentAtText),
+                  const SizedBox(height: 12),
+                  _EmergencyInfoPanel(
+                    rows: [
+                      _InfoRow(label: 'Lat', value: lat ?? '-'),
+                      _InfoRow(label: 'Lng', value: lng ?? '-'),
+                      _InfoRow(
+                        label: 'Baterai HP',
+                        value: _batteryText(batteryLevel),
+                      ),
+                      _InfoRow(
+                        label: 'Baterai Tongkat',
+                        value: _batteryText(smartCaneBatteryLevel),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  '$userName membutuhkan bantuan segera',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    height: 1.35,
+                  const SizedBox(height: 12),
+                  _EmergencyActions(
+                    onOpenLocation: () => _openMonitoring(context),
+                    onCopyCoordinates: () => _copyCoordinates(context),
+                    onSilence: () => _silenceAlarm(context),
+                    onResolve: () => _confirmResolve(context),
                   ),
-                ),
-                const SizedBox(height: 24),
-                _EmergencyInfoPanel(
-                  rows: [
-                    _InfoRow(label: 'Waktu', value: createdAt ?? '-'),
-                    _InfoRow(label: 'Lat', value: lat ?? '-'),
-                    _InfoRow(label: 'Lng', value: lng ?? '-'),
-                    _InfoRow(
-                      label: 'Baterai',
-                      value: _batteryText(batteryLevel),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                _EmergencyButton(
-                  icon: Icons.location_on_rounded,
-                  label: 'Lihat Lokasi',
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF991B1B),
-                  onPressed: () => _openMonitoring(context),
-                ),
-                const SizedBox(height: 10),
-                _EmergencyButton(
-                  icon: Icons.copy_rounded,
-                  label: 'Salin Koordinat',
-                  backgroundColor: const Color(0xFFFFEDD5),
-                  foregroundColor: const Color(0xFF9A3412),
-                  onPressed: () => _copyCoordinates(context),
-                ),
-                const SizedBox(height: 10),
-                _EmergencyButton(
-                  icon: Icons.volume_off_rounded,
-                  label: 'Senyapkan SOS',
-                  backgroundColor: const Color(0xFF334155),
-                  foregroundColor: Colors.white,
-                  onPressed: () => _silenceAlarm(context),
-                ),
-                const SizedBox(height: 10),
-                _EmergencyButton(
-                  icon: Icons.check_circle_rounded,
-                  label: 'Tandai Ditangani',
-                  backgroundColor: const Color(0xFF16A34A),
-                  foregroundColor: Colors.white,
-                  onPressed: () => _confirmResolve(context),
-                ),
-              ],
-            ),
-          ),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -123,6 +74,70 @@ class EmergencySosScreen extends StatelessWidget {
     if (value == null) return null;
     final text = value.toString().trim();
     return text.isEmpty ? null : text;
+  }
+
+  Future<String> _sentAtText() async {
+    final payloadText = _sentAtTextFromPayload();
+    if (payloadText != null) return payloadText;
+
+    final sosId = _readString('sosId');
+    if (sosId == null) return 'Belum tersedia';
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('sos_alerts')
+          .doc(sosId)
+          .get(const GetOptions(source: Source.server));
+      final data = snapshot.data();
+      return _formatSentAt(data?['createdAt'] ?? data?['timestamp']);
+    } catch (error) {
+      debugPrint('[EmergencySosScreen] gagal mengambil waktu SOS: $error');
+      return 'Belum tersedia';
+    }
+  }
+
+  String? _sentAtTextFromPayload() {
+    final text = _formatSentAt(sosData['createdAt'] ?? sosData['timestamp']);
+    return text == 'Belum tersedia' ? null : text;
+  }
+
+  String _formatSentAt(dynamic value) {
+    DateTime? dateTime;
+
+    if (value is Timestamp) {
+      dateTime = value.toDate();
+    } else if (value is DateTime) {
+      dateTime = value;
+    } else if (value is int) {
+      dateTime = DateTime.fromMillisecondsSinceEpoch(value);
+    } else if (value is double) {
+      dateTime = DateTime.fromMillisecondsSinceEpoch(value.toInt());
+    } else if (value != null) {
+      dateTime = DateTime.tryParse(value.toString());
+    }
+
+    if (dateTime == null) return 'Belum tersedia';
+
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final now = DateTime.now();
+    final isToday =
+        dateTime.year == now.year &&
+        dateTime.month == now.month &&
+        dateTime.day == now.day;
+
+    if (isToday) return '$hour:$minute';
+
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final month = dateTime.month.toString().padLeft(2, '0');
+    return '$day/$month/${dateTime.year} $hour:$minute';
+  }
+
+  static String? _compactCoordinate(String? value) {
+    if (value == null || value == '-') return value;
+    final parsed = double.tryParse(value);
+    if (parsed == null) return value;
+    return parsed.toStringAsFixed(6);
   }
 
   static String _batteryText(String? value) {
@@ -146,6 +161,7 @@ class EmergencySosScreen extends StatelessWidget {
       'lat': _readString('lat'),
       'lng': _readString('lng'),
       'batteryLevel': _readString('batteryLevel'),
+      'smartCaneBatteryLevel': _readString('smartCaneBatteryLevel'),
       'currentTripId': _readString('currentTripId'),
       'userName': _readString('userName') ?? 'Pengguna',
       'sosId': _readString('sosId'),
@@ -172,9 +188,7 @@ class EmergencySosScreen extends StatelessWidget {
 
     await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
           'Koordinat berhasil disalin',
@@ -198,9 +212,7 @@ class EmergencySosScreen extends StatelessWidget {
     );
 
     if (!context.mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
           'SOS berhasil dimatikan',
@@ -219,22 +231,15 @@ class EmergencySosScreen extends StatelessWidget {
   }
 
   Future<void> _confirmResolve(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppConfirmDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Tandai SOS ditangani?'),
-        content: const Text('Status SOS akan diubah menjadi ditangani.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Ya, Tandai'),
-          ),
-        ],
-      ),
+      title: 'Tandai SOS ditangani?',
+      description: 'Pastikan keluarga sudah merespons kondisi pengguna.',
+      icon: Icons.check_circle_rounded,
+      iconColor: AppColors.success,
+      cancelText: 'Batal',
+      confirmText: 'Ya, Tandai',
+      confirmButtonColor: AppColors.success,
     );
 
     if (confirmed != true || !context.mounted) return;
@@ -362,6 +367,158 @@ class EmergencySosScreen extends StatelessWidget {
   }
 }
 
+class _EmergencyHeader extends StatelessWidget {
+  final String userName;
+  final String sentAtText;
+
+  const _EmergencyHeader({required this.userName, required this.sentAtText});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFECACA)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.error.withValues(alpha: 0.1),
+            blurRadius: 16,
+            offset: const Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            decoration: const BoxDecoration(
+              color: Color(0xFFDC2626),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: const Icon(
+                    Icons.warning_amber_rounded,
+                    color: Colors.white,
+                    size: 19,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'SOS Darurat Aktif',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: AppColors.errorLight,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                  ),
+                  child: const Icon(
+                    Icons.warning_amber_rounded,
+                    color: AppColors.error,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        userName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.heading3.copyWith(
+                          color: AppColors.textPrimary,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        'Membutuhkan bantuan segera',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: const Color(0xFF991B1B),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          height: 1.3,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule_rounded,
+                            color: AppColors.textTertiary,
+                            size: 15,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              sentAtText == 'Belum tersedia'
+                                  ? 'Waktu belum tersedia'
+                                  : sentAtText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.caption.copyWith(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EmergencyInfoPanel extends StatelessWidget {
   final List<_InfoRow> rows;
 
@@ -371,44 +528,260 @@ class _EmergencyInfoPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.24),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
       ),
       child: Column(
-        children: rows
-            .map(
-              (row) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 78,
-                      child: Text(
-                        row.label,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        row.value,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: AppColors.infoLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.my_location_rounded,
+                  color: AppColors.primaryDark,
+                  size: 18,
                 ),
               ),
-            )
-            .toList(),
+              const SizedBox(width: 10),
+              Text(
+                'Informasi Lokasi',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...rows.map(
+            (row) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 5,
+                    child: Text(
+                      row.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 4,
+                    child: Text(
+                      row.value,
+                      textAlign: TextAlign.right,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmergencyActions extends StatelessWidget {
+  final VoidCallback onOpenLocation;
+  final VoidCallback onCopyCoordinates;
+  final VoidCallback onSilence;
+  final VoidCallback onResolve;
+
+  const _EmergencyActions({
+    required this.onOpenLocation,
+    required this.onCopyCoordinates,
+    required this.onSilence,
+    required this.onResolve,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.035),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tindakan Cepat',
+            style: AppTextStyles.bodyLarge.copyWith(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Prioritaskan pengecekan lokasi pengguna.',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _EmergencyButton(
+            icon: Icons.location_on_rounded,
+            label: 'Lihat Lokasi',
+            backgroundColor: AppColors.error,
+            foregroundColor: Colors.white,
+            borderColor: AppColors.error,
+            onPressed: onOpenLocation,
+          ),
+          const SizedBox(height: 9),
+          _EmergencyButton(
+            icon: Icons.copy_rounded,
+            label: 'Salin Koordinat',
+            backgroundColor: AppColors.infoLight.withValues(alpha: 0.45),
+            foregroundColor: AppColors.primaryDark,
+            borderColor: AppColors.primaryDark.withValues(alpha: 0.12),
+            onPressed: onCopyCoordinates,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Aksi Lanjutan',
+            style: AppTextStyles.caption.copyWith(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _EmergencyButton(
+                  icon: Icons.volume_off_rounded,
+                  label: 'Senyapkan',
+                  backgroundColor: const Color(0xFFF8FAFC),
+                  foregroundColor: const Color(0xFF334155),
+                  borderColor: const Color(0xFFE2E8F0),
+                  onPressed: onSilence,
+                  compact: true,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _EmergencyButton(
+                  icon: Icons.check_circle_rounded,
+                  label: 'Ditangani',
+                  backgroundColor: AppColors.success,
+                  foregroundColor: Colors.white,
+                  borderColor: AppColors.success,
+                  onPressed: onResolve,
+                  compact: true,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmergencyButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color backgroundColor;
+  final Color foregroundColor;
+  final Color borderColor;
+  final VoidCallback onPressed;
+  final bool compact;
+
+  const _EmergencyButton({
+    required this.icon,
+    required this.label,
+    required this.backgroundColor,
+    required this.foregroundColor,
+    required this.borderColor,
+    required this.onPressed,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: compact ? 44 : 48,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor, width: 1.1),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: compact ? 17 : 19, color: foregroundColor),
+              const SizedBox(width: 8),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: foregroundColor,
+                      fontSize: compact ? 13 : 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -419,39 +792,4 @@ class _InfoRow {
   final String value;
 
   const _InfoRow({required this.label, required this.value});
-}
-
-class _EmergencyButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color backgroundColor;
-  final Color foregroundColor;
-  final VoidCallback onPressed;
-
-  const _EmergencyButton({
-    required this.icon,
-    required this.label,
-    required this.backgroundColor,
-    required this.foregroundColor,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 52,
-      child: ElevatedButton.icon(
-        onPressed: onPressed,
-        icon: Icon(icon, size: 22),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: backgroundColor,
-          foregroundColor: foregroundColor,
-          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-    );
-  }
 }

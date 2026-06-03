@@ -90,12 +90,16 @@ class NavigationHistoryService {
     required String tripId,
     required int durationSeconds,
     required double totalDistanceMeters,
+    double? endLat,
+    double? endLng,
   }) async {
     await _endTrip(
       tripId: tripId,
       durationSeconds: durationSeconds,
       totalDistanceMeters: totalDistanceMeters,
       status: 'completed',
+      endLat: endLat,
+      endLng: endLng,
     );
   }
 
@@ -103,12 +107,16 @@ class NavigationHistoryService {
     required String tripId,
     required int durationSeconds,
     required double totalDistanceMeters,
+    double? endLat,
+    double? endLng,
   }) async {
     await _endTrip(
       tripId: tripId,
       durationSeconds: durationSeconds,
       totalDistanceMeters: totalDistanceMeters,
       status: 'cancelled',
+      endLat: endLat,
+      endLng: endLng,
     );
   }
 
@@ -261,6 +269,8 @@ class NavigationHistoryService {
     required int durationSeconds,
     required double totalDistanceMeters,
     required String status,
+    double? endLat,
+    double? endLng,
   }) async {
     if (tripId.isEmpty) {
       debugPrint('[NAV_HISTORY] Cannot end trip: tripId is empty');
@@ -268,13 +278,18 @@ class NavigationHistoryService {
     }
 
     try {
-      await _collection.doc(tripId).update({
+      final updateData = {
         'endTime': FieldValue.serverTimestamp(),
         'durationSeconds': durationSeconds < 0 ? 0 : durationSeconds,
         'totalDistanceMeters': totalDistanceMeters,
         'status': status,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+      };
+      
+      if (endLat != null) updateData['endLat'] = endLat;
+      if (endLng != null) updateData['endLng'] = endLng;
+      
+      await _collection.doc(tripId).update(updateData);
     } catch (e, st) {
       debugPrint('[NAV_HISTORY] Failed to end trip $tripId as $status: $e');
       debugPrintStack(stackTrace: st);
