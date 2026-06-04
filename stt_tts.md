@@ -65,14 +65,16 @@ STT aktif saat halaman navigasi selesai dibuka. Aplikasi terlebih dahulu membaca
 ### Kondisi STT Aktif
 STT mulai aktif pada kondisi berikut:
 - setelah halaman navigasi dibuka
-- setelah TTS membacakan "Halaman navigasi dibuka. Silakan sebutkan tujuan anda"
+- setelah TTS membacakan "Halaman navigasi dibuka. Silahkan pilih tempat tujuan anda"
 
 ### Perintah Suara yang Dikenali
 Perintah suara pada halaman navigasi digunakan untuk memilih tujuan dan menghentikan navigasi.
 
 Perintah yang dikenali:
 - jika ucapan mengandung nama tempat dari daftar `_places`, aplikasi memilih tempat tersebut sebagai tujuan
-- jika ucapan mengandung `berhenti`, aplikasi menghentikan navigasi dan kembali ke halaman sebelumnya
+- jika ucapan mengandung `cek jarak`, aplikasi membacakan sisa jarak ke tujuan
+- jika ucapan mengandung `cek waktu`, aplikasi membacakan estimasi waktu menuju tujuan
+- jika ucapan mengandung `hentikan`, aplikasi menghentikan navigasi dan kembali ke halaman sebelumnya
 
 Saat nama tempat dikenali:
 - STT dihentikan
@@ -81,7 +83,7 @@ Saat nama tempat dikenali:
 - rute dimuat
 - TTS membacakan "Memulai navigasi ke [nama tempat]"
 
-Saat perintah `berhenti` dikenali:
+Saat perintah `hentikan` dikenali:
 - STT dihentikan
 - TTS membacakan "Navigasi dihentikan"
 - sesi navigasi diakhiri
@@ -147,10 +149,16 @@ TTS digunakan pada kondisi berikut:
 
 ### Teks yang Dibacakan
 Saat halaman navigasi dibuka:
-- "Halaman navigasi dibuka. Silakan sebutkan tujuan anda"
+- "Halaman navigasi dibuka. Silahkan pilih tempat tujuan anda"
 
 Saat navigasi dimulai:
 - "Memulai navigasi ke [nama tempat]"
+
+Saat pengguna bertanya jarak:
+- "Sisa jarak ke [nama tempat] [sisa jarak]."
+
+Saat pengguna bertanya waktu:
+- "Estimasi waktu menuju [nama tempat] [estimasi waktu]."
 
 Saat navigasi dihentikan:
 - "Navigasi dihentikan"
@@ -165,6 +173,9 @@ Saat keluar jalur:
 
 Saat sampai tujuan:
 - "Anda telah tiba di [nama tempat]"
+- sesi navigasi diakhiri
+- halaman navigasi aktif ditutup
+- aplikasi kembali ke halaman utama
 
 ## Hubungan STT dan TTS
 Pada beberapa bagian, STT dan TTS saling bergantian agar suara aplikasi tidak bertabrakan dengan input suara pengguna.

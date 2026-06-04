@@ -251,21 +251,32 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
     if (TunaNetraVoiceCommands.isHomeCommand(command)) {
       await speakSafe("Kamu sudah berada di halaman utama");
-    } else if (command.contains("cuaca")) {
-      await _speakCurrentWeather();
-    } else if (command.contains("bluetooth")) {
-      await speakSafe("Membuka koneksi perangkat");
-      await _handleHomeConnectionTap();
     } else if (TunaNetraVoiceCommands.isSosCommand(command)) {
       await _triggerEmergency();
+    } else if (command.contains("cek cuaca")) {
+      await _speakCurrentWeather();
+    } else if (_isConnectSmartCaneCommand(command)) {
+      await speakSafe("Membuka koneksi SmartCane");
+      await _handleHomeConnectionTap();
+    } else if (command.contains("cek koneksi")) {
+      await _speakSmartCaneConnectionStatus();
+    } else if (command.contains("cek baterai")) {
+      await _speakSmartCaneBatteryStatus();
+    } else if (_isCheckSmartCaneCommand(command)) {
+      await _speakSmartCaneStatus();
+    } else if (command.contains("cek gps")) {
+      await _speakGpsStatus();
     } else if (command.contains("navigasi")) {
       await speakSafe("Membuka navigasi");
+      if (!mounted) return;
       Navigator.pushNamed(context, AppRoutes.tunaNetraNavigation);
     } else if (command.contains("ebook") || command.contains("buku panduan")) {
       await speakSafe("Membuka buku panduan");
+      if (!mounted) return;
       Navigator.pushNamed(context, AppRoutes.tunaNetraEbook);
     } else if (command.contains("pengaturan")) {
       await speakSafe("Membuka pengaturan");
+      if (!mounted) return;
       Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
     } else {
       await speakSafe("Perintah tidak dikenali");
@@ -312,15 +323,87 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   bool _isKnownHomeVoiceCommand(String text) {
     return TunaNetraVoiceCommands.isHomeCommand(text) ||
-        text.contains("cuaca") ||
+        text.contains("cek cuaca") ||
         text.contains("bluetooth") ||
+        text.contains("hubungkan tongkat") ||
+        text.contains("hubungkan smartcane") ||
+        text.contains("hubungkan smarthcane") ||
+        text.contains("cek koneksi") ||
+        text.contains("cek baterai") ||
+        text.contains("cek gps") ||
         text.contains("navigasi") ||
         text.contains("ebook") ||
         text.contains("buku panduan") ||
         text.contains("tongkat pintar") ||
         text.contains("smartcane") ||
+        text.contains("smarthcane") ||
         text.contains("pengaturan") ||
         TunaNetraVoiceCommands.isSosCommand(text);
+  }
+
+  bool _isConnectSmartCaneCommand(String command) {
+    return command.contains("bluetooth") ||
+        command.contains("hubungkan tongkat") ||
+        command.contains("hubungkan smartcane") ||
+        command.contains("hubungkan smarthcane");
+  }
+
+  bool _isCheckSmartCaneCommand(String command) {
+    return command.contains("cek smartcane") ||
+        command.contains("cek smarthcane") ||
+        command.contains("cek tongkat");
+  }
+
+  Future<void> _speakSmartCaneConnectionStatus() async {
+    if (!_isSmartCaneConnected) {
+      await speakSafe("SmartCane belum terhubung.");
+      return;
+    }
+
+    final deviceName = _bleService.connectedBleName;
+    final battery = _smartCaneBatteryPercentage;
+    final batteryText = battery == null ? '' : ' Baterai $battery persen.';
+    final deviceText = deviceName == null || deviceName.trim().isEmpty
+        ? ''
+        : ' ke $deviceName';
+
+    await speakSafe("SmartCane terhubung$deviceText.$batteryText");
+  }
+
+  Future<void> _speakSmartCaneBatteryStatus() async {
+    if (!_isSmartCaneConnected) {
+      await speakSafe("SmartCane belum terhubung.");
+      return;
+    }
+
+    final battery = _smartCaneBatteryPercentage;
+    if (battery == null) {
+      await speakSafe("Baterai SmartCane belum terbaca.");
+      return;
+    }
+
+    await speakSafe("Baterai SmartCane $battery persen.");
+  }
+
+  Future<void> _speakSmartCaneStatus() async {
+    if (!_isSmartCaneConnected) {
+      await speakSafe("SmartCane belum terhubung.");
+      return;
+    }
+
+    final battery = _smartCaneBatteryPercentage;
+    final batteryText = battery == null ? '' : ' Baterai $battery persen.';
+    final sensorText = _hasRecentSensorData
+        ? ' Sensor aktif dan siap membantu.'
+        : ' Menunggu data sensor.';
+
+    await speakSafe("SmartCane terhubung.$batteryText$sensorText");
+  }
+
+  Future<void> _speakGpsStatus() async {
+    await speakSafe(
+      _locationFeaturesStarted ? "Status GPS aktif." : "GPS menunggu izin.",
+    );
   }
 
   void _speakIfReady() async {

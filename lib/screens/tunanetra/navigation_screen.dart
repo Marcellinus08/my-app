@@ -163,7 +163,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _getUserLocation();
       _loadPlaces();
       await speakSafe(
-        'Halaman navigasi dibuka. Tekan dan tahan tombol tongkat untuk memberi perintah suara.',
+        'Halaman navigasi dibuka. Silahkan pilih tempat tujuan anda',
       );
     });
   }
@@ -226,9 +226,17 @@ class _NavigationScreenState extends State<NavigationScreen>
       return;
     }
 
-    if (cleanedCommand.contains('henti') ||
-        cleanedCommand.contains('stop') ||
-        cleanedCommand.contains('keluar')) {
+    if (_isCheckDistanceCommand(cleanedCommand)) {
+      await _speakNavigationDistance();
+      return;
+    }
+
+    if (_isCheckEstimatedTimeCommand(cleanedCommand)) {
+      await _speakNavigationEstimatedTime();
+      return;
+    }
+
+    if (cleanedCommand.contains('hentikan')) {
       await speakSafe('Navigasi dihentikan');
       await _endNavigationSession();
       return;
@@ -249,6 +257,43 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
 
     await speakSafe('Perintah tidak dikenali');
+  }
+
+  bool _isCheckDistanceCommand(String command) {
+    return command.contains('cek jarak');
+  }
+
+  bool _isCheckEstimatedTimeCommand(String command) {
+    return command.contains('cek waktu');
+  }
+
+  Future<void> _speakNavigationDistance() async {
+    if (!_hasActiveRouteForVoice()) {
+      await speakSafe('Rute navigasi belum tersedia.');
+      return;
+    }
+
+    await speakSafe(
+      'Sisa jarak ke ${_selectedPlace!.name} ${_formatRouteDistanceSpeech(_routeDistanceMeters)}.',
+    );
+  }
+
+  Future<void> _speakNavigationEstimatedTime() async {
+    if (!_hasActiveRouteForVoice()) {
+      await speakSafe('Rute navigasi belum tersedia.');
+      return;
+    }
+
+    await speakSafe(
+      'Estimasi waktu menuju ${_selectedPlace!.name} ${_formatRouteDurationSpeech(_routeDurationMinutes)}.',
+    );
+  }
+
+  bool _hasActiveRouteForVoice() {
+    return _isNavigating &&
+        _selectedPlace != null &&
+        _routeDistanceMeters > 0 &&
+        _routeDurationMinutes > 0;
   }
 
   PlaceModel? _findPlaceFromCommand(String command) {
@@ -1215,6 +1260,22 @@ class _NavigationScreenState extends State<NavigationScreen>
     print('[NAVIGATION] Stopping location streaming (battery save mode)...');
     unawaited(_liveTrackingService.stopNavigationTracking());
     _stopSensorFusion();
+  }
+
+  String _formatRouteDistanceSpeech(double distanceMeters) {
+    if (distanceMeters >= 1000) {
+      return "${(distanceMeters / 1000).toStringAsFixed(1)} kilometer";
+    }
+
+    return "${distanceMeters.round()} meter";
+  }
+
+  String _formatRouteDurationSpeech(double durationMinutes) {
+    if (durationMinutes < 1) {
+      return "kurang dari satu menit";
+    }
+
+    return "${durationMinutes.round()} menit";
   }
 
   String _getFusionStatusLabel() {
@@ -2274,16 +2335,13 @@ class _NavigationScreenState extends State<NavigationScreen>
       ),
     );
 
-    unawaited(_endNavigationSession(endReason: 'arrived'));
-    unawaited(speakSafe("Anda telah tiba di ${_selectedPlace?.name}"));
+    await speakSafe("Anda telah tiba di $destinationName");
+    await _endNavigationSession(endReason: 'arrived');
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Anda telah tiba di $destinationName. Navigasi selesai.'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 4),
-      ),
-    );
+    if (!mounted) return;
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.tunaNetraHome, (route) => false);
   }
 
   /// Stop navigation tracking and cleanup timers
