@@ -66,6 +66,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   bool _hasAnnouncedHomeOpened = false;
   bool _homeSttActive = false;
   bool _homeSttStarting = false;
+  bool _suppressNextHomeReturnTts = false;
   bool _isBluetoothOn = false;
   bool _hasBlePermission = false;
   bool _isHomeBleScanning = false;
@@ -232,6 +233,11 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     print("🔙 Balik ke HomeScreen");
 
     await _stopHomeStt();
+
+    if (_suppressNextHomeReturnTts) {
+      _suppressNextHomeReturnTts = false;
+      return;
+    }
 
     final sosStatusAnnouncement = _sosStatusAnnouncement;
     if (sosStatusAnnouncement != null) {
@@ -768,10 +774,51 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       'Perangkat dipilih: ${_displayHomeDeviceName(selected)}',
     );
     await _stopHomeBleScan(logWhenStopped: false);
+
+    if (await _bleService.isRememberedCaneDevice(selected.device)) {
+      await _connectRememberedHomeCane(selected);
+      return;
+    }
+
     await _showHomePairingDialog(selected);
   }
 
+  Future<void> _connectRememberedHomeCane(ScanResult selectedResult) async {
+    if (!mounted) return;
+    setState(() {
+      _isHomePairingCane = true;
+      _homeBleStatus = 'Menghubungkan ulang tongkat...';
+    });
+
+    try {
+      await _connectHomeBleDevice(selectedResult.device);
+
+      if (!_bleService.isConnected) {
+        _showHomeBleSnackBar(
+          'Gagal menghubungkan ulang tongkat. Silakan coba kembali.',
+          isError: true,
+        );
+        return;
+      }
+
+      final bleName = _homeDeviceName(selectedResult.device);
+      if (!mounted) return;
+      setState(() => _homeBleStatus = 'Terhubung ke $bleName');
+      _showHomeBleSnackBar('Tongkat berhasil terhubung kembali.');
+    } catch (error) {
+      _updateHomeBleStatus('Gagal menghubungkan ulang');
+      _showHomeBleSnackBar(
+        'Gagal menghubungkan ulang tongkat. Silakan coba kembali.',
+        isError: true,
+      );
+      debugPrint('[HOME-BLE] Reconnect perangkat tersimpan gagal: $error');
+    } finally {
+      if (mounted) setState(() => _isHomePairingCane = false);
+    }
+  }
+
   Future<ScanResult?> _showHomeScanResultsSheet(List<ScanResult> results) {
+    _suppressNextHomeReturnTts = true;
     return showModalBottomSheet<ScanResult>(
       context: context,
       isScrollControlled: true,
@@ -861,6 +908,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _homeCaneCodeController.clear();
     _homeCanePinController.clear();
 
+    _suppressNextHomeReturnTts = true;
     final submitted = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,

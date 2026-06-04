@@ -423,6 +423,23 @@ class SmartCaneBleService extends ChangeNotifier {
     );
   }
 
+  Future<String?> getRememberedCaneRemoteId() async {
+    final prefs = await SharedPreferences.getInstance();
+    final shouldAutoConnect =
+        prefs.getBool(_rememberedCaneAutoConnectKey) ?? false;
+    if (!shouldAutoConnect) return null;
+
+    final remoteId = prefs.getString(_rememberedCaneRemoteIdKey)?.trim();
+    if (remoteId == null || remoteId.isEmpty) return null;
+    return remoteId;
+  }
+
+  Future<bool> isRememberedCaneDevice(BluetoothDevice device) async {
+    final remoteId = await getRememberedCaneRemoteId();
+    if (remoteId == null) return false;
+    return device.remoteId.toString() == remoteId;
+  }
+
   Future<void> clearRememberedCane() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_rememberedCaneCodeKey);
@@ -605,6 +622,10 @@ class SmartCaneSensorData {
     required this.timestamp,
     this.mlLabel,
     this.mlConfidence,
+    this.leftCm,
+    this.centerCm,
+    this.rightCm,
+    this.decision,
   });
 
   final double? distanceCm;
@@ -613,6 +634,10 @@ class SmartCaneSensorData {
   final DateTime timestamp;
   final String? mlLabel;
   final double? mlConfidence;
+  final double? leftCm;
+  final double? centerCm;
+  final double? rightCm;
+  final String? decision;
 
   bool get isDanger => status.toLowerCase() == 'danger';
   bool get isWarning => status.toLowerCase() == 'warning';
@@ -624,10 +649,140 @@ class SmartCaneSensorData {
   }
 
   String get displayText {
-    final mlText = mlLabel == null || mlLabel!.trim().isEmpty
-        ? ''
-        : ' Deteksi: $mlLabel.';
-    return 'Sensor ultrasonik: $distanceText. $message.$mlText';
+    final lines = <String>[];
+
+    if (leftCm != null || centerCm != null || rightCm != null) {
+      lines.add(
+        'Kiri ${_formatCm(leftCm)} | Tengah ${_formatCm(centerCm)} | Kanan ${_formatCm(rightCm)}',
+      );
+    }
+
+    final decisionText = _decisionText;
+    if (decisionText != null) {
+      lines.add('Keputusan: $decisionText');
+    }
+
+    final statusMessage = _statusDisplayMessage;
+    if (statusMessage.isNotEmpty) {
+      lines.add(statusMessage);
+    }
+
+    return lines.join('\n');
+  }
+
+  String? get _decisionText {
+    final rawDecision = decision?.trim();
+    if (rawDecision == null || rawDecision.isEmpty) return null;
+
+    return switch (rawDecision.toLowerCase()) {
+      'maju' => 'Maju',
+      'kiri' => 'Belok kiri',
+      'kanan' => 'Belok kanan',
+      'stop' || 'berhenti' => 'Berhenti',
+      _ => rawDecision,
+    };
+  }
+
+  String _formatCm(double? value) {
+    if (value == null) return '-';
+    return '${value.round()} cm';
+  }
+
+  String get _statusDisplayMessage {
+    return switch (status.toLowerCase()) {
+      'safe' => 'Aman',
+      'warning' => _hazardMessage('Hati-hati, hambatan'),
+      'danger' => _hazardMessage('Bahaya, hambatan'),
+      _ => _cleanDisplayMessage(message),
+    };
+  }
+
+  String _hazardMessage(String baseMessage) {
+    final objectLabel = _detectedObjectLabel;
+    if (objectLabel == null) return baseMessage;
+    return '$baseMessage: $objectLabel';
+  }
+
+  String? get _detectedObjectLabel {
+    final directLabel = _normalizeObjectLabel(mlLabel);
+    if (directLabel != null) return directLabel;
+
+    final match = RegExp(
+      r'(objek|object)\s*terdeteksi\s*:\s*([^.]+)',
+      caseSensitive: false,
+    ).firstMatch(message);
+
+    if (match == null) return null;
+    return _normalizeObjectLabel(match.group(2));
+  }
+
+  String? _normalizeObjectLabel(String? value) {
+    final label = value?.trim();
+    if (label == null || label.isEmpty) return null;
+
+    final normalized = label.toLowerCase();
+    if (normalized == 'none' ||
+        normalized == 'unknown' ||
+        normalized == 'tidak ada' ||
+        normalized == '-') {
+      return null;
+    }
+
+    return _translateObjectLabel(label);
+  }
+
+  String _translateObjectLabel(String label) {
+    return switch (label.toLowerCase()) {
+      'person' => 'orang',
+      'bicycle' => 'sepeda',
+      'car' => 'mobil',
+      'motorcycle' || 'motorbike' => 'motor',
+      'bus' => 'bus',
+      'truck' => 'truk',
+      'traffic light' => 'lampu lalu lintas',
+      'bench' => 'bangku',
+      'chair' => 'kursi',
+      'dog' => 'anjing',
+      'cat' => 'kucing',
+      'backpack' => 'tas',
+      'umbrella' => 'payung',
+      'bottle' => 'botol',
+      'cup' => 'gelas',
+      'cell phone' || 'phone' => 'ponsel',
+      'laptop' => 'laptop',
+      'potted plant' => 'tanaman',
+      _ => label,
+    };
+  }
+
+  String _cleanDisplayMessage(String value) {
+    return value
+        .replaceAll(
+          RegExp(r'\s*berhenti\s*sementara\.?', caseSensitive: false),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'\s*(disarankan|saran|rekomendasi)\s*(untuk\s*)?(belok\s*)?(ke\s*)?(kiri|kanan|maju|berhenti)\.?',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'\s*(objek|object)\s*terdeteksi\s*:\s*[^.]+\.?',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .replaceAll(
+          RegExp(
+            r'\s*arah\s*(kiri|kanan|maju|depan|belakang)\s+lebih\s+aman\.?',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
   }
 
   static SmartCaneSensorData? tryParse(String payload) {
@@ -653,6 +808,11 @@ class SmartCaneSensorData {
         mlConfidence: _readDouble(
           decoded['mlConfidence'] ?? decoded['confidence'],
         ),
+        leftCm: _readDouble(decoded['left'] ?? decoded['l']),
+        centerCm: _readDouble(decoded['center'] ?? decoded['c']),
+        rightCm: _readDouble(decoded['right'] ?? decoded['r']),
+        decision: (decoded['decision'] ?? decoded['dir'] ?? decoded['a'])
+            ?.toString(),
       );
     } catch (_) {
       return null;

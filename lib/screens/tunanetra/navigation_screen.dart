@@ -1645,10 +1645,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   String get _ultrasonicSensorText {
     final data = _latestSmartCaneSensorData;
     if (!_smartCaneBleService.isConnected) {
-      return 'Halangan terdeteksi di depan. Belok sedikit ke kanan.';
+      return 'Sensor dan model belum terhubung';
     }
     if (data == null) {
-      return 'Sensor ultrasonik: menunggu data sensor.';
+      return 'Menunggu data dari SmartCane.';
     }
     return data.displayText;
   }
@@ -3033,10 +3033,12 @@ class _NavigationScreenState extends State<NavigationScreen>
         ],
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 26,
             height: 26,
+            margin: const EdgeInsets.only(top: 1),
             decoration: BoxDecoration(
               color: const Color(0xFFF59E0B).withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(8),
@@ -3053,8 +3055,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                 fontWeight: FontWeight.w800,
                 height: 1.25,
               ),
-              maxLines: 2,
-              overflow: TextOverflow.clip,
+              softWrap: true,
             ),
           ),
         ],
