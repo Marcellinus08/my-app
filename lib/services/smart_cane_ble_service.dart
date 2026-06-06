@@ -34,6 +34,7 @@ class SmartCaneBleService extends ChangeNotifier {
   BluetoothDevice? _connectedDevice;
   String? _connectedBleName;
   SmartCaneSensorData? _latestSensorData;
+  DateTime? _latestSensorReceivedAt;
   SmartCaneBatteryData? _latestBatteryData;
   bool _isConnecting = false;
   bool _isAutoConnecting = false;
@@ -51,6 +52,29 @@ class SmartCaneBleService extends ChangeNotifier {
   bool get isConnecting => _isConnecting;
   bool get isAutoConnecting => _isAutoConnecting;
   bool get isConnected => _connectedDevice != null;
+  bool get isSensorRunning {
+    final data = _latestSensorData;
+    return isConnected &&
+        _hasFreshSensorData &&
+        data != null &&
+        data.hasSensorOutput;
+  }
+
+  bool get isModelRunning {
+    final data = _latestSensorData;
+    return isConnected &&
+        _hasFreshSensorData &&
+        data != null &&
+        data.hasModelOutput;
+  }
+
+  bool get isSmartCaneReady => isConnected && isSensorRunning && isModelRunning;
+
+  bool get _hasFreshSensorData {
+    final receivedAt = _latestSensorReceivedAt;
+    if (receivedAt == null) return false;
+    return DateTime.now().difference(receivedAt) <= const Duration(seconds: 10);
+  }
 
   String deviceName(BluetoothDevice device) {
     final platformName = device.platformName.trim();
@@ -83,6 +107,10 @@ class SmartCaneBleService extends ChangeNotifier {
           _sensorSubscription = null;
           _connectedDevice = null;
           _connectedBleName = null;
+          _latestBatteryData = null;
+          _latestSensorData = null;
+          _latestSensorReceivedAt = null;
+          _sensorPayloadBuffer = '';
           updateStatus('Belum terhubung');
           notifyListeners();
         }
@@ -224,6 +252,7 @@ class SmartCaneBleService extends ChangeNotifier {
 
   void _publishSensorData(SmartCaneSensorData data) {
     _latestSensorData = data;
+    _latestSensorReceivedAt = DateTime.now();
     _sensorController.add(data);
     notifyListeners();
   }
@@ -473,8 +502,13 @@ class SmartCaneBleService extends ChangeNotifier {
   }) async {
     final device = _connectedDevice;
     if (device == null) {
+      _latestBatteryData = null;
+      _latestSensorData = null;
+      _latestSensorReceivedAt = null;
+      _sensorPayloadBuffer = '';
       updateStatus('Belum terhubung');
       log('[BLE-STEP-12] Disconnect dilewati: belum ada device terhubung');
+      notifyListeners();
       return;
     }
 
@@ -484,6 +518,10 @@ class SmartCaneBleService extends ChangeNotifier {
       _sensorSubscription = null;
       _connectedDevice = null;
       _connectedBleName = null;
+      _latestBatteryData = null;
+      _latestSensorData = null;
+      _latestSensorReceivedAt = null;
+      _sensorPayloadBuffer = '';
       updateStatus('Belum terhubung');
       log('[BLE-STEP-12] Disconnect berhasil');
       notifyListeners();
@@ -641,6 +679,19 @@ class SmartCaneSensorData {
 
   bool get isDanger => status.toLowerCase() == 'danger';
   bool get isWarning => status.toLowerCase() == 'warning';
+  bool get hasSensorOutput =>
+      distanceCm != null ||
+      leftCm != null ||
+      centerCm != null ||
+      rightCm != null;
+
+  bool get hasModelOutput {
+    final modelDecision = decision?.trim();
+    final objectLabel = mlLabel?.trim();
+    return (modelDecision != null && modelDecision.isNotEmpty) ||
+        (objectLabel != null && objectLabel.isNotEmpty) ||
+        mlConfidence != null;
+  }
 
   String get distanceText {
     final distance = distanceCm;

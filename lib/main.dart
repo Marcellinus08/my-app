@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 import 'services/auth_service.dart';
 import 'services/notification_service.dart';
 import 'services/smart_cane_ble_service.dart';
+import 'services/smart_cane_status_notification_service.dart';
 import 'utils/constants.dart';
 import 'screens/auth/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -22,6 +23,8 @@ import 'screens/family/emergency_sos_screen.dart';
 import 'screens/family/family_manage_places_screen.dart';
 
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldMessengerState> appScaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
 final RouteObserver<ModalRoute<void>> routeObserver =
     RouteObserver<ModalRoute<void>>();
 
@@ -118,14 +121,36 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   late final _AppLifecycleBleObserver _bleLifecycleObserver;
+  late final SmartCaneStatusNotificationService
+  _smartCaneStatusNotificationService;
+  StreamSubscription<User?>? _authStateSubscription;
   bool _hasStartedBleAutoReconnect = false;
+  bool _isStartingBleAutoReconnect = false;
 
   @override
   void initState() {
     super.initState();
     _bleLifecycleObserver = _AppLifecycleBleObserver(
       shouldUseBle: _isTunaNetraUser,
+      onTunaNetraSessionReady: _startSmartCaneStatusNotifications,
     );
+    _smartCaneStatusNotificationService = SmartCaneStatusNotificationService(
+      scaffoldMessengerKey: appScaffoldMessengerKey,
+    );
+    _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
+      user,
+    ) {
+      if (user == null) {
+        _hasStartedBleAutoReconnect = false;
+        _isStartingBleAutoReconnect = false;
+        _smartCaneStatusNotificationService.stop();
+        return;
+      }
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_startBleAutoReconnect());
+      });
+    });
     WidgetsBinding.instance.addObserver(_bleLifecycleObserver);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startBleAutoReconnect();
@@ -135,6 +160,8 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(_bleLifecycleObserver);
+    _authStateSubscription?.cancel();
+    _smartCaneStatusNotificationService.stop();
     super.dispose();
   }
 
@@ -147,27 +174,40 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _startBleAutoReconnect() async {
-    if (_hasStartedBleAutoReconnect) return;
+    if (_hasStartedBleAutoReconnect || _isStartingBleAutoReconnect) return;
+    _isStartingBleAutoReconnect = true;
 
-    final shouldUseBle = await _isTunaNetraUser();
-    if (!shouldUseBle) {
-      debugPrint('[MAIN] BLE auto reconnect dilewati: user bukan tunanetra');
-      return;
+    try {
+      final shouldUseBle = await _isTunaNetraUser();
+      if (!shouldUseBle) {
+        _smartCaneStatusNotificationService.stop();
+        debugPrint('[MAIN] BLE auto reconnect dilewati: user bukan tunanetra');
+        return;
+      }
+
+      _startSmartCaneStatusNotifications();
+      _smartCaneStatusNotificationService.beginStartupFlow();
+      _hasStartedBleAutoReconnect = true;
+      unawaited(
+        SmartCaneBleService.instance.initializeAutoReconnect(
+          maxAttempts: 5,
+          log: (message) => debugPrint(message),
+        ),
+      );
+    } finally {
+      _isStartingBleAutoReconnect = false;
     }
+  }
 
-    _hasStartedBleAutoReconnect = true;
-    unawaited(
-      SmartCaneBleService.instance.initializeAutoReconnect(
-        maxAttempts: 5,
-        log: (message) => debugPrint(message),
-      ),
-    );
+  void _startSmartCaneStatusNotifications() {
+    _smartCaneStatusNotificationService.start();
   }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       navigatorKey: appNavigatorKey,
+      scaffoldMessengerKey: appScaffoldMessengerKey,
       navigatorObservers: [routeObserver],
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
@@ -304,9 +344,13 @@ class _MyAppState extends State<MyApp> {
 }
 
 class _AppLifecycleBleObserver extends WidgetsBindingObserver {
-  _AppLifecycleBleObserver({required this.shouldUseBle});
+  _AppLifecycleBleObserver({
+    required this.shouldUseBle,
+    required this.onTunaNetraSessionReady,
+  });
 
   final Future<bool> Function() shouldUseBle;
+  final VoidCallback onTunaNetraSessionReady;
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -320,6 +364,7 @@ class _AppLifecycleBleObserver extends WidgetsBindingObserver {
       return;
     }
 
+    onTunaNetraSessionReady();
     unawaited(
       SmartCaneBleService.instance.initializeAutoReconnect(
         maxAttempts: 3,

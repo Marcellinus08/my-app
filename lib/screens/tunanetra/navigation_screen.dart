@@ -50,7 +50,9 @@ class _NavigationScreenState extends State<NavigationScreen>
   bool _navigationSttStarting = false;
   bool _isSendingSos = false;
   static const double _pedestrianSpeedMs = 1.4;
-  static const double _arrivalThresholdMeters = 5.0;
+  static const double _arrivalThresholdMeters = 10.0;
+  static const double _routeEndArrivalThresholdMeters = 5.0;
+  static const double _routeEndDestinationToleranceMeters = 20.0;
 
   // Default location: Bandung, Indonesia
   final LatLng defaultLocation = const LatLng(-6.9147, 107.6098);
@@ -586,6 +588,12 @@ class _NavigationScreenState extends State<NavigationScreen>
     });
 
     _animateUserLocation(displayLocation);
+
+    if (_hasReachedDestination(updatedLocation)) {
+      unawaited(_handleArrival());
+      return;
+    }
+
     _updateLiveInstructionDistance(displayLocation, allowVoiceCue: true);
     _updateRouteProgress(
       snapResult.segmentIndex,
@@ -724,6 +732,33 @@ class _NavigationScreenState extends State<NavigationScreen>
     );
   }
 
+  bool _hasReachedDestination(LatLng currentLocation) {
+    if (!_isNavigating || _hasArrivedAtDestination || _selectedPlace == null) {
+      return false;
+    }
+
+    final destination = LatLng(
+      _selectedPlace!.latitude,
+      _selectedPlace!.longitude,
+    );
+    final distanceToDestination = _distanceBetweenPoints(
+      currentLocation,
+      destination,
+    );
+
+    if (distanceToDestination <= _arrivalThresholdMeters) {
+      return true;
+    }
+
+    final remainingRouteMeters = _remainingDistanceAlongPolyline(
+      currentLocation,
+      _routePoints,
+    );
+    return remainingRouteMeters != null &&
+        remainingRouteMeters <= _routeEndArrivalThresholdMeters &&
+        distanceToDestination <= _routeEndDestinationToleranceMeters;
+  }
+
   double? _remainingDistanceAlongPolyline(
     LatLng currentPosition,
     List<LatLng> polylinePoints,
@@ -819,7 +854,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         ? _navigationInstructions[nextInstructionIndex].instruction
         : 'tujuan berada di depan';
 
-    if (remainingMeters <= 2) {
+    if (remainingMeters <= 1) {
       _announceNowCueAndAdvance(
         sourceInstructionIndex: _currentInstructionIndex,
         nextInstructionIndex: nextInstructionIndex,
@@ -2309,7 +2344,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
   }
 
-  void _handleArrival() async {
+  Future<void> _handleArrival() async {
     if (!mounted || _hasArrivedAtDestination) return;
 
     final destinationName = _selectedPlace?.name ?? 'tujuan';

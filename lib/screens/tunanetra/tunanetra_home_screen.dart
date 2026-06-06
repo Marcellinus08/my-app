@@ -29,7 +29,6 @@ class TunaNetraHomeScreen extends StatefulWidget {
 
 class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     with TickerProviderStateMixin, WidgetsBindingObserver, RouteAware {
-  static bool _hasSpokenWelcomeThisSession = false;
   static final Guid _smartCaneServiceUuid = Guid(
     '0000a001-0000-1000-8000-00805f9b34fb',
   );
@@ -54,11 +53,11 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   StreamSubscription<bool>? _homeScanStateSubscription;
   StreamSubscription<BluetoothAdapterState>? _homeAdapterStateSubscription;
   Timer? _weatherRefreshTimer;
+  Timer? _smartCaneStatusRefreshTimer;
   final Set<String> _shownPairingRequestIds = {};
   bool _isPairingDialogOpen = false;
   final TTSService _ttsService = TTSService();
   final STTService _sttService = STTService();
-  bool _hasSpoken = _hasSpokenWelcomeThisSession;
   bool _isSpeaking = false;
   bool _initialPermissionFlowDone = false;
   bool _locationFeaturesStarted = false;
@@ -93,6 +92,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _setupUserNameStream();
     _subscribeToPairingRequests();
     _bleService.addListener(_syncHomeBleServiceState);
+    _startSmartCaneStatusRefreshTimer();
     _homeAdapterStateSubscription = FlutterBluePlus.adapterState.listen((
       state,
     ) {
@@ -138,6 +138,15 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     });
   }
 
+  void _startSmartCaneStatusRefreshTimer() {
+    _smartCaneStatusRefreshTimer?.cancel();
+    _smartCaneStatusRefreshTimer = Timer.periodic(const Duration(seconds: 3), (
+      _,
+    ) {
+      if (mounted) setState(() {});
+    });
+  }
+
   Future<void> speakSafe(String text) async {
     _isSpeaking = true;
     await _ttsService.speak(text);
@@ -163,8 +172,11 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   bool get _isSmartCaneConnected =>
       SmartCaneBleService.instance.connectedDevice != null;
 
-  bool get _hasRecentSensorData =>
-      SmartCaneBleService.instance.latestSensorData != null;
+  bool get _isSensorRunning => _bleService.isSensorRunning;
+
+  bool get _isModelRunning => _bleService.isModelRunning;
+
+  bool get _isSmartCaneReady => _bleService.isSmartCaneReady;
 
   bool get _isSmartCaneBatteryLow {
     final percentage = _smartCaneBatteryPercentage;
@@ -174,6 +186,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   Color get _smartCaneStatusColor {
     if (!_isSmartCaneConnected) return AppColors.warning;
     if (_isSmartCaneBatteryLow) return AppColors.error;
+    if (!_isSmartCaneReady) return AppColors.warning;
     return AppColors.success;
   }
 
@@ -188,14 +201,16 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   String get _smartCanePrimaryStatus {
     if (!_isSmartCaneConnected) return 'Tongkat belum terhubung';
     if (_isSmartCaneBatteryLow) return 'Baterai tongkat rendah';
-    return 'Smart Cane Terhubung';
+    if (!_isSmartCaneReady) return 'Smart Cane Belum Siap';
+    return 'Smart Cane Siap';
   }
 
   String get _smartCaneSecondaryStatus {
     if (!_isSmartCaneConnected) return 'Hubungkan melalui koneksi';
     if (_isSmartCaneBatteryLow) return 'Lakukan pengisian baterai segera';
-    if (_hasRecentSensorData) return 'Sensor aktif dan siap membantu';
-    return 'Menunggu data sensor';
+    if (!_isSensorRunning) return 'Menunggu data sensor';
+    if (!_isModelRunning) return 'Menunggu model ML';
+    return 'Sensor dan model ML aktif';
   }
 
   String get _bluetoothStatusLabel {
@@ -208,10 +223,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   }
 
   String get _navigationStatusLabel =>
-      _isSmartCaneConnected ? 'Navigasi Siap Digunakan' : 'Navigasi belum siap';
+      _isSmartCaneReady ? 'Navigasi Siap Digunakan' : 'Navigasi belum siap';
 
   String get _sensorStatusLabel {
     if (!_isSmartCaneConnected) return 'Belum terhubung';
+    if (!_isSensorRunning) return 'Sensor belum aktif';
+    if (!_isModelRunning) return 'Model belum aktif';
     return 'SmartCane siap';
   }
 
@@ -399,11 +416,21 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
     final battery = _smartCaneBatteryPercentage;
     final batteryText = battery == null ? '' : ' Baterai $battery persen.';
-    final sensorText = _hasRecentSensorData
-        ? ' Sensor aktif dan siap membantu.'
-        : ' Menunggu data sensor.';
+    if (!_isSensorRunning) {
+      await speakSafe("SmartCane terhubung.$batteryText Menunggu data sensor.");
+      return;
+    }
 
-    await speakSafe("SmartCane terhubung.$batteryText$sensorText");
+    if (!_isModelRunning) {
+      await speakSafe(
+        "SmartCane terhubung.$batteryText Sensor aktif. Menunggu model ML.",
+      );
+      return;
+    }
+
+    await speakSafe(
+      "SmartCane siap digunakan.$batteryText Sensor dan model ML aktif.",
+    );
   }
 
   Future<void> _speakGpsStatus() async {
@@ -420,27 +447,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       _hasAnnouncedHomeOpened = true;
       await _stopHomeStt();
       await speakSafe("Halaman utama dibuka");
-      return;
-    }
-
-    if (_hasSpoken) {
-      return;
-    }
-
-    if (_weatherData != null && _userName.isNotEmpty) {
-      _hasSpoken = true;
-      _hasSpokenWelcomeThisSession = true;
-
-      final cuaca = _weatherData!;
-      final text = "Selamat datang $_userName. ${_formatWeatherSpeech(cuaca)}";
-
-      await _stopHomeStt();
-      _isSpeaking = true;
-      try {
-        await TTSService().speak(text);
-      } finally {
-        _isSpeaking = false;
-      }
     }
   }
 
@@ -589,6 +595,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   void _syncHomeBleServiceState() {
     if (!mounted) return;
     setState(() {
+      _latestSmartCaneBatteryData = _bleService.latestBatteryData;
       if (_bleService.isConnected) {
         final name = _bleService.connectedBleName ?? 'TemanArah-Cane';
         _homeBleStatus = 'Terhubung ke $name';
@@ -1771,9 +1778,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                   icon: Icons.sensors_rounded,
                   label: 'SmartCane',
                   value: _sensorStatusLabel,
-                  color: _hasRecentSensorData
+                  color: _isSmartCaneReady
                       ? AppColors.success
-                      : AppColors.textTertiary,
+                      : AppColors.warning,
                 ),
               ),
             ],
@@ -1834,6 +1841,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     WidgetsBinding.instance.removeObserver(this);
     _liveTrackingService.stopHomeLocationTracking();
     _weatherRefreshTimer?.cancel();
+    _smartCaneStatusRefreshTimer?.cancel();
     _homeCaneCodeController.dispose();
     _homeCanePinController.dispose();
     _homeScanSubscription?.cancel();
