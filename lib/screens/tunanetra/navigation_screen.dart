@@ -53,6 +53,8 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const double _arrivalThresholdMeters = 10.0;
   static const double _routeEndArrivalThresholdMeters = 5.0;
   static const double _routeEndDestinationToleranceMeters = 20.0;
+  static const double _maximumAcceptedGpsAccuracyMeters = 25.0;
+  static const int _requiredArrivalConfirmations = 3;
 
   // Default location: Bandung, Indonesia
   final LatLng defaultLocation = const LatLng(-6.9147, 107.6098);
@@ -134,6 +136,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   bool _isLoadingInstructions = false;
   String _instructionLoadError = '';
   bool _hasArrivedAtDestination = false;
+  int _arrivalConfirmationCount = 0;
   String _destinationName = '';
 
   Future<void> speakSafe(String text) async {
@@ -541,6 +544,15 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   void _onGpsPositionUpdate(Position position) {
+    if (position.accuracy.isFinite &&
+        position.accuracy > _maximumAcceptedGpsAccuracyMeters) {
+      _arrivalConfirmationCount = 0;
+      debugPrint(
+        '[NAVIGATION] GPS ignored: accuracy ${position.accuracy.toStringAsFixed(1)}m',
+      );
+      return;
+    }
+
     final now = DateTime.now();
     final updatedLocation = LatLng(position.latitude, position.longitude);
 
@@ -589,7 +601,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     _animateUserLocation(displayLocation);
 
-    if (_hasReachedDestination(updatedLocation)) {
+    if (_confirmArrivalFromGps(updatedLocation)) {
       unawaited(_handleArrival());
       return;
     }
@@ -652,33 +664,14 @@ class _NavigationScreenState extends State<NavigationScreen>
     setState(() {
       _animatedUserLocation = displayLocation;
       _isUsingPredictedPosition = true;
-      _currentSnappedRoutePoint = snapResult.snapped ? displayLocation : null;
     });
 
     if (_isNavigating) {
       _safeMoveMap(displayLocation);
     }
 
-    _updateRouteProgress(
-      snapResult.segmentIndex,
-      snapResult.distanceToRouteMeters,
-    );
-    _updateLiveInstructionDistance(displayLocation, allowVoiceCue: false);
-    unawaited(
-      _handleOffRouteDetection(
-        distanceToRouteMeters: snapResult.distanceToRouteMeters,
-        snapped: snapResult.snapped,
-      ),
-    );
-    unawaited(
-      _saveRoutePointIfNeeded(
-        position: displayLocation,
-        isPredicted: true,
-        heading: _markerHeading,
-        speed: predictedSpeed,
-        accuracy: _lastKnownGpsPosition?.accuracy ?? 0.0,
-      ),
-    );
+    // Posisi prediksi hanya menghaluskan marker. Progres rute, instruksi,
+    // deteksi keluar jalur, dan riwayat tetap menunggu GPS asli.
   }
 
   int _findClosestRoutePointIndex(
@@ -757,6 +750,16 @@ class _NavigationScreenState extends State<NavigationScreen>
     return remainingRouteMeters != null &&
         remainingRouteMeters <= _routeEndArrivalThresholdMeters &&
         distanceToDestination <= _routeEndDestinationToleranceMeters;
+  }
+
+  bool _confirmArrivalFromGps(LatLng currentLocation) {
+    if (!_hasReachedDestination(currentLocation)) {
+      _arrivalConfirmationCount = 0;
+      return false;
+    }
+
+    _arrivalConfirmationCount++;
+    return _arrivalConfirmationCount >= _requiredArrivalConfirmations;
   }
 
   double? _remainingDistanceAlongPolyline(
@@ -1637,6 +1640,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _routeLoadError = '';
       _isLoadingRoute = false;
       _hasArrivedAtDestination = false;
+      _arrivalConfirmationCount = 0;
       _isUsingPredictedPosition = false;
       _tripStartedAt = null;
       if (returnToPlaceList) {
@@ -2101,6 +2105,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _isLoadingInstructions = false;
       _instructionLoadError = '';
       _hasArrivedAtDestination = false;
+      _arrivalConfirmationCount = 0;
     });
 
     try {
@@ -2286,9 +2291,6 @@ class _NavigationScreenState extends State<NavigationScreen>
         final distanceMeters = (routeInfo['distance'] as num).toDouble();
         final newFootDurationSeconds = distanceMeters / _pedestrianSpeedMs;
         final newDistanceKm = (routeInfo['distance_km'] as num).toDouble();
-        final hasArrivedNow =
-            !_hasArrivedAtDestination &&
-            distanceMeters < _arrivalThresholdMeters;
         // Instruction changes are handled by GPS-triggered maneuver cues.
         final nextInstructionIndex = _currentInstructionIndex;
         var forwardInstruction = false;
@@ -2324,14 +2326,6 @@ class _NavigationScreenState extends State<NavigationScreen>
         if (forwardInstruction && instructionText.isNotEmpty) {
           await speakSafe(instructionText);
           _updateLiveInstructionDistance(_userLocation, allowVoiceCue: false);
-        }
-
-        if (hasArrivedNow) {
-          print(
-            '[NAVIGATION] ✅ Arrived at destination (< ${_arrivalThresholdMeters.toStringAsFixed(0)}m)',
-          );
-          _handleArrival();
-          return;
         }
 
         print(
