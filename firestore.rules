@@ -2,6 +2,22 @@ rules_version = 2;
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isPairedFamily(tunaNetraUid) {
+      let familyData = get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      ).data;
+      return isSignedIn() &&
+        (
+          (familyData.pairedUserUid is string &&
+           familyData.pairedUserUid == tunaNetraUid) ||
+          (familyData.pairedUserUids is list &&
+           tunaNetraUid in familyData.pairedUserUids)
+        );
+    }
     
     // ========== OTP Collection (Production Ready) ==========
     // DEVELOPMENT: Allow anyone (less secure)
@@ -89,6 +105,106 @@ service cloud.firestore {
          request.auth.uid == resource.data.tunaNetraUid);
 
       allow delete: if false;
+    }
+
+    match /live_tracking/{userId} {
+      allow read: if isSignedIn() &&
+        (request.auth.uid == userId || isPairedFamily(userId));
+
+      allow create: if isSignedIn() && request.auth.uid == userId;
+
+      allow update: if isSignedIn() &&
+        (
+          request.auth.uid == userId ||
+          (
+            isPairedFamily(userId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'isNavigating',
+              'currentTripId',
+              'destinationName',
+              'connectionStatus',
+              'updatedAt'
+            ]) &&
+            request.resource.data.isNavigating == false &&
+            request.resource.data.currentTripId == null &&
+            request.resource.data.destinationName == null &&
+            request.resource.data.connectionStatus == 'offline'
+          )
+        );
+
+      allow delete: if false;
+    }
+
+    match /navigation_history/{tripId} {
+      allow read: if isSignedIn() &&
+        (
+          request.auth.uid == resource.data.userId ||
+          isPairedFamily(resource.data.userId)
+        );
+
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.userId;
+
+      allow update: if isSignedIn() &&
+        (
+          request.auth.uid == resource.data.userId ||
+          (
+            isPairedFamily(resource.data.userId) &&
+            resource.data.status == 'ongoing' &&
+            request.resource.data.userId == resource.data.userId &&
+            request.resource.data.status == 'cancelled' &&
+            request.resource.data.endReason == 'user_offline'
+          )
+        );
+
+      allow delete: if false;
+
+      match /events/{eventId} {
+        allow read: if isSignedIn() &&
+          (
+            request.auth.uid ==
+              get(/databases/$(database)/documents/navigation_history/$(tripId))
+                .data.userId ||
+            isPairedFamily(
+              get(/databases/$(database)/documents/navigation_history/$(tripId))
+                .data.userId
+            )
+          );
+
+        allow create: if isSignedIn() &&
+          request.resource.data.type == 'navigation_cancelled' &&
+          (
+            request.auth.uid ==
+              get(/databases/$(database)/documents/navigation_history/$(tripId))
+                .data.userId ||
+            isPairedFamily(
+              get(/databases/$(database)/documents/navigation_history/$(tripId))
+                .data.userId
+            )
+          );
+
+        allow update, delete: if false;
+      }
+
+      match /route_points/{pointId} {
+        allow read: if isSignedIn() &&
+          (
+            request.auth.uid ==
+              get(/databases/$(database)/documents/navigation_history/$(tripId))
+                .data.userId ||
+            isPairedFamily(
+              get(/databases/$(database)/documents/navigation_history/$(tripId))
+                .data.userId
+            )
+          );
+
+        allow create, update: if isSignedIn() &&
+          request.auth.uid ==
+            get(/databases/$(database)/documents/navigation_history/$(tripId))
+              .data.userId;
+
+        allow delete: if false;
+      }
     }
     
     // Default deny all

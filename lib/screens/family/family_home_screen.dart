@@ -2051,7 +2051,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
 
   bool _isLiveTrackingFresh(Timestamp? updatedAt) {
     if (updatedAt == null) return false;
-    return _liveTrackingNow.difference(updatedAt.toDate()).inSeconds <= 120;
+    return _liveTrackingNow.difference(updatedAt.toDate()).inSeconds <= 60;
   }
 
   Widget _buildDeviceStatusInfo({

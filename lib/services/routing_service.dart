@@ -6,8 +6,10 @@ class RoutingService {
   // Menggunakan OSRM Public (router.project-osrm.org) - gratis, stabil di Android, tidak perlu API key
   // Profiles: 'car' untuk rute kendaraan, 'foot' untuk rute pejalan kaki
   // Fallback logic diterapkan jika OSRM mengembalikan durasi yang sama
-  static const String _baseUrlCar = 'https://router.project-osrm.org/route/v1/car';
-  static const String _baseUrlFoot = 'https://router.project-osrm.org/route/v1/foot';
+  static const String _baseUrlCar =
+      'https://router.project-osrm.org/route/v1/car';
+  static const String _baseUrlFoot =
+      'https://router.project-osrm.org/route/v1/foot';
 
   final Dio _dio = Dio(
     BaseOptions(
@@ -38,7 +40,8 @@ class RoutingService {
       // OSRM format: lon,lat;lon,lat
       final coordinates =
           '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
-      final url = '$baseUrl/$coordinates?geometries=geojson&overview=full&steps=true';
+      final url =
+          '$baseUrl/$coordinates?geometries=geojson&overview=full&steps=true';
 
       print('[ROUTING] Requesting route (foot) from: $url');
 
@@ -46,9 +49,11 @@ class RoutingService {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        
+
         if (data['code'] != 'Ok') {
-          throw Exception('OSRM Error: ${data['code']} - ${data['message'] ?? 'Unknown error'}');
+          throw Exception(
+            'OSRM Error: ${data['code']} - ${data['message'] ?? 'Unknown error'}',
+          );
         }
 
         final routes = data['routes'] as List;
@@ -63,10 +68,12 @@ class RoutingService {
 
         // Convert dari [lon, lat] ke LatLng
         final polylinePoints = coordinates
-            .map((coord) => LatLng(
-                  (coord[1] as num).toDouble(),
-                  (coord[0] as num).toDouble(),
-                ))
+            .map(
+              (coord) => LatLng(
+                (coord[1] as num).toDouble(),
+                (coord[0] as num).toDouble(),
+              ),
+            )
             .toList();
 
         return polylinePoints;
@@ -81,7 +88,9 @@ class RoutingService {
           throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
         } else if (e.type == DioExceptionType.connectionError) {
           print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
-          throw Exception('Tidak ada koneksi internet. Silakan periksa jaringan Anda.');
+          throw Exception(
+            'Tidak ada koneksi internet. Silakan periksa jaringan Anda.',
+          );
         }
       }
       print('[ROUTING] ❌ Error getting route: $e');
@@ -101,13 +110,15 @@ class RoutingService {
       print('[ROUTING] Profile requested: $profile');
       final baseUrl = _getBaseUrl(profile);
       print('[ROUTING] Base URL selected: $baseUrl');
-      
+
       final coordinates =
           '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
       final url = '$baseUrl/$coordinates?overview=full&geometries=geojson';
 
       print('[ROUTING] Origin: ${origin.longitude}, ${origin.latitude}');
-      print('[ROUTING] Destination: ${destination.longitude}, ${destination.latitude}');
+      print(
+        '[ROUTING] Destination: ${destination.longitude}, ${destination.latitude}',
+      );
       print('[ROUTING] 🌐 REQUEST URL:');
       print('[ROUTING] $url');
       print('[ROUTING] ---');
@@ -116,7 +127,7 @@ class RoutingService {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        
+
         if (data['code'] != 'Ok') {
           throw Exception('OSRM Error: ${data['code']}');
         }
@@ -132,7 +143,9 @@ class RoutingService {
         final durationMinutes = (rawDuration as num) / 60;
         final distanceKm = (rawDistance as num) / 1000;
 
-        print('[ROUTING] ✅ Profile: $profile - Duration: ${rawDuration}s (${durationMinutes.toStringAsFixed(1)} min), Distance: ${rawDistance}m (${distanceKm.toStringAsFixed(1)} km)');
+        print(
+          '[ROUTING] ✅ Profile: $profile - Duration: ${rawDuration}s (${durationMinutes.toStringAsFixed(1)} min), Distance: ${rawDistance}m (${distanceKm.toStringAsFixed(1)} km)',
+        );
 
         return {
           'distance': rawDistance, // dalam meter
@@ -151,7 +164,9 @@ class RoutingService {
           throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
         } else if (e.type == DioExceptionType.connectionError) {
           print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
-          throw Exception('Tidak ada koneksi internet. Silakan periksa jaringan Anda.');
+          throw Exception(
+            'Tidak ada koneksi internet. Silakan periksa jaringan Anda.',
+          );
         }
       }
       print('[ROUTING] ❌ Error getting route info: $e');
@@ -171,7 +186,7 @@ class RoutingService {
         destination: destination,
         profile: 'foot',
       );
-      
+
       final carInfo = await getRouteInfo(
         origin: origin,
         destination: destination,
@@ -182,12 +197,17 @@ class RoutingService {
       // Kecepatan pedestrian rata-rata: 1.4 m/s (sama seperti Google Maps)
       final distanceMeters = footInfo['distance'] as num;
       const double pedestrianSpeedMs = 1.4; // meter per second
-      final footDuration = (distanceMeters / pedestrianSpeedMs).toInt(); // dalam detik
-      
+      final footDuration = (distanceMeters / pedestrianSpeedMs)
+          .toInt(); // dalam detik
+
       final carDuration = carInfo['duration'] as num;
 
-      print('[ROUTING] ✅ Foot (Google Maps method): ${footDuration}s (${(footDuration / 60).toStringAsFixed(1)} min) - Distance: ${distanceMeters}m @ ${pedestrianSpeedMs}m/s');
-      print('[ROUTING] ✅ Car: ${carDuration}s (${(carDuration / 60).toStringAsFixed(1)} min)');
+      print(
+        '[ROUTING] ✅ Foot (Google Maps method): ${footDuration}s (${(footDuration / 60).toStringAsFixed(1)} min) - Distance: ${distanceMeters}m @ ${pedestrianSpeedMs}m/s',
+      );
+      print(
+        '[ROUTING] ✅ Car: ${carDuration}s (${(carDuration / 60).toStringAsFixed(1)} min)',
+      );
 
       return {
         'foot_duration': footDuration,
@@ -210,27 +230,35 @@ class RoutingService {
       // Dari Alun-alun Bandung ke Tangkuban Perahu (lebih jauh)
       final origin = LatLng(-6.9147, 107.6098);
       final destination = LatLng(-6.7727, 107.5778);
-      
+
       print('[ROUTING] 🧪 Testing OSRM Difference for Foot vs Car');
       print('[ROUTING] Origin: ${origin.latitude}, ${origin.longitude}');
-      print('[ROUTING] Destination: ${destination.latitude}, ${destination.longitude}');
-      
+      print(
+        '[ROUTING] Destination: ${destination.latitude}, ${destination.longitude}',
+      );
+
       final footInfo = await getRouteInfo(
         origin: origin,
         destination: destination,
         profile: 'foot',
       );
-      
+
       final carInfo = await getRouteInfo(
         origin: origin,
         destination: destination,
         profile: 'car',
       );
-      
+
       print('[ROUTING] 🧪 TEST RESULTS:');
-      print('[ROUTING] Foot - Duration: ${footInfo['duration_minutes']} min, Distance: ${footInfo['distance_km']} km');
-      print('[ROUTING] Car - Duration: ${carInfo['duration_minutes']} min, Distance: ${carInfo['distance_km']} km');
-      print('[ROUTING] Difference - Time: ${(footInfo['duration_minutes'] as num) - (carInfo['duration_minutes'] as num)} min');
+      print(
+        '[ROUTING] Foot - Duration: ${footInfo['duration_minutes']} min, Distance: ${footInfo['distance_km']} km',
+      );
+      print(
+        '[ROUTING] Car - Duration: ${carInfo['duration_minutes']} min, Distance: ${carInfo['distance_km']} km',
+      );
+      print(
+        '[ROUTING] Difference - Time: ${(footInfo['duration_minutes'] as num) - (carInfo['duration_minutes'] as num)} min',
+      );
     } catch (e) {
       print('[ROUTING] ❌ Test error: $e');
     }
@@ -246,11 +274,12 @@ class RoutingService {
     try {
       print('[ROUTING] 📍 Getting navigation instructions for $profile mode');
       final baseUrl = _getBaseUrl(profile);
-      
+
       final coordinates =
           '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
       // Tambahkan parameter ?steps=true&annotations=distance,duration untuk mendapat detail steps
-      final url = '$baseUrl/$coordinates?overview=full&geometries=geojson&steps=true&annotations=distance,duration';
+      final url =
+          '$baseUrl/$coordinates?overview=full&geometries=geojson&steps=true&annotations=distance,duration';
 
       print('[ROUTING] 🌐 Navigation URL: $url');
 
@@ -258,7 +287,7 @@ class RoutingService {
 
       if (response.statusCode == 200) {
         final data = response.data;
-        
+
         if (data['code'] != 'Ok') {
           throw Exception('OSRM Error: ${data['code']}');
         }
@@ -270,47 +299,99 @@ class RoutingService {
 
         final route = routes[0];
         final legs = route['legs'] as List;
-        
+
         List<NavigationInstruction> instructions = [];
         int stepIndex = 0;
 
         // Iterate through each leg (segment antara 2 waypoint)
         for (var leg in legs) {
           final steps = leg['steps'] as List;
-          
+
           for (var step in steps) {
             final maneuver = step['maneuver'] as Map;
             final stepGeometry = step['geometry'];
             final stepCoordinates = stepGeometry['coordinates'] as List;
-            
+
             // Convert geometry to polyline points
             final polylinePoints = stepCoordinates
-                .map((coord) => LatLng(
-                      (coord[1] as num).toDouble(),
-                      (coord[0] as num).toDouble(),
-                    ))
+                .map(
+                  (coord) => LatLng(
+                    (coord[1] as num).toDouble(),
+                    (coord[0] as num).toDouble(),
+                  ),
+                )
                 .toList();
-            
+
             // Extract maneuver info
             final maneuverType = maneuver['type'] as String?;
             final maneuverModifier = maneuver['modifier'] as String?;
-            final bearing = (maneuver['bearing_after'] as num?)?.toDouble() ?? 0.0;
+            final bearingBefore =
+                (maneuver['bearing_before'] as num?)?.toDouble() ?? 0.0;
+            final bearing =
+                (maneuver['bearing_after'] as num?)?.toDouble() ?? 0.0;
             final location = LatLng(
               (maneuver['location'][1] as num).toDouble(),
               (maneuver['location'][0] as num).toDouble(),
             );
-            
+
             // Extract step info
             final roadName = (step['name'] as String?) ?? 'Jalan';
             final distance = ((step['distance'] as num?)?.toDouble()) ?? 0.0;
             final duration = ((step['duration'] as num?)?.toDouble()) ?? 0.0;
-            
+
             // Parse turn type
-            final turnType = ManeuverParser.parseTurnType(maneuverType, maneuverModifier);
-            
+            var turnType = ManeuverParser.parseTurnType(
+              maneuverType,
+              maneuverModifier,
+            );
+            if (maneuverType?.trim().toLowerCase() != 'depart') {
+              turnType = _inferTurnTypeFromBearing(
+                turnType,
+                bearingBefore: bearingBefore,
+                bearingAfter: bearing,
+              );
+            }
+
             // Generate readable instruction
-            final instruction = ManeuverParser.getInstructionText(turnType, roadName);
-            
+            final instruction = ManeuverParser.getInstructionText(
+              turnType,
+              roadName,
+            );
+
+            final normalizedManeuverType =
+                maneuverType?.trim().toLowerCase() ?? '';
+            final normalizedModifier =
+                maneuverModifier?.trim().toLowerCase() ?? '';
+
+            if (normalizedManeuverType == 'arrive') {
+              _mergeStepIntoPreviousInstruction(
+                instructions,
+                distance: distance,
+                duration: duration,
+                polylinePoints: polylinePoints,
+              );
+              continue;
+            }
+
+            final shouldCreateInstruction =
+                instructions.isEmpty ||
+                _isActionableManeuver(
+                  normalizedManeuverType,
+                  normalizedModifier,
+                  bearingBefore: bearingBefore,
+                  bearingAfter: bearing,
+                );
+
+            if (!shouldCreateInstruction) {
+              _mergeStepIntoPreviousInstruction(
+                instructions,
+                distance: distance,
+                duration: duration,
+                polylinePoints: polylinePoints,
+              );
+              continue;
+            }
+
             instructions.add(
               NavigationInstruction(
                 instruction: instruction,
@@ -323,16 +404,20 @@ class RoutingService {
                 polylinePoints: polylinePoints,
               ),
             );
-            
+
             stepIndex++;
-            print('[ROUTING] Step $stepIndex: $instruction (${distance.toStringAsFixed(0)}m, ${duration.toStringAsFixed(1)}s)');
+            print(
+              '[ROUTING] Step $stepIndex: $instruction (${distance.toStringAsFixed(0)}m, ${duration.toStringAsFixed(1)}s)',
+            );
           }
         }
 
         print('[ROUTING] ✅ Got ${instructions.length} navigation instructions');
         return instructions;
       } else {
-        throw Exception('Failed to get navigation instructions: ${response.statusCode}');
+        throw Exception(
+          'Failed to get navigation instructions: ${response.statusCode}',
+        );
       }
     } catch (e) {
       if (e is DioException) {
@@ -342,12 +427,106 @@ class RoutingService {
           throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
         } else if (e.type == DioExceptionType.connectionError) {
           print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
-          throw Exception('Tidak ada koneksi internet. Silakan periksa jaringan Anda.');
+          throw Exception(
+            'Tidak ada koneksi internet. Silakan periksa jaringan Anda.',
+          );
         }
       }
       print('[ROUTING] ❌ Error getting navigation instructions: $e');
       rethrow;
     }
+  }
+
+  bool _isActionableManeuver(
+    String type,
+    String modifier, {
+    required double bearingBefore,
+    required double bearingAfter,
+  }) {
+    if (type == 'depart') return true;
+
+    final hasDirectionalModifier =
+        modifier.contains('left') ||
+        modifier.contains('right') ||
+        modifier.contains('uturn');
+    if (hasDirectionalModifier) {
+      return true;
+    }
+
+    final explicitlyActionable = const {
+      'uturn',
+      'u-turn',
+      'end of road',
+      'fork',
+      'merge',
+      'on ramp',
+      'off ramp',
+      'roundabout',
+      'rotary',
+      'exit roundabout',
+      'exit rotary',
+    }.contains(type);
+    if (explicitlyActionable) return true;
+
+    final rawBearingDifference = (bearingAfter - bearingBefore).abs() % 360;
+    final bearingDifference = rawBearingDifference > 180
+        ? 360 - rawBearingDifference
+        : rawBearingDifference;
+
+    return bearingDifference >= 25;
+  }
+
+  TurnType _inferTurnTypeFromBearing(
+    TurnType parsedType, {
+    required double bearingBefore,
+    required double bearingAfter,
+  }) {
+    if (parsedType != TurnType.unknown && parsedType != TurnType.straight) {
+      return parsedType;
+    }
+
+    final signedDifference = ((bearingAfter - bearingBefore + 540) % 360) - 180;
+    if (signedDifference.abs() < 25) {
+      return parsedType;
+    }
+
+    if (signedDifference > 0) {
+      return signedDifference >= 60 ? TurnType.right : TurnType.slightRight;
+    }
+    return signedDifference <= -60 ? TurnType.left : TurnType.slightLeft;
+  }
+
+  void _mergeStepIntoPreviousInstruction(
+    List<NavigationInstruction> instructions, {
+    required double distance,
+    required double duration,
+    required List<LatLng> polylinePoints,
+  }) {
+    if (instructions.isEmpty) return;
+
+    final previous = instructions.last;
+    final mergedPolyline = <LatLng>[...previous.polylinePoints];
+
+    for (final point in polylinePoints) {
+      final isDuplicate =
+          mergedPolyline.isNotEmpty &&
+          mergedPolyline.last.latitude == point.latitude &&
+          mergedPolyline.last.longitude == point.longitude;
+      if (!isDuplicate) {
+        mergedPolyline.add(point);
+      }
+    }
+
+    instructions[instructions.length - 1] = NavigationInstruction(
+      instruction: previous.instruction,
+      roadName: previous.roadName,
+      distance: previous.distance + distance,
+      duration: previous.duration + duration,
+      turnType: previous.turnType,
+      bearing: previous.bearing,
+      location: previous.location,
+      polylinePoints: mergedPolyline,
+    );
   }
 
   /// Find next instruction based on current location
@@ -359,7 +538,7 @@ class RoutingService {
     double distanceThreshold = 50.0, // 50 meter threshold
   }) {
     const Distance distance = Distance();
-    
+
     for (int i = 0; i < instructions.length; i++) {
       final instruction = instructions[i];
       final distanceToInstruction = distance.as(
@@ -367,15 +546,17 @@ class RoutingService {
         currentLocation,
         instruction.location,
       );
-      
-      print('[ROUTING] Distance to instruction $i: ${distanceToInstruction.toStringAsFixed(1)}m');
-      
+
+      print(
+        '[ROUTING] Distance to instruction $i: ${distanceToInstruction.toStringAsFixed(1)}m',
+      );
+
       if (distanceToInstruction <= distanceThreshold) {
         // Sudah mencapai instruksi ini, return index berikutnya
         return i + 1 < instructions.length ? i + 1 : -1;
       }
     }
-    
+
     // Belum mencapai instruksi pertama
     return 0;
   }

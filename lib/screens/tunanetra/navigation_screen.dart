@@ -29,7 +29,7 @@ class NavigationScreen extends StatefulWidget {
 }
 
 class _NavigationScreenState extends State<NavigationScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late MapController _mapController;
   bool _isMapReady = false;
   LatLng? _pendingMapCenter;
@@ -44,6 +44,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   final SosService _sosService = SosService();
   final TTSService _ttsService = TTSService();
   final STTService _sttService = STTService();
+  Future<void> _speechQueue = Future<void>.value();
   bool _hasSpoken = false;
   bool _isSpeaking = false;
   bool _navigationSttActive = false;
@@ -54,7 +55,20 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const double _routeEndArrivalThresholdMeters = 5.0;
   static const double _routeEndDestinationToleranceMeters = 20.0;
   static const double _maximumAcceptedGpsAccuracyMeters = 25.0;
+  static const double _maximumCueGpsAccuracyMeters = 20.0;
+  static const double _maximumNowCueGpsAccuracyMeters = 10.0;
+  static const double _turnCompletionHeadingToleranceDegrees = 45.0;
+  static const double _turnAreaDistanceMeters = 5.0;
+  static const double _minimumWalkingSpeedMs = 0.2;
+  static const double _maximumWalkingCueSpeedMs = 3.0;
+  static const double _turnAnchorSearchRadiusMeters = 35.0;
+  static const double _turnAnchorMinimumAngleDegrees = 20.0;
   static const int _requiredArrivalConfirmations = 3;
+  static const int _requiredManeuverConfirmations = 2;
+  static const int _gpsCueWindowSize = 5;
+  static const Duration _maneuverConfirmationInterval = Duration(
+    milliseconds: 500,
+  );
 
   // Default location: Bandung, Indonesia
   final LatLng defaultLocation = const LatLng(-6.9147, 107.6098);
@@ -82,10 +96,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const double _maxPredictionDistanceMeters = 15.0;
   static const double _maxWalkingSpeedMs = 2.4;
   static const double _routeTrimThresholdMeters = 12.0;
-  static const double _routeSnapThresholdMeters = 20.0;
-  static const double _offRouteThresholdMeters = 35.0;
-  static const Duration _offRouteConfirmDuration = Duration(seconds: 2);
-  static const Duration _rerouteCooldown = Duration(seconds: 20);
+  static const double _routeSnapThresholdMeters = 10.0;
+  static const double _offRouteThresholdMeters = 15.0;
+  static const Duration _offRouteConfirmDuration = Duration(seconds: 1);
+  static const Duration _rerouteCooldown = Duration(seconds: 10);
   bool _isLocationReady =
       false; // Track if real user location has been obtained
 
@@ -133,6 +147,14 @@ class _NavigationScreenState extends State<NavigationScreen>
   double? _currentInstructionRemainingMeters;
   final Map<int, Set<int>> _announcedInstructionCueMeters = {};
   final Set<int> _announcedNowInstructionIndexes = {};
+  final Map<int, int> _maneuverConfirmationCounts = {};
+  final Map<int, DateTime> _lastManeuverConfirmationAt = {};
+  final Map<int, double> _lastDistanceToManeuver = {};
+  final List<LatLng> _gpsCueWindow = [];
+  int? _pendingTurnSourceInstructionIndex;
+  int? _pendingTurnNextInstructionIndex;
+  double? _pendingTurnExpectedHeading;
+  LatLng? _pendingTurnStartLocation;
   bool _isLoadingInstructions = false;
   String _instructionLoadError = '';
   bool _hasArrivedAtDestination = false;
@@ -140,14 +162,22 @@ class _NavigationScreenState extends State<NavigationScreen>
   String _destinationName = '';
 
   Future<void> speakSafe(String text) async {
-    _isSpeaking = true;
-    await _ttsService.speak(text);
-    _isSpeaking = false;
+    final speech = _speechQueue.then((_) async {
+      _isSpeaking = true;
+      try {
+        await _ttsService.speak(text);
+      } finally {
+        _isSpeaking = false;
+      }
+    });
+    _speechQueue = speech.catchError((Object _) {});
+    await speech;
   }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _mapController = MapController();
     _locationAnimationController = AnimationController(
       vsync: this,
@@ -171,6 +201,69 @@ class _NavigationScreenState extends State<NavigationScreen>
         'Halaman navigasi dibuka. Silahkan pilih tempat tujuan anda',
       );
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.detached) {
+      _cancelNavigationBecauseAppClosed();
+    }
+  }
+
+  void _cancelNavigationBecauseAppClosed() {
+    final tripId = _currentTripId;
+    final startedAt = _tripStartedAt ?? _navigationStartTime;
+    final durationSeconds = startedAt == null
+        ? 0
+        : DateTime.now().difference(startedAt).inSeconds;
+
+    if (tripId != null) {
+      double? endLat;
+      double? endLng;
+      final gpsPosition = _lastKnownGpsPosition;
+
+      if (gpsPosition != null && !_isUsingPredictedPosition) {
+        endLat = gpsPosition.latitude;
+        endLng = gpsPosition.longitude;
+      } else if (_animatedUserLocation.latitude != 0.0 ||
+          _animatedUserLocation.longitude != 0.0) {
+        endLat = _animatedUserLocation.latitude;
+        endLng = _animatedUserLocation.longitude;
+      } else if (_userLocation.latitude != 0.0 ||
+          _userLocation.longitude != 0.0) {
+        endLat = _userLocation.latitude;
+        endLng = _userLocation.longitude;
+      }
+
+      _currentTripId = null;
+      _tripStartedAt = null;
+      unawaited(
+        _navigationHistoryService
+            .cancelTrip(
+              tripId: tripId,
+              durationSeconds: durationSeconds < 0 ? 0 : durationSeconds,
+              totalDistanceMeters: _routeDistanceMeters,
+              endLat: endLat,
+              endLng: endLng,
+            )
+            .then(
+              (_) => _liveTrackingService.updateNavigationTripState(
+                currentTripId: null,
+                isNavigating: false,
+              ),
+            ),
+      );
+      return;
+    }
+
+    if (_isNavigating) {
+      unawaited(
+        _liveTrackingService.updateNavigationTripState(
+          currentTripId: null,
+          isNavigating: false,
+        ),
+      );
+    }
   }
 
   void _startVoiceNavigation() {
@@ -442,6 +535,280 @@ class _NavigationScreenState extends State<NavigationScreen>
     return _normalizeHeading(current + (delta * factor));
   }
 
+  double _bearingBetween(LatLng start, LatLng end) {
+    final startLat = start.latitude * math.pi / 180;
+    final endLat = end.latitude * math.pi / 180;
+    final deltaLng = (end.longitude - start.longitude) * math.pi / 180;
+    final y = math.sin(deltaLng) * math.cos(endLat);
+    final x =
+        math.cos(startLat) * math.sin(endLat) -
+        math.sin(startLat) * math.cos(endLat) * math.cos(deltaLng);
+    return _normalizeHeading(math.atan2(y, x) * 180 / math.pi);
+  }
+
+  double _headingDifference(double first, double second) {
+    return (((first - second + 540) % 360) - 180).abs();
+  }
+
+  void _addGpsCueSample(LatLng location) {
+    _gpsCueWindow.add(location);
+    if (_gpsCueWindow.length > _gpsCueWindowSize) {
+      _gpsCueWindow.removeAt(0);
+    }
+  }
+
+  LatLng _getStabilizedCueLocation(LatLng fallback) {
+    if (_gpsCueWindow.isEmpty) return fallback;
+
+    final latitudes = _gpsCueWindow.map((point) => point.latitude).toList()
+      ..sort();
+    final longitudes = _gpsCueWindow.map((point) => point.longitude).toList()
+      ..sort();
+    final middle = _gpsCueWindow.length ~/ 2;
+    final stabilized = LatLng(latitudes[middle], longitudes[middle]);
+    final snapResult = _snapPositionToRoute(stabilized);
+    return snapResult.snapped ? snapResult.position : stabilized;
+  }
+
+  double? _polylineHeading(List<LatLng> points, {required bool fromEnd}) {
+    if (points.length < 2) return null;
+
+    if (fromEnd) {
+      for (var index = points.length - 1; index > 0; index--) {
+        if (_distanceBetweenPoints(points[index - 1], points[index]) >= 1) {
+          return _bearingBetween(points[index - 1], points[index]);
+        }
+      }
+      return null;
+    }
+
+    for (var index = 0; index < points.length - 1; index++) {
+      if (_distanceBetweenPoints(points[index], points[index + 1]) >= 1) {
+        return _bearingBetween(points[index], points[index + 1]);
+      }
+    }
+    return null;
+  }
+
+  List<LatLng> _mergePolylinePoints(List<LatLng> first, List<LatLng> second) {
+    final merged = <LatLng>[];
+
+    for (final point in [...first, ...second]) {
+      final isDuplicate =
+          merged.isNotEmpty && _distanceBetweenPoints(merged.last, point) < 0.5;
+      if (!isDuplicate) {
+        merged.add(point);
+      }
+    }
+
+    return merged;
+  }
+
+  LatLng? _nearestPolylinePoint(
+    List<LatLng> points,
+    LatLng target, {
+    double maxDistanceMeters = double.infinity,
+  }) {
+    LatLng? nearest;
+    var nearestDistance = double.infinity;
+
+    for (final point in points) {
+      final distance = _distanceBetweenPoints(point, target);
+      if (distance < nearestDistance) {
+        nearest = point;
+        nearestDistance = distance;
+      }
+    }
+
+    if (nearestDistance > maxDistanceMeters) return null;
+    return nearest;
+  }
+
+  int _previousPointIndexAtLeast(
+    List<LatLng> points,
+    int fromIndex,
+    double minDistanceMeters,
+  ) {
+    var traveledMeters = 0.0;
+    for (var index = fromIndex; index > 0; index--) {
+      traveledMeters += _distanceBetweenPoints(
+        points[index],
+        points[index - 1],
+      );
+      if (traveledMeters >= minDistanceMeters) {
+        return index - 1;
+      }
+    }
+    return 0;
+  }
+
+  int _nextPointIndexAtLeast(
+    List<LatLng> points,
+    int fromIndex,
+    double minDistanceMeters,
+  ) {
+    var traveledMeters = 0.0;
+    for (var index = fromIndex; index < points.length - 1; index++) {
+      traveledMeters += _distanceBetweenPoints(
+        points[index],
+        points[index + 1],
+      );
+      if (traveledMeters >= minDistanceMeters) {
+        return index + 1;
+      }
+    }
+    return points.length - 1;
+  }
+
+  LatLng? _findGeometryTurnAnchor({
+    required List<LatLng> currentPolyline,
+    required List<LatLng> nextPolyline,
+    required LatLng maneuverLocation,
+  }) {
+    final points = _mergePolylinePoints(currentPolyline, nextPolyline);
+    if (points.length < 3) return null;
+
+    LatLng? bestPoint;
+    var bestScore = double.negativeInfinity;
+
+    for (var index = 1; index < points.length - 1; index++) {
+      final candidate = points[index];
+      final distanceToManeuver = _distanceBetweenPoints(
+        candidate,
+        maneuverLocation,
+      );
+      if (distanceToManeuver > _turnAnchorSearchRadiusMeters) continue;
+
+      final previousIndex = _previousPointIndexAtLeast(points, index, 3);
+      final nextIndex = _nextPointIndexAtLeast(points, index, 3);
+      if (previousIndex == index || nextIndex == index) continue;
+
+      final incomingHeading = _bearingBetween(points[previousIndex], candidate);
+      final outgoingHeading = _bearingBetween(candidate, points[nextIndex]);
+      final angle = _headingDifference(incomingHeading, outgoingHeading);
+      if (angle < _turnAnchorMinimumAngleDegrees) continue;
+
+      final score = angle - (distanceToManeuver * 0.25);
+      if (score > bestScore) {
+        bestScore = score;
+        bestPoint = candidate;
+      }
+    }
+
+    return bestPoint;
+  }
+
+  LatLng? _resolveTurnAnchor(
+    NavigationInstruction currentInstruction,
+    int nextInstructionIndex,
+  ) {
+    if (nextInstructionIndex >= _navigationInstructions.length) {
+      if (_selectedPlace == null) return null;
+      return LatLng(_selectedPlace!.latitude, _selectedPlace!.longitude);
+    }
+
+    final nextInstruction = _navigationInstructions[nextInstructionIndex];
+    final geometryAnchor = _findGeometryTurnAnchor(
+      currentPolyline: currentInstruction.polylinePoints,
+      nextPolyline: nextInstruction.polylinePoints,
+      maneuverLocation: nextInstruction.location,
+    );
+    if (geometryAnchor != null) return geometryAnchor;
+
+    final nearestToManeuver = _nearestPolylinePoint(
+      _mergePolylinePoints(
+        currentInstruction.polylinePoints,
+        nextInstruction.polylinePoints,
+      ),
+      nextInstruction.location,
+      maxDistanceMeters: _turnAnchorSearchRadiusMeters,
+    );
+    return nearestToManeuver ?? nextInstruction.location;
+  }
+
+  double _maneuverZoneMeters(double gpsAccuracy) {
+    if (gpsAccuracy <= _maximumNowCueGpsAccuracyMeters) {
+      return _turnAreaDistanceMeters;
+    }
+    return 0;
+  }
+
+  String _turnAreaInstruction(String instruction) {
+    final normalized = instruction.toLowerCase();
+    if (normalized.contains('balik arah')) return 'area untuk balik arah';
+    if (normalized.contains('belok kanan tajam')) {
+      return 'area belok kanan tajam';
+    }
+    if (normalized.contains('belok kiri tajam')) {
+      return 'area belok kiri tajam';
+    }
+    if (normalized.contains('belok kanan')) return 'area belok kanan';
+    if (normalized.contains('belok kiri')) return 'area belok kiri';
+    return 'area perubahan arah';
+  }
+
+  double _currentMovementHeading() {
+    final position = _lastKnownGpsPosition;
+    if (position != null &&
+        position.heading >= 0 &&
+        position.speed.isFinite &&
+        position.speed >= 0.3) {
+      return position.heading;
+    }
+    return _markerHeading;
+  }
+
+  void _clearPendingTurn() {
+    _pendingTurnSourceInstructionIndex = null;
+    _pendingTurnNextInstructionIndex = null;
+    _pendingTurnExpectedHeading = null;
+    _pendingTurnStartLocation = null;
+  }
+
+  void _confirmPendingTurn(LatLng stabilizedLocation) {
+    final sourceInstructionIndex = _pendingTurnSourceInstructionIndex;
+    final nextInstructionIndex = _pendingTurnNextInstructionIndex;
+    final expectedHeading = _pendingTurnExpectedHeading;
+    final turnStartLocation = _pendingTurnStartLocation;
+
+    if (sourceInstructionIndex == null ||
+        nextInstructionIndex == null ||
+        expectedHeading == null ||
+        turnStartLocation == null) {
+      return;
+    }
+
+    if (!_isNavigating ||
+        sourceInstructionIndex != _currentInstructionIndex ||
+        nextInstructionIndex >= _navigationInstructions.length) {
+      _clearPendingTurn();
+      return;
+    }
+
+    final distanceAfterCue = _distanceBetweenPoints(
+      turnStartLocation,
+      stabilizedLocation,
+    );
+    if (distanceAfterCue < 2) return;
+
+    final movementHeading = _currentMovementHeading();
+    final hasEnteredNextSegment =
+        _headingDifference(movementHeading, expectedHeading) <=
+        _turnCompletionHeadingToleranceDegrees;
+    if (!hasEnteredNextSegment) return;
+
+    if (mounted) {
+      setState(() {
+        _currentInstructionIndex = nextInstructionIndex;
+        _currentInstructionRemainingMeters = null;
+        _clearPendingTurn();
+      });
+    }
+
+    unawaited(speakSafe('Belok berhasil. Lanjutkan perjalanan.'));
+    _updateLiveInstructionDistance(stabilizedLocation, allowVoiceCue: false);
+  }
+
   void _animateUserLocation(LatLng target) {
     final begin = _animatedUserLocation;
     _locationAnimationController.stop();
@@ -544,13 +911,14 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   void _onGpsPositionUpdate(Position position) {
-    if (position.accuracy.isFinite &&
-        position.accuracy > _maximumAcceptedGpsAccuracyMeters) {
+    final hasReliableAccuracy =
+        !position.accuracy.isFinite ||
+        position.accuracy <= _maximumAcceptedGpsAccuracyMeters;
+    if (!hasReliableAccuracy) {
       _arrivalConfirmationCount = 0;
       debugPrint(
-        '[NAVIGATION] GPS ignored: accuracy ${position.accuracy.toStringAsFixed(1)}m',
+        '[NAVIGATION] GPS low accuracy: ${position.accuracy.toStringAsFixed(1)}m',
       );
-      return;
     }
 
     final now = DateTime.now();
@@ -579,13 +947,20 @@ class _NavigationScreenState extends State<NavigationScreen>
     _lastPredictionTickAt = now;
     _predictedDistanceSinceLastGps = 0.0;
 
-    final snapResult = _snapPositionToRoute(updatedLocation);
-    final displayLocation = snapResult.position;
+    final snapResult = _snapPositionToRoute(
+      updatedLocation,
+      thresholdMeters: hasReliableAccuracy ? _routeSnapThresholdMeters : 0,
+    );
+    final displayLocation = hasReliableAccuracy
+        ? snapResult.position
+        : updatedLocation;
 
     setState(() {
       _userLocation = updatedLocation;
       _isUsingPredictedPosition = false;
-      _currentSnappedRoutePoint = snapResult.snapped ? displayLocation : null;
+      _currentSnappedRoutePoint = hasReliableAccuracy && snapResult.snapped
+          ? displayLocation
+          : null;
       if (position.heading >= 0) {
         _markerHeading = _smoothHeading(
           _markerHeading,
@@ -601,20 +976,29 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     _animateUserLocation(displayLocation);
 
-    if (_confirmArrivalFromGps(updatedLocation)) {
+    if (hasReliableAccuracy) {
+      _addGpsCueSample(updatedLocation);
+      final stabilizedCueLocation = _getStabilizedCueLocation(displayLocation);
+      _confirmPendingTurn(stabilizedCueLocation);
+    }
+
+    if (hasReliableAccuracy && _confirmArrivalFromGps(updatedLocation)) {
       unawaited(_handleArrival());
       return;
     }
 
-    _updateLiveInstructionDistance(displayLocation, allowVoiceCue: true);
-    _updateRouteProgress(
-      snapResult.segmentIndex,
-      snapResult.distanceToRouteMeters,
-    );
+    if (hasReliableAccuracy) {
+      _updateLiveInstructionDistance(displayLocation, allowVoiceCue: true);
+      _updateRouteProgress(
+        snapResult.segmentIndex,
+        snapResult.distanceToRouteMeters,
+      );
+    }
     unawaited(
       _handleOffRouteDetection(
         distanceToRouteMeters: snapResult.distanceToRouteMeters,
         snapped: snapResult.snapped,
+        gpsAccuracy: position.accuracy,
       ),
     );
     unawaited(
@@ -808,6 +1192,42 @@ class _NavigationScreenState extends State<NavigationScreen>
     return remainingMeters;
   }
 
+  double? _remainingDistanceToAnchorAlongPolyline(
+    LatLng currentPosition,
+    List<LatLng> polylinePoints,
+    LatLng anchor,
+  ) {
+    if (polylinePoints.isEmpty) return null;
+    if (polylinePoints.length == 1) {
+      return _distanceBetweenPoints(currentPosition, anchor);
+    }
+
+    var bestAnchorSegmentIndex = 0;
+    var bestProjectedAnchor = polylinePoints.last;
+    var bestAnchorDistance = double.infinity;
+
+    for (var index = 0; index < polylinePoints.length - 1; index++) {
+      final projected = _projectPointToSegment(
+        anchor,
+        polylinePoints[index],
+        polylinePoints[index + 1],
+      );
+      final distance = _distanceBetweenPoints(anchor, projected);
+      if (distance < bestAnchorDistance) {
+        bestAnchorDistance = distance;
+        bestAnchorSegmentIndex = index;
+        bestProjectedAnchor = projected;
+      }
+    }
+
+    final pointsUntilAnchor = <LatLng>[
+      ...polylinePoints.sublist(0, bestAnchorSegmentIndex + 1),
+      bestProjectedAnchor,
+    ];
+
+    return _remainingDistanceAlongPolyline(currentPosition, pointsUntilAnchor);
+  }
+
   void _updateLiveInstructionDistance(
     LatLng displayLocation, {
     required bool allowVoiceCue,
@@ -851,14 +1271,80 @@ class _NavigationScreenState extends State<NavigationScreen>
     LatLng displayLocation,
   ) {
     if (_currentInstructionIndex >= _navigationInstructions.length) return;
+    if (_pendingTurnSourceInstructionIndex == _currentInstructionIndex) return;
+    if (_isSpeaking) return;
 
+    final gpsAccuracy = _lastKnownGpsPosition?.accuracy;
+    if (gpsAccuracy == null ||
+        !gpsAccuracy.isFinite ||
+        gpsAccuracy > _maximumCueGpsAccuracyMeters) {
+      _maneuverConfirmationCounts[_currentInstructionIndex] = 0;
+      return;
+    }
+
+    final instruction = _navigationInstructions[_currentInstructionIndex];
     final nextInstructionIndex = _currentInstructionIndex + 1;
-    final cueInstruction = nextInstructionIndex < _navigationInstructions.length
+    final hasNextTurn = nextInstructionIndex < _navigationInstructions.length;
+    final cueInstruction = hasNextTurn
         ? _navigationInstructions[nextInstructionIndex].instruction
         : 'tujuan berada di depan';
+    final cueLocation = _resolveTurnAnchor(instruction, nextInstructionIndex);
+    final distanceToCueLocation = cueLocation == null
+        ? remainingMeters
+        : _distanceBetweenPoints(displayLocation, cueLocation);
+    final remainingToCueMeters = cueLocation == null
+        ? remainingMeters
+        : _remainingDistanceToAnchorAlongPolyline(
+                displayLocation,
+                instruction.polylinePoints,
+                cueLocation,
+              ) ??
+              remainingMeters;
+    final conservativeDistance = math.max(
+      remainingToCueMeters,
+      distanceToCueLocation,
+    );
+    final previousDistance = _lastDistanceToManeuver[_currentInstructionIndex];
+    final isApproaching =
+        previousDistance == null ||
+        distanceToCueLocation <= previousDistance + 0.5;
+    _lastDistanceToManeuver[_currentInstructionIndex] = distanceToCueLocation;
 
-    if (remainingMeters <= 1) {
-      _announceNowCueAndAdvance(
+    final gpsSpeed = _lastKnownGpsPosition?.speed ?? 0;
+    final effectiveSpeed = math.max(
+      gpsSpeed.isFinite && gpsSpeed >= 0 ? gpsSpeed : 0,
+      _estimatedSpeedMs,
+    );
+    final isWalking =
+        effectiveSpeed >= _minimumWalkingSpeedMs &&
+        effectiveSpeed <= _maximumWalkingCueSpeedMs;
+    final maneuverZone = _maneuverZoneMeters(gpsAccuracy);
+    final canConfirmTurnArea =
+        hasNextTurn &&
+        maneuverZone > 0 &&
+        remainingToCueMeters <= maneuverZone &&
+        distanceToCueLocation <= maneuverZone + 2 &&
+        isApproaching &&
+        isWalking;
+
+    if (canConfirmTurnArea) {
+      final now = DateTime.now();
+      final lastConfirmation =
+          _lastManeuverConfirmationAt[_currentInstructionIndex];
+      if (lastConfirmation != null &&
+          now.difference(lastConfirmation) < _maneuverConfirmationInterval) {
+        return;
+      }
+
+      _lastManeuverConfirmationAt[_currentInstructionIndex] = now;
+      final confirmationCount =
+          (_maneuverConfirmationCounts[_currentInstructionIndex] ?? 0) + 1;
+      _maneuverConfirmationCounts[_currentInstructionIndex] = confirmationCount;
+      if (confirmationCount < _requiredManeuverConfirmations) {
+        return;
+      }
+
+      _announceTurnArea(
         sourceInstructionIndex: _currentInstructionIndex,
         nextInstructionIndex: nextInstructionIndex,
         cueInstruction: cueInstruction,
@@ -867,9 +1353,21 @@ class _NavigationScreenState extends State<NavigationScreen>
       return;
     }
 
-    final cueMeters = remainingMeters <= 10
+    if (!hasNextTurn &&
+        conservativeDistance <= _turnAreaDistanceMeters &&
+        _announcedNowInstructionIndexes.add(_currentInstructionIndex)) {
+      unawaited(speakSafe('Tujuan berada di depan.'));
+      return;
+    }
+
+    _maneuverConfirmationCounts[_currentInstructionIndex] = 0;
+    _lastManeuverConfirmationAt.remove(_currentInstructionIndex);
+
+    final cueMeters = conservativeDistance <= 10
         ? 10
-        : remainingMeters <= 30
+        : conservativeDistance <= 20
+        ? 20
+        : conservativeDistance <= 30
         ? 30
         : null;
     if (cueMeters == null) return;
@@ -878,12 +1376,17 @@ class _NavigationScreenState extends State<NavigationScreen>
       _currentInstructionIndex,
       () => <int>{},
     );
+    if (cueMeters == 30 &&
+        (announcedCueMeters.contains(20) || announcedCueMeters.contains(10))) {
+      return;
+    }
+    if (cueMeters == 20 && announcedCueMeters.contains(10)) return;
     if (!announcedCueMeters.add(cueMeters)) return;
 
     unawaited(speakSafe("Dalam $cueMeters meter, $cueInstruction"));
   }
 
-  void _announceNowCueAndAdvance({
+  void _announceTurnArea({
     required int sourceInstructionIndex,
     required int nextInstructionIndex,
     required String cueInstruction,
@@ -892,7 +1395,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (!_announcedNowInstructionIndexes.add(sourceInstructionIndex)) return;
 
     unawaited(
-      _speakNowCueThenAdvance(
+      _speakTurnAreaThenWaitForTurn(
         sourceInstructionIndex: sourceInstructionIndex,
         nextInstructionIndex: nextInstructionIndex,
         cueInstruction: cueInstruction,
@@ -901,18 +1404,43 @@ class _NavigationScreenState extends State<NavigationScreen>
     );
   }
 
-  Future<void> _speakNowCueThenAdvance({
+  Future<void> _speakTurnAreaThenWaitForTurn({
     required int sourceInstructionIndex,
     required int nextInstructionIndex,
     required String cueInstruction,
     required LatLng displayLocation,
   }) async {
-    await speakSafe("Sekarang $cueInstruction");
+    if (!mounted ||
+        !_isNavigating ||
+        _currentInstructionIndex != sourceInstructionIndex) {
+      return;
+    }
+
+    if (nextInstructionIndex < _navigationInstructions.length) {
+      final nextInstruction = _navigationInstructions[nextInstructionIndex];
+      final outgoingHeading =
+          _polylineHeading(nextInstruction.polylinePoints, fromEnd: false) ??
+          _normalizeHeading(nextInstruction.bearing);
+
+      _pendingTurnSourceInstructionIndex = sourceInstructionIndex;
+      _pendingTurnNextInstructionIndex = nextInstructionIndex;
+      _pendingTurnExpectedHeading = outgoingHeading;
+      _pendingTurnStartLocation = displayLocation;
+    }
+
+    await speakSafe(
+      'Anda sudah masuk ${_turnAreaInstruction(cueInstruction)}.',
+    );
 
     if (!mounted ||
         !_isNavigating ||
         _currentInstructionIndex != sourceInstructionIndex ||
         nextInstructionIndex >= _navigationInstructions.length) {
+      return;
+    }
+
+    if (_pendingTurnSourceInstructionIndex == sourceInstructionIndex) {
+      _confirmPendingTurn(_getStabilizedCueLocation(displayLocation));
       return;
     }
 
@@ -940,13 +1468,20 @@ class _NavigationScreenState extends State<NavigationScreen>
   Future<void> _handleOffRouteDetection({
     required double distanceToRouteMeters,
     required bool snapped,
+    required double gpsAccuracy,
   }) async {
     if (!_isNavigating || _selectedPlace == null) return;
     if (_isLoadingRoute) return;
 
     final now = DateTime.now();
 
-    if (snapped || distanceToRouteMeters <= _offRouteThresholdMeters) {
+    final accuracyAllowance = gpsAccuracy.isFinite
+        ? gpsAccuracy.clamp(0.0, 20.0) * 0.5
+        : 0.0;
+    final effectiveOffRouteThreshold =
+        _offRouteThresholdMeters + accuracyAllowance;
+
+    if (snapped || distanceToRouteMeters <= effectiveOffRouteThreshold) {
       _updateOffRouteEventState(false, location: _userLocation);
       _offRouteSince = null;
       if (_isOffRouteWarningVisible && mounted) {
@@ -1633,6 +2168,11 @@ class _NavigationScreenState extends State<NavigationScreen>
       _currentInstructionRemainingMeters = null;
       _announcedInstructionCueMeters.clear();
       _announcedNowInstructionIndexes.clear();
+      _maneuverConfirmationCounts.clear();
+      _lastManeuverConfirmationAt.clear();
+      _lastDistanceToManeuver.clear();
+      _gpsCueWindow.clear();
+      _clearPendingTurn();
       _routeDistanceKm = 0.0;
       _routeDurationMinutes = 0.0;
       _routeDistanceMeters = 0.0;
@@ -1651,6 +2191,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (_currentTripId != null) {
       final startedAt = _tripStartedAt ?? _navigationStartTime;
       final durationSeconds = startedAt == null
@@ -2102,6 +2643,11 @@ class _NavigationScreenState extends State<NavigationScreen>
       _currentInstructionRemainingMeters = null;
       _announcedInstructionCueMeters.clear();
       _announcedNowInstructionIndexes.clear();
+      _maneuverConfirmationCounts.clear();
+      _lastManeuverConfirmationAt.clear();
+      _lastDistanceToManeuver.clear();
+      _gpsCueWindow.clear();
+      _clearPendingTurn();
       _isLoadingInstructions = false;
       _instructionLoadError = '';
       _hasArrivedAtDestination = false;
@@ -2153,6 +2699,11 @@ class _NavigationScreenState extends State<NavigationScreen>
           _currentInstructionRemainingMeters = null;
           _announcedInstructionCueMeters.clear();
           _announcedNowInstructionIndexes.clear();
+          _maneuverConfirmationCounts.clear();
+          _lastManeuverConfirmationAt.clear();
+          _lastDistanceToManeuver.clear();
+          _gpsCueWindow.clear();
+          _clearPendingTurn();
           _isLoadingInstructions = false;
 
           // Foot mode (default)
@@ -2171,6 +2722,17 @@ class _NavigationScreenState extends State<NavigationScreen>
         });
 
         _updateLiveInstructionDistance(_userLocation, allowVoiceCue: false);
+
+        final firstInstruction = instructions.isEmpty
+            ? 'Ikuti rute yang ditampilkan.'
+            : '${instructions.first.instruction}.';
+        if (wasNavigating) {
+          await speakSafe('Rute baru ditemukan. $firstInstruction');
+        } else {
+          await speakSafe(
+            'Rute ditemukan. Silakan mulai navigasi. $firstInstruction',
+          );
+        }
 
         if (!wasNavigating) {
           await _startTripHistoryIfNeeded();

@@ -11,6 +11,7 @@ import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/core_permission_service.dart';
 import '../../services/live_tracking_service.dart';
+import '../../services/navigation_history_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/sos_service.dart';
 import '../../services/smart_cane_ble_service.dart';
@@ -42,6 +43,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   bool _isSendingSos = false;
   final SmartCaneBleService _bleService = SmartCaneBleService.instance;
   final LiveTrackingService _liveTrackingService = LiveTrackingService();
+  final NavigationHistoryService _navigationHistoryService =
+      NavigationHistoryService();
   final PairingService _pairingService = PairingService();
   final SosService _sosService = SosService();
   final TextEditingController _homeCaneCodeController = TextEditingController();
@@ -104,6 +107,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         .instance
         .buttonEventStream
         .listen(_handleSmartCaneButtonEvent);
+    unawaited(_cancelStaleOngoingNavigationTrips());
     _latestSmartCaneBatteryData =
         SmartCaneBleService.instance.latestBatteryData;
     _smartCaneBatterySubscription = SmartCaneBleService
@@ -129,6 +133,17 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _loadWeather();
     _startWeatherRefreshTimer();
     _liveTrackingService.startHomeLocationTracking();
+  }
+
+  Future<void> _cancelStaleOngoingNavigationTrips() async {
+    final cancelledCount = await _navigationHistoryService
+        .cancelOngoingTripsForCurrentUser();
+    if (cancelledCount == 0) return;
+
+    await _liveTrackingService.updateNavigationTripState(
+      currentTripId: null,
+      isNavigating: false,
+    );
   }
 
   void _startWeatherRefreshTimer() {
@@ -201,8 +216,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   String get _smartCanePrimaryStatus {
     if (!_isSmartCaneConnected) return 'Tongkat belum terhubung';
     if (_isSmartCaneBatteryLow) return 'Baterai tongkat rendah';
-    if (!_isSmartCaneReady) return 'Smart Cane Belum Siap';
-    return 'Smart Cane Siap';
+    if (!_isSmartCaneReady) return 'Smartcane Belum Siap';
+    return 'Smartcane Siap';
   }
 
   String get _smartCaneSecondaryStatus {
@@ -222,8 +237,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     return 'Belum terhubung';
   }
 
-  String get _navigationStatusLabel =>
-      _isSmartCaneReady ? 'Navigasi Siap Digunakan' : 'Navigasi belum siap';
+  String get _navigationStatusLabel => _locationFeaturesStarted
+      ? 'Navigasi Siap Digunakan'
+      : 'Navigasi belum siap';
 
   String get _sensorStatusLabel {
     if (!_isSmartCaneConnected) return 'Belum terhubung';
@@ -233,7 +249,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   }
 
   String get _gpsStatusLabel =>
-      _locationFeaturesStarted ? 'GPS Aktif' : 'GPS menunggu izin';
+      _locationFeaturesStarted ? 'GPS aktif' : 'GPS belum aktif';
 
   @override
   void didChangeDependencies() {
@@ -435,7 +451,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   Future<void> _speakGpsStatus() async {
     await speakSafe(
-      _locationFeaturesStarted ? "Status GPS aktif." : "GPS menunggu izin.",
+      _locationFeaturesStarted ? "Status GPS aktif." : "GPS belum aktif.",
     );
   }
 

@@ -52,21 +52,29 @@ class ManeuverParser {
   /// Parse maneuver dari OSRM response ke TurnType
   static TurnType parseTurnType(String? type, String? modifier) {
     if (type == null) return TurnType.straight;
-    
+
     type = type.toLowerCase();
     modifier = modifier?.toLowerCase();
-    
+
+    if (type == 'depart') {
+      return TurnType.straight;
+    }
+
+    if (modifier == 'uturn' || modifier == 'u-turn') {
+      return TurnType.uturn;
+    }
+    if (modifier == 'sharp right') return TurnType.sharpRight;
+    if (modifier == 'right') return TurnType.right;
+    if (modifier == 'slight right') return TurnType.slightRight;
+    if (modifier == 'sharp left') return TurnType.sharpLeft;
+    if (modifier == 'left') return TurnType.left;
+    if (modifier == 'slight left') return TurnType.slightLeft;
+
     switch (type) {
       case 'uturn':
       case 'u-turn':
         return TurnType.uturn;
       case 'turn':
-        if (modifier == 'sharp right') return TurnType.sharpRight;
-        if (modifier == 'right') return TurnType.right;
-        if (modifier == 'slight right') return TurnType.slightRight;
-        if (modifier == 'sharp left') return TurnType.sharpLeft;
-        if (modifier == 'left') return TurnType.left;
-        if (modifier == 'slight left') return TurnType.slightLeft;
         return TurnType.unknown;
       case 'straight':
       case 'continue':

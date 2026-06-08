@@ -124,6 +124,7 @@ class _MyAppState extends State<MyApp> {
   late final SmartCaneStatusNotificationService
   _smartCaneStatusNotificationService;
   StreamSubscription<User?>? _authStateSubscription;
+  Timer? _bleAutoReconnectDelayTimer;
   bool _hasStartedBleAutoReconnect = false;
   bool _isStartingBleAutoReconnect = false;
 
@@ -141,6 +142,8 @@ class _MyAppState extends State<MyApp> {
       user,
     ) {
       if (user == null) {
+        _bleAutoReconnectDelayTimer?.cancel();
+        _bleAutoReconnectDelayTimer = null;
         _hasStartedBleAutoReconnect = false;
         _isStartingBleAutoReconnect = false;
         _smartCaneStatusNotificationService.stop();
@@ -148,7 +151,10 @@ class _MyAppState extends State<MyApp> {
       }
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_startBleAutoReconnect());
+        _bleAutoReconnectDelayTimer?.cancel();
+        _bleAutoReconnectDelayTimer = Timer(const Duration(seconds: 3), () {
+          unawaited(_startBleAutoReconnect());
+        });
       });
     });
     WidgetsBinding.instance.addObserver(_bleLifecycleObserver);
@@ -161,6 +167,7 @@ class _MyAppState extends State<MyApp> {
   void dispose() {
     WidgetsBinding.instance.removeObserver(_bleLifecycleObserver);
     _authStateSubscription?.cancel();
+    _bleAutoReconnectDelayTimer?.cancel();
     _smartCaneStatusNotificationService.stop();
     super.dispose();
   }
@@ -186,7 +193,7 @@ class _MyAppState extends State<MyApp> {
       }
 
       _startSmartCaneStatusNotifications();
-      _smartCaneStatusNotificationService.beginStartupFlow();
+      unawaited(_smartCaneStatusNotificationService.beginStartupFlow());
       _hasStartedBleAutoReconnect = true;
       unawaited(
         SmartCaneBleService.instance.initializeAutoReconnect(

@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../services/analytics_service.dart';
+import '../../services/navigation_history_service.dart';
 import '../../services/notification_service.dart';
 import '../../utils/constants.dart';
 import '../../widgets/app_dialog.dart';
@@ -35,6 +36,9 @@ class FamilyHistoryScreen extends StatefulWidget {
 class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final NavigationHistoryService _navigationHistoryService =
+      NavigationHistoryService();
+  final Set<String> _offlineCancellationRequests = {};
   final MapController _mapController = MapController();
   final DraggableScrollableController _sheetController =
       DraggableScrollableController();
@@ -602,8 +606,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                       liveData?['batteryLevel']?.toString() ?? '-';
                   final smartCaneBatteryLevel =
                       liveData?['smartCaneBatteryLevel']?.toString() ?? '-';
-                  final speed = liveData?['speed']?.toString() ?? '-';
-                  final accuracy = liveData?['accuracy']?.toString() ?? '-';
                   final destinationName =
                       (liveData?['destinationName'] as String?)?.isNotEmpty ==
                           true
@@ -781,22 +783,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                 _buildDetailRow(
                                   'Tujuan',
                                   isNavigationActive ? destinationName : '-',
-                                ),
-                                _buildDetailDivider(),
-                                _buildDetailRow(
-                                  'Akurasi',
-                                  isNavigationActive
-                                      ? (accuracy != '-'
-                                            ? '$accuracy meter'
-                                            : '-')
-                                      : '-',
-                                ),
-                                _buildDetailDivider(),
-                                _buildDetailRow(
-                                  'Kecepatan',
-                                  isNavigationActive
-                                      ? (speed != '-' ? '$speed m/s' : '-')
-                                      : '-',
                                 ),
                                 _buildDetailDivider(),
                                 _buildDetailRow(
@@ -995,7 +981,31 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   bool isTrackingFresh(Timestamp? updatedAt) {
     if (updatedAt == null) return false;
     final age = DateTime.now().difference(updatedAt.toDate());
-    return age.inSeconds <= 30;
+    return age.inSeconds <= 60;
+  }
+
+  void _cancelNavigationIfUserOffline({
+    required String userId,
+    required Map<String, dynamic>? liveData,
+  }) {
+    final isNavigating = liveData?['isNavigating'] as bool? ?? false;
+    final tripId = (liveData?['currentTripId'] as String?)?.trim() ?? '';
+    final updatedAt = _parseTimestamp(liveData?['updatedAt']);
+    final requestKey = userId.trim();
+
+    if (requestKey.isEmpty ||
+        updatedAt == null ||
+        isTrackingFresh(updatedAt) ||
+        !_offlineCancellationRequests.add(requestKey)) {
+      return;
+    }
+
+    unawaited(
+      _navigationHistoryService.cancelOngoingTripsBecauseUserOffline(
+        userId: userId,
+        preferredTripId: isNavigating ? tripId : null,
+      ),
+    );
   }
 
   bool isGpsActiveTracking(Map<String, dynamic>? liveData) {
@@ -1741,16 +1751,8 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         (liveData?['destinationName'] as String?)?.isNotEmpty == true
         ? liveData!['destinationName'] as String
         : '-';
-    final speedValue = _parseDouble(liveData?['speed']);
-    final speed = speedValue != null
-        ? '${speedValue.toStringAsFixed(1)} m/s'
-        : '-';
     final battery = liveData?['batteryLevel'] != null
         ? '${liveData!['batteryLevel']}%'
-        : '-';
-    final accuracyValue = _parseDouble(liveData?['accuracy']);
-    final accuracy = accuracyValue != null
-        ? '${accuracyValue.toStringAsFixed(1)} m'
         : '-';
     final lat = _parseDouble(liveData?['lat']);
     final lng = _parseDouble(liveData?['lng']);
@@ -1771,11 +1773,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     final displayLng = isGpsActive && lng != null
         ? lng.toStringAsFixed(6)
         : '-';
-    final displayAccuracy = isNavigationActive ? accuracy : '-';
     final displayDestination = isNavigationActive ? destinationName : '-';
     final navigationText = buildNavigationText(isGpsActive, isNavigating);
     final gpsStatusText = buildGpsStatusText(isGpsActive);
-    final displaySpeed = isNavigationActive ? speed : '-';
     final displayHeading = isNavigationActive
         ? headingValue.toStringAsFixed(0)
         : '-';
@@ -1803,7 +1803,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
           'Lokasi realtime: $displayLocation',
           'Latitude: $displayLat',
           'Longitude: $displayLng',
-          'Akurasi GPS: $displayAccuracy',
         ],
       ),
       const SizedBox(height: 18),
@@ -1818,7 +1817,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       const SizedBox(height: 18),
       _buildDetailCard(
         title: 'Status pergerakan',
-        items: ['Kecepatan: $displaySpeed', 'Arah: $displayHeading°'],
+        items: ['Arah: $displayHeading°'],
       ),
       const SizedBox(height: 18),
       if (isGpsActive)
@@ -1911,6 +1910,10 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                 final hasLiveData =
                     snapshot.hasData && snapshot.data?.exists == true;
                 final liveData = hasLiveData ? snapshot.data!.data() : null;
+                _cancelNavigationIfUserOffline(
+                  userId: pairedUid,
+                  liveData: liveData,
+                );
                 _latestLiveDataForSos = liveData;
                 _focusInitialSosFromArgumentsIfNeeded();
 

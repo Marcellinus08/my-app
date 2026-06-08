@@ -13,12 +13,10 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
   late AnimationController _mainController;
-  late AnimationController _pulseController;
 
   late Animation<double> _fadeAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<Offset> _slideAnimation;
-  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -29,12 +27,6 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     );
-
-    // Pulse controller for icon
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
 
     // Start animations
     _mainController.forward();
@@ -63,11 +55,6 @@ class _SplashScreenState extends State<SplashScreen>
             curve: const Interval(0.3, 0.8, curve: Curves.easeOutCubic),
           ),
         );
-
-    // Pulse animation
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
 
     // Check authentication status and navigate accordingly after 3.5 seconds
     Timer(const Duration(milliseconds: 3500), () async {
@@ -106,7 +93,6 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   void dispose() {
     _mainController.dispose();
-    _pulseController.dispose();
     super.dispose();
   }
 
@@ -114,13 +100,7 @@ class _SplashScreenState extends State<SplashScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0D47A1), Color(0xFF1976D2)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
+        color: AppColors.primaryDark,
         child: Stack(
           children: [
             // Main content
@@ -182,22 +162,77 @@ class _SplashScreenState extends State<SplashScreen>
 
                   const SizedBox(height: 100),
 
-                  // Simple default loading indicator
                   FadeTransition(
                     opacity: _fadeAnimation,
-                    child: const SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    ),
+                    child: const _SplashLoadingLine(),
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SplashLoadingLine extends StatefulWidget {
+  const _SplashLoadingLine();
+
+  @override
+  State<_SplashLoadingLine> createState() => _SplashLoadingLineState();
+}
+
+class _SplashLoadingLineState extends State<_SplashLoadingLine>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _fillAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..forward();
+    _fillAnimation = Tween<double>(
+      begin: 0,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Indikator memuat aplikasi',
+      child: SizedBox(
+        width: 220,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            height: 4,
+            color: Colors.white.withValues(alpha: 0.3),
+            child: AnimatedBuilder(
+              animation: _fillAnimation,
+              builder: (context, child) {
+                return Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    widthFactor: _fillAnimation.value,
+                    heightFactor: 1,
+                    child: child,
+                  ),
+                );
+              },
+              child: Container(color: Colors.white),
+            ),
+          ),
         ),
       ),
     );

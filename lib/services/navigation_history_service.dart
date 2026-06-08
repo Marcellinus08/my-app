@@ -4,14 +4,13 @@ import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
 class NavigationHistoryService {
-  NavigationHistoryService({
-    FirebaseFirestore? firestore,
-    FirebaseAuth? auth,
-  }) : _firestore = firestore ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  NavigationHistoryService({FirebaseFirestore? firestore, FirebaseAuth? auth})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _auth = auth ?? FirebaseAuth.instance;
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+  static const Duration _offlineNavigationTimeout = Duration(seconds: 60);
 
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('navigation_history');
@@ -120,6 +119,176 @@ class NavigationHistoryService {
     );
   }
 
+  Future<int> cancelOngoingTripsForCurrentUser() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        debugPrint(
+          '[NAV_HISTORY] Cannot cancel ongoing trips: currentUser is null',
+        );
+        return 0;
+      }
+
+      final snapshot = await _collection
+          .where('userId', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'ongoing')
+          .get();
+
+      if (snapshot.docs.isEmpty) return 0;
+
+      final now = Timestamp.now();
+      final batch = _firestore.batch();
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final startTime = data['startTime'];
+        final durationSeconds = startTime is Timestamp
+            ? now.toDate().difference(startTime.toDate()).inSeconds
+            : 0;
+
+        batch.update(doc.reference, {
+          'endTime': now,
+          'durationSeconds': durationSeconds < 0 ? 0 : durationSeconds,
+          'status': 'cancelled',
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      debugPrint(
+        '[NAV_HISTORY] Cancelled ${snapshot.docs.length} stale ongoing trip(s)',
+      );
+      return snapshot.docs.length;
+    } catch (e, st) {
+      debugPrint('[NAV_HISTORY] Failed to cancel ongoing trips: $e');
+      debugPrintStack(stackTrace: st);
+      return 0;
+    }
+  }
+
+  Future<bool> cancelTripBecauseUserOffline({
+    required String tripId,
+    required String userId,
+  }) async {
+    if (tripId.trim().isEmpty || userId.trim().isEmpty) return false;
+
+    try {
+      final tripRef = _collection.doc(tripId);
+      final liveTrackingRef = _firestore
+          .collection('live_tracking')
+          .doc(userId);
+      final eventRef = tripRef.collection('events').doc();
+
+      return await _firestore.runTransaction((transaction) async {
+        final tripSnapshot = await transaction.get(tripRef);
+        final liveTrackingSnapshot = await transaction.get(liveTrackingRef);
+        if (!tripSnapshot.exists || !liveTrackingSnapshot.exists) return false;
+
+        final tripData = tripSnapshot.data();
+        final liveData = liveTrackingSnapshot.data();
+        final liveUpdatedAt = liveData?['updatedAt'];
+        final isOffline =
+            liveUpdatedAt is Timestamp &&
+            DateTime.now().difference(liveUpdatedAt.toDate()) >=
+                _offlineNavigationTimeout;
+
+        if (tripData == null ||
+            tripData['userId'] != userId ||
+            tripData['status'] != 'ongoing' ||
+            !isOffline) {
+          return false;
+        }
+
+        final now = Timestamp.now();
+        final startTime = tripData['startTime'];
+        final durationSeconds = startTime is Timestamp
+            ? now.toDate().difference(startTime.toDate()).inSeconds
+            : 0;
+        final lastLat = liveData?['lat'];
+        final lastLng = liveData?['lng'];
+        final endLat = lastLat is num ? lastLat.toDouble() : null;
+        final endLng = lastLng is num ? lastLng.toDouble() : null;
+
+        final tripUpdate = <String, dynamic>{
+          'endTime': now,
+          'durationSeconds': durationSeconds < 0 ? 0 : durationSeconds,
+          'status': 'cancelled',
+          'endReason': 'user_offline',
+          'eventCount': FieldValue.increment(1),
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+        if (endLat != null && endLng != null) {
+          tripUpdate['endLat'] = endLat;
+          tripUpdate['endLng'] = endLng;
+        }
+
+        transaction.update(tripRef, tripUpdate);
+        transaction.set(eventRef, {
+          'type': 'navigation_cancelled',
+          'title': 'Navigasi dibatalkan',
+          'description': 'Navigasi dibatalkan karena pengguna offline',
+          'lat': endLat,
+          'lng': endLng,
+          'timestamp': now,
+          'createdAt': now,
+        });
+        transaction.set(liveTrackingRef, {
+          'isNavigating': false,
+          'currentTripId': null,
+          'destinationName': null,
+          'connectionStatus': 'offline',
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        return true;
+      });
+    } catch (e, st) {
+      debugPrint('[NAV_HISTORY] Failed to cancel offline trip $tripId: $e');
+      debugPrintStack(stackTrace: st);
+      return false;
+    }
+  }
+
+  Future<int> cancelOngoingTripsBecauseUserOffline({
+    required String userId,
+    String? preferredTripId,
+  }) async {
+    final normalizedUserId = userId.trim();
+    if (normalizedUserId.isEmpty) return 0;
+
+    try {
+      final tripIds = <String>{};
+      final normalizedPreferredTripId = preferredTripId?.trim() ?? '';
+      if (normalizedPreferredTripId.isNotEmpty) {
+        tripIds.add(normalizedPreferredTripId);
+      }
+
+      final snapshot = await _collection
+          .where('userId', isEqualTo: normalizedUserId)
+          .where('status', isEqualTo: 'ongoing')
+          .get();
+      tripIds.addAll(snapshot.docs.map((doc) => doc.id));
+
+      var cancelledCount = 0;
+      for (final tripId in tripIds) {
+        final cancelled = await cancelTripBecauseUserOffline(
+          tripId: tripId,
+          userId: normalizedUserId,
+        );
+        if (cancelled) cancelledCount += 1;
+      }
+
+      return cancelledCount;
+    } catch (e, st) {
+      debugPrint(
+        '[NAV_HISTORY] Failed to find offline ongoing trips for '
+        '$normalizedUserId: $e',
+      );
+      debugPrintStack(stackTrace: st);
+      return 0;
+    }
+  }
+
   Future<void> addRoutePoint({
     required String tripId,
     required double lat,
@@ -151,9 +320,7 @@ class NavigationHistoryService {
         'timestamp': serverTimestamp,
         'createdAt': serverTimestamp,
       });
-      batch.update(tripRef, {
-        'updatedAt': serverTimestamp,
-      });
+      batch.update(tripRef, {'updatedAt': serverTimestamp});
 
       await batch.commit();
     } catch (e, st) {
@@ -248,10 +415,7 @@ class NavigationHistoryService {
 
   List<Map<String, double>> _latLngListToMapList(List<LatLng> points) {
     return points
-        .map((point) => {
-              'lat': point.latitude,
-              'lng': point.longitude,
-            })
+        .map((point) => {'lat': point.latitude, 'lng': point.longitude})
         .toList();
   }
 
@@ -285,10 +449,10 @@ class NavigationHistoryService {
         'status': status,
         'updatedAt': FieldValue.serverTimestamp(),
       };
-      
+
       if (endLat != null) updateData['endLat'] = endLat;
       if (endLng != null) updateData['endLng'] = endLng;
-      
+
       await _collection.doc(tripId).update(updateData);
     } catch (e, st) {
       debugPrint('[NAV_HISTORY] Failed to end trip $tripId as $status: $e');

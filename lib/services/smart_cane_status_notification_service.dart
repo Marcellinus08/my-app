@@ -44,13 +44,14 @@ class SmartCaneStatusNotificationService {
     );
   }
 
-  void beginStartupFlow({Duration timeout = const Duration(seconds: 30)}) {
+  Future<void> beginStartupFlow({
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
     if (!_isStarted || _isStartupFlowActive) return;
 
     _isStartupFlowActive = true;
     _hasAnnouncedConnecting = false;
     _lastState = _currentState;
-    _announcePreparing();
 
     if (_lastState == _SmartCaneRuntimeState.ready) {
       _finishStartupFlow();
@@ -61,6 +62,18 @@ class SmartCaneStatusNotificationService {
     if (_lastState == _SmartCaneRuntimeState.waiting) {
       _announceConnected();
     } else if (_lastState == _SmartCaneRuntimeState.connecting) {
+      _announceConnecting();
+    } else {
+      final rememberedCaneRemoteId = await _bleService
+          .getRememberedCaneRemoteId();
+      if (!_isStartupFlowActive) return;
+
+      if (rememberedCaneRemoteId == null) {
+        _finishStartupFlow();
+        _announceNoRememberedCane();
+        return;
+      }
+
       _announceConnecting();
     }
 
@@ -180,12 +193,14 @@ class SmartCaneStatusNotificationService {
     _lastHazardAnnouncementAt = null;
   }
 
-  void _announcePreparing() {
-    const message = 'Menyiapkan SmartCane.';
+  void _announceNoRememberedCane() {
+    const message =
+        'SmartCane belum terhubung. Buka menu Koneksi untuk menghubungkan SmartCane.';
     _showSnackBar(
-      message: 'Menyiapkan SmartCane...',
-      color: AppColors.primary,
-      icon: Icons.settings_input_antenna_rounded,
+      message:
+          'SmartCane belum terhubung. Buka menu Koneksi untuk menghubungkan SmartCane.',
+      color: AppColors.warning,
+      icon: Icons.bluetooth_disabled_rounded,
     );
     _queueTts(message);
   }
@@ -194,9 +209,9 @@ class SmartCaneStatusNotificationService {
     if (_hasAnnouncedConnecting) return;
     _hasAnnouncedConnecting = true;
 
-    const message = 'Menghubungkan ke SmartCane.';
+    const message = 'Menghubungkan ulang ke SmartCane.';
     _showSnackBar(
-      message: 'Menghubungkan ke SmartCane...',
+      message: 'Menghubungkan ulang ke SmartCane...',
       color: AppColors.primary,
       icon: Icons.bluetooth_searching_rounded,
     );

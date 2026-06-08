@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../services/navigation_history_service.dart';
+
 class LiveTrackingScreen extends StatefulWidget {
   final String pairedUserUid; // UID of the visually impaired user being tracked
 
@@ -19,6 +21,9 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   late final MapController _mapController;
   Timer? _realtimeUpdateTimer;
   LatLng? _lastFocusedUserLocation;
+  final NavigationHistoryService _navigationHistoryService =
+      NavigationHistoryService();
+  final Set<String> _offlineCancellationRequests = {};
 
   static const LatLng _fallbackCenter = LatLng(-6.9147, 107.6098);
   static const double _initialTrackingZoom = 16.0;
@@ -47,7 +52,28 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   bool isTrackingFresh(Timestamp? updatedAt) {
     if (updatedAt == null) return false;
     final age = DateTime.now().difference(updatedAt.toDate());
-    return age.inSeconds <= 30;
+    return age.inSeconds <= 60;
+  }
+
+  void _cancelNavigationIfUserOffline({
+    required bool isNavigating,
+    required String? tripId,
+    required Timestamp? updatedAt,
+  }) {
+    final normalizedTripId = tripId?.trim() ?? '';
+    final requestKey = widget.pairedUserUid;
+    if (updatedAt == null ||
+        isTrackingFresh(updatedAt) ||
+        !_offlineCancellationRequests.add(requestKey)) {
+      return;
+    }
+
+    unawaited(
+      _navigationHistoryService.cancelOngoingTripsBecauseUserOffline(
+        userId: widget.pairedUserUid,
+        preferredTripId: isNavigating ? normalizedTripId : null,
+      ),
+    );
   }
 
   bool isGpsActiveTracking(Map<String, dynamic>? liveData) {
@@ -254,8 +280,6 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
           final lat = _parseDouble(data?['lat']);
           final lng = _parseDouble(data?['lng']);
           final heading = _parseDouble(data?['heading']) ?? 0.0;
-          final speed = _parseDouble(data?['speed']);
-          final accuracy = _parseDouble(data?['accuracy']);
           final isNavigating = data?['isNavigating'] as bool? ?? false;
           final currentTripId = data?['currentTripId'] as String?;
           final gpsStatus = data?['gpsStatus'] as String? ?? '-';
@@ -265,6 +289,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
               : '-';
           final batteryLevel = data?['batteryLevel'];
           final updatedAt = _parseTimestamp(data?['updatedAt']);
+          _cancelNavigationIfUserOffline(
+            isNavigating: isNavigating,
+            tripId: currentTripId,
+            updatedAt: updatedAt,
+          );
           final isGpsActive = isGpsActiveTracking(data);
           final isNavigationActive = isGpsActive && isNavigating;
           final hasLocation = isGpsActive && lat != null && lng != null;
@@ -272,14 +301,8 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
           final displayDestination = isNavigationActive ? destinationName : '-';
           final navigationText = buildNavigationText(isGpsActive, isNavigating);
-          final displaySpeed = isNavigationActive && speed != null
-              ? '${speed.toStringAsFixed(1)} m/s'
-              : '-';
           final displayHeading = isNavigationActive
               ? '${heading.toStringAsFixed(0)}°'
-              : '-';
-          final displayAccuracy = isNavigationActive && accuracy != null
-              ? '${accuracy.toStringAsFixed(1)} m'
               : '-';
           final displayBattery = isGpsActive && batteryLevel != null
               ? '$batteryLevel%'
@@ -301,9 +324,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
                     Text('GPS: $gpsStatusText'),
                     Text('Tujuan: $displayDestination'),
                     Text('Navigasi: $navigationText'),
-                    Text('Kecepatan: $displaySpeed'),
                     Text('Arah: $displayHeading'),
-                    Text('Akurasi: $displayAccuracy'),
                     Text('Baterai: $displayBattery'),
                     Text('Terakhir diperbarui: $displayLastUpdate'),
                   ],
