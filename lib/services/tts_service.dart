@@ -17,9 +17,11 @@ class TTSService {
 
   Future<void> speak(String text) async {
     await init();
-    print("🔊 ngomong: $text");
-
     await _tts.stop();
     await _tts.speak(text);
+  }
+
+  Future<void> stop() async {
+    await _tts.stop();
   }
 }
