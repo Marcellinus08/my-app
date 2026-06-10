@@ -267,7 +267,15 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Data lokasi belum dapat dimuat. Periksa koneksi lalu coba lagi.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
           }
 
           if (snapshot.connectionState == ConnectionState.waiting) {

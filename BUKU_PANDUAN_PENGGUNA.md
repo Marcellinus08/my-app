@@ -70,7 +70,7 @@ Contoh informasi pada aplikasi:
 
 ```text
 Kiri 35 cm | Tengah 78 cm | Kanan 42 cm
-Keputusan: Belok kiri
+Keputusan: Pindah ke kiri
 Hati-hati, hambatan: kursi
 ```
 
@@ -269,13 +269,28 @@ Status yang dapat muncul:
 | Hati-hati | Sensor atau model menemukan hambatan yang perlu diperhatikan |
 | Bahaya | Hambatan terdeteksi sangat dekat atau membutuhkan tindakan segera |
 
+Jika model Smart Cane mengenali objek ketika ada hambatan, Teman Arah
+akan menyebutkan nama objek tersebut. Contohnya, aplikasi mengatakan
+"Hati-hati, kursi terdeteksi sebagai hambatan." Jika nama objek belum
+tersedia, aplikasi tetap memberikan peringatan hambatan secara umum.
+
+Jika Smart Cane juga mengirim keputusan arah, keputusan tersebut langsung
+ditambahkan pada TTS. Contohnya, "Hati-hati, kursi terdeteksi sebagai
+hambatan. Pindah ke kanan."
+
+Setelah peringatan hati-hati atau bahaya, Teman Arah akan mengatakan
+"Jalur sudah aman. Silakan lanjutkan perjalanan." ketika pembacaan sensor
+sudah kembali aman dan stabil. Pengumuman ini diberikan satu kali agar
+pengguna mengetahui bahwa perjalanan dapat dilanjutkan tanpa menerima
+pesan berulang.
+
 ### Keputusan arah
 
 Smart Cane dapat mengirim keputusan:
 
 - Maju.
-- Belok kiri.
-- Belok kanan.
+- Pindah ke kiri.
+- Pindah ke kanan.
 - Berhenti.
 
 Smart Cane menghasilkan keputusan dari sensor dan model. Teman Arah

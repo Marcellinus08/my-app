@@ -60,21 +60,33 @@ Jika perintah tidak dikenali, aplikasi membacakan "Perintah tidak dikenali", lal
 ## STT pada Halaman Navigasi
 File: `lib/screens/tunanetra/navigation_screen.dart`
 
-STT aktif saat halaman navigasi selesai dibuka. Aplikasi terlebih dahulu membacakan instruksi agar pengguna menyebutkan tujuan, lalu memanggil `_startVoiceNavigation()`.
+Saat halaman navigasi selesai dibuka, aplikasi membacakan instruksi agar
+pengguna memilih tujuan. STT tidak menyala otomatis setelah instruksi tersebut.
 
 ### Kondisi STT Aktif
 STT mulai aktif pada kondisi berikut:
-- setelah halaman navigasi dibuka
-- setelah TTS membacakan "Halaman navigasi dibuka. Silahkan pilih tempat tujuan anda"
+- ketika tombol merah Smart Cane ditekan dan ditahan pada halaman pilih tempat atau navigasi aktif
+
+Jika perintah tidak dikenali, mikrofon tidak menyala kembali secara otomatis.
+Pengguna perlu menekan dan menahan tombol merah untuk mencoba kembali.
+
+Ketika tombol merah dilepas, STT menyelesaikan proses pengenalan ucapan
+terakhir sebelum berhenti. Dengan demikian, kata terakhir pada perintah
+tidak terpotong.
 
 ### Perintah Suara yang Dikenali
 Perintah suara pada halaman navigasi digunakan untuk memilih tujuan dan menghentikan navigasi.
 
 Perintah yang dikenali:
+- `halaman utama`, `beranda`, atau `home` untuk kembali ke halaman utama
 - jika ucapan mengandung nama tempat dari daftar `_places`, aplikasi memilih tempat tersebut sebagai tujuan
 - jika ucapan mengandung `cek jarak`, aplikasi membacakan sisa jarak ke tujuan
 - jika ucapan mengandung `cek waktu`, aplikasi membacakan estimasi waktu menuju tujuan
 - jika ucapan mengandung `hentikan`, aplikasi menghentikan navigasi dan kembali ke halaman sebelumnya
+
+Pada navigasi aktif, pengguna mengaktifkan STT dengan menekan dan menahan
+tombol merah Smart Cane, mengucapkan perintah, lalu melepaskan tombol.
+Perintah `halaman utama`, `beranda`, dan `home` tetap dapat digunakan.
 
 Saat nama tempat dikenali:
 - STT dihentikan
@@ -177,8 +189,51 @@ Saat sampai tujuan:
 - halaman navigasi aktif ditutup
 - aplikasi kembali ke halaman utama
 
+### TTS Status Hambatan Smart Cane
+
+Saat sensor Smart Cane mendeteksi hambatan:
+- status peringatan membacakan "Hati-hati, hambatan terdeteksi."
+- status bahaya membacakan "Bahaya, hambatan terdeteksi."
+
+Jika model juga mengenali objek, nama objek ikut dibacakan. Contoh:
+- "Hati-hati, kursi terdeteksi sebagai hambatan."
+- "Bahaya, orang terdeteksi sebagai hambatan."
+
+Jika data sensor juga memiliki keputusan arah, TTS membacakannya dalam
+peringatan yang sama. Contoh:
+- "Hati-hati, kursi terdeteksi sebagai hambatan. Pindah ke kanan."
+- "Bahaya, orang terdeteksi sebagai hambatan. Pindah ke kiri."
+
+Keputusan yang didukung adalah `Maju`, `Pindah ke kiri`, `Pindah ke kanan`,
+dan `Berhenti`. Perubahan keputusan dapat memperbarui peringatan TTS,
+sedangkan keputusan yang sama tidak dibacakan pada setiap pembaruan sensor.
+
+Label objek diterjemahkan ke bahasa Indonesia jika tersedia. Label kosong
+atau placeholder seperti `unknown`, `none`, dan `no detection` tidak
+dibacakan. Objek baru dapat memperbarui peringatan, sedangkan label yang
+sama tetap mengikuti jeda pengulangan agar TTS tidak spam.
+
+Setelah status hati-hati atau bahaya, kondisi aman harus bertahan sekitar
+1,5 detik. Jika tetap aman, aplikasi membacakan "Jalur sudah aman. Silakan
+lanjutkan perjalanan." satu kali. Konfirmasi singkat ini mencegah pengguna
+menunggu tanpa mengetahui kapan perjalanan dapat dilanjutkan sekaligus
+menghindari TTS berulang akibat perubahan sensor sesaat.
+
 ## Hubungan STT dan TTS
 Pada beberapa bagian, STT dan TTS saling bergantian agar suara aplikasi tidak bertabrakan dengan input suara pengguna.
+
+### Prioritas STT
+
+Ketika STT mulai aktif:
+
+- seluruh TTS yang sedang berbicara langsung dihentikan
+- antrean TTS lama pada navigasi dibatalkan
+- permintaan TTS baru diabaikan selama STT masih mendengarkan
+- TTS baru dapat berjalan kembali setelah STT selesai atau dihentikan
+
+Aturan ini berlaku secara global untuk halaman utama, pilih tempat,
+navigasi aktif, status Smart Cane, buku panduan, dan halaman lain yang
+menggunakan `TTSService`.
 
 Pola yang digunakan:
 - TTS berbicara terlebih dahulu

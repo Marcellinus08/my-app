@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+
+import 'tts_service.dart';
 
 class STTService {
   static final STTService _instance = STTService._internal();
@@ -11,6 +14,7 @@ class STTService {
 
   bool isListening = false;
   bool _isInitialized = false;
+  bool _isStartingListening = false;
   SpeechErrorListener? _activeOnError;
   SpeechStatusListener? _activeOnStatus;
 
@@ -40,33 +44,75 @@ class STTService {
     Function(String) onResult, {
     SpeechErrorListener? onError,
     SpeechStatusListener? onStatus,
+    Duration pauseFor = const Duration(seconds: 30),
+    bool finalResultsOnly = false,
   }) async {
-    bool available = await init(onError: onError, onStatus: onStatus);
+    final ttsService = TTSService();
+    await ttsService.beginSttSession();
+
+    final available = await init(
+      onError: (error) {
+        ttsService.endSttSession();
+        onError?.call(error);
+      },
+      onStatus: (status) {
+        isListening = status == 'listening';
+        if (!_isStartingListening &&
+            (status == 'done' || status == 'notListening')) {
+          ttsService.endSttSession();
+        }
+        onStatus?.call(status);
+      },
+    );
 
     if (available) {
-      if (isListening) {
-        await _stt.cancel();
-        isListening = false;
+      _isStartingListening = true;
+      try {
+        if (isListening) {
+          await _stt.cancel();
+          isListening = false;
+        }
+
+        await ttsService.beginSttSession();
+        isListening = true;
+
+        await _stt.listen(
+          localeId: "id_ID",
+          listenFor: const Duration(minutes: 5),
+          pauseFor: pauseFor,
+          onResult: (result) {
+            if (finalResultsOnly && !result.finalResult) return;
+            onResult(result.recognizedWords);
+          },
+        );
+      } finally {
+        _isStartingListening = false;
       }
-
-      isListening = true;
-
-      await _stt.listen(
-        localeId: "id_ID",
-        listenFor: const Duration(minutes: 5),
-        pauseFor: const Duration(seconds: 30),
-        onResult: (result) {
-          onResult(result.recognizedWords);
-        },
-      );
     } else {
-      print("❌ STT tidak tersedia");
+      ttsService.endSttSession();
+      debugPrint('STT tidak tersedia');
     }
   }
 
   Future<void> stopListening() async {
-    if (!_isInitialized) return;
-    await _stt.cancel();
-    isListening = false;
+    try {
+      if (_isInitialized) {
+        await _stt.cancel();
+        isListening = false;
+      }
+    } finally {
+      TTSService().endSttSession();
+    }
+  }
+
+  Future<void> finishListening() async {
+    try {
+      if (_isInitialized && _stt.isListening) {
+        await _stt.stop();
+        isListening = false;
+      }
+    } finally {
+      TTSService().endSttSession();
+    }
   }
 }

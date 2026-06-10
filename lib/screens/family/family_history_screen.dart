@@ -12,6 +12,7 @@ import 'package:latlong2/latlong.dart';
 import '../../services/analytics_service.dart';
 import '../../services/navigation_history_service.dart';
 import '../../services/notification_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../widgets/app_dialog.dart';
 
@@ -1204,20 +1205,14 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         _hideSosCardAfterResolve = true;
         _hiddenResolvedSosIds.addAll(resolvedSosIds);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('SOS ditandai sudah ditangani'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      debugPrint('[FamilyHistory] error resolve SOS: $e');
+      AppFeedback.success(context, 'SOS ditandai sudah ditangani.');
+    } catch (error) {
+      debugPrint('[FamilyHistory] error resolve SOS: $error');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal menandai SOS: $e'),
-          backgroundColor: AppColors.error,
-        ),
+      AppFeedback.error(
+        context,
+        error,
+        fallback: 'Status SOS belum dapat diperbarui. Silakan coba lagi.',
       );
     }
   }

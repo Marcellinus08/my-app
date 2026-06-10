@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../widgets/app_dialog.dart';
 
@@ -54,8 +55,6 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
               setDialogState(() => isSaving = true);
               var dialogWasClosed = false;
               final navigator = Navigator.of(dialogContext);
-              final messenger = ScaffoldMessenger.of(this.context);
-
               try {
                 await _authService.updatePasswordWithCurrentPassword(
                   currentPassword: currentPasswordController.text,
@@ -65,24 +64,17 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                 if (!mounted) return;
                 dialogWasClosed = true;
                 navigator.pop();
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Kata sandi berhasil diubah'),
-                    backgroundColor: Colors.green,
-                  ),
+                AppFeedback.success(
+                  this.context,
+                  'Kata sandi berhasil diubah.',
                 );
-              } catch (e) {
+              } catch (error) {
                 if (!mounted) return;
-
-                final message = e is Exception
-                    ? e.toString().replaceAll('Exception: ', '')
-                    : e.toString();
-
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(message),
-                    backgroundColor: Colors.redAccent,
-                  ),
+                AppFeedback.error(
+                  this.context,
+                  error,
+                  fallback:
+                      'Kata sandi belum dapat diubah. Periksa sandi lama lalu coba lagi.',
                 );
               } finally {
                 if (!dialogWasClosed && context.mounted) {
@@ -335,11 +327,10 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
     final email = _authService.currentUserEmail;
 
     if (email == null || email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Email akun tidak ditemukan'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.show(
+        context,
+        'Email akun tidak ditemukan. Silakan masuk kembali.',
+        type: AppFeedbackType.error,
       );
       return;
     }
@@ -360,21 +351,17 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
     try {
       await _authService.sendPasswordResetEmail(email);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Tautan atur ulang sandi dikirim ke $email'),
-          backgroundColor: Colors.green,
-        ),
+      AppFeedback.success(
+        context,
+        'Tautan atur ulang kata sandi dikirim ke $email.',
       );
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
-
-      final message = e is Exception
-          ? e.toString().replaceAll('Exception: ', '')
-          : e.toString();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+      AppFeedback.error(
+        context,
+        error,
+        fallback:
+            'Tautan atur ulang belum dapat dikirim. Silakan coba lagi nanti.',
       );
     }
   }

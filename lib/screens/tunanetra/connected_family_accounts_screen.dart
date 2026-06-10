@@ -5,6 +5,7 @@ import '../../utils/constants.dart';
 import '../../services/connected_family_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../widgets/app_dialog.dart';
 
 class ConnectedFamilyAccountsScreen extends StatefulWidget {
@@ -55,7 +56,9 @@ class _ConnectedFamilyAccountsScreenState
                   }
 
                   if (snapshot.hasError) {
-                    return _buildErrorState(snapshot.error.toString());
+                    return _buildErrorState(
+                      'Data keluarga belum dapat dimuat. Periksa koneksi lalu coba lagi.',
+                    );
                   }
 
                   final connectedFamilies = snapshot.data ?? [];
@@ -74,7 +77,9 @@ class _ConnectedFamilyAccountsScreenState
                         }
 
                         if (subSnapshot.hasError) {
-                          return _buildErrorState(subSnapshot.error.toString());
+                          return _buildErrorState(
+                            'Data keluarga belum dapat dimuat. Periksa koneksi lalu coba lagi.',
+                          );
                         }
 
                         final familyDocs = subSnapshot.data?.docs ?? [];
@@ -628,22 +633,15 @@ class _ConnectedFamilyAccountsScreenState
         }
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text('Koneksi berhasil dihapus'),
-              backgroundColor: AppColors.success,
-              duration: const Duration(seconds: 2),
-            ),
-          );
+          AppFeedback.success(context, 'Koneksi berhasil dihapus.');
         }
       }
-    } catch (e) {
+    } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal menghapus koneksi: $e'),
-            backgroundColor: AppColors.error,
-          ),
+        AppFeedback.error(
+          context,
+          error,
+          fallback: 'Koneksi keluarga belum dapat dihapus. Silakan coba lagi.',
         );
       }
     }

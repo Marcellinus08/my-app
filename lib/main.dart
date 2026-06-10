@@ -248,8 +248,21 @@ class _MyAppState extends State<MyApp> {
             ),
           ),
         ),
-        snackBarTheme: const SnackBarThemeData(
-          behavior: SnackBarBehavior.fixed,
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: const Color(0xFF1E293B),
+          actionTextColor: Colors.white,
+          elevation: 4,
+          insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          contentTextStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            height: 1.35,
+            fontWeight: FontWeight.w600,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       ),
 

@@ -56,7 +56,6 @@ class AuthService {
     }
   }
 
-
   /// Send password reset email
   Future<void> sendPasswordResetEmail(String email) async {
     try {
@@ -66,13 +65,21 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       print('❌ Password reset error: ${e.code}');
 
-      if (e.code == 'user-not-found') {
-        throw Exception('Email tidak terdaftar');
+      switch (e.code) {
+        case 'user-not-found':
+          throw Exception('Email tidak terdaftar');
+        case 'invalid-email':
+          throw Exception('Format email tidak valid');
+        case 'too-many-requests':
+          throw Exception('Terlalu banyak permintaan. Coba lagi nanti.');
+        case 'network-request-failed':
+          throw Exception('Koneksi internet bermasalah');
+        default:
+          throw Exception('Email reset belum dapat dikirim');
       }
-      throw Exception('Error mengirim email reset: ${e.message}');
     } catch (e) {
       print('❌ Unexpected error during password reset: $e');
-      throw Exception('Error tidak terduga: $e');
+      throw Exception('Email reset belum dapat dikirim');
     }
   }
 
@@ -84,10 +91,13 @@ class AuthService {
       print('✅ Account deleted');
     } on FirebaseAuthException catch (e) {
       print('❌ Delete account error: ${e.code}');
-      throw Exception('Gagal menghapus akun: ${e.message}');
+      if (e.code == 'requires-recent-login') {
+        throw Exception('Silakan masuk kembali sebelum menghapus akun');
+      }
+      throw Exception('Akun belum dapat dihapus');
     } catch (e) {
       print('❌ Unexpected error during account deletion: $e');
-      throw Exception('Error tidak terduga: $e');
+      throw Exception('Akun belum dapat dihapus');
     }
   }
 
@@ -99,7 +109,13 @@ class AuthService {
       print('✅ Email updated');
     } on FirebaseAuthException catch (e) {
       print('❌ Update email error: ${e.code}');
-      throw Exception('Gagal mengubah email: ${e.message}');
+      if (e.code == 'email-already-in-use') {
+        throw Exception('Email tersebut sudah digunakan');
+      }
+      if (e.code == 'requires-recent-login') {
+        throw Exception('Silakan masuk kembali sebelum mengubah email');
+      }
+      throw Exception('Email belum dapat diubah');
     }
   }
 
@@ -114,7 +130,10 @@ class AuthService {
       print('✅ Password updated');
     } on FirebaseAuthException catch (e) {
       print('❌ Update password error: ${e.code}');
-      throw Exception('Gagal mengubah password: ${e.message}');
+      if (e.code == 'requires-recent-login') {
+        throw Exception('Silakan masuk kembali sebelum mengubah kata sandi');
+      }
+      throw Exception('Kata sandi belum dapat diubah');
     }
   }
 
@@ -161,7 +180,7 @@ class AuthService {
         case 'requires-recent-login':
           throw Exception('Silakan login ulang sebelum mengubah password');
         default:
-          throw Exception('Gagal mengubah password: ${e.message}');
+          throw Exception('Kata sandi belum dapat diubah');
       }
     }
   }
@@ -261,8 +280,12 @@ class AuthService {
           throw Exception('Akun ini telah dinonaktifkan');
         case 'too-many-requests':
           throw Exception('Terlalu banyak percobaan login. Coba lagi nanti.');
+        case 'network-request-failed':
+          throw Exception('Koneksi internet bermasalah');
+        case 'invalid-credential':
+          throw Exception('Email atau kata sandi tidak sesuai');
         default:
-          throw Exception('Login gagal: ${e.message}');
+          throw Exception('Tidak dapat masuk. Silakan coba lagi.');
       }
     } catch (e) {
       print('❌ [AUTH SERVICE] Unexpected Error: $e\n');
@@ -354,8 +377,10 @@ class AuthService {
           throw Exception('Password terlalu lemah');
         case 'invalid-email':
           throw Exception('Format email tidak valid');
+        case 'network-request-failed':
+          throw Exception('Koneksi internet bermasalah');
         default:
-          throw Exception('Registrasi gagal: ${e.message}');
+          throw Exception('Pendaftaran belum dapat diselesaikan');
       }
     } catch (e) {
       print('❌ [AUTH SERVICE] Unexpected Error: $e\n');
@@ -405,7 +430,7 @@ class AuthService {
       print('   emailVerified: true');
     } on FirebaseException catch (e) {
       print('\n❌ [SAVE] Firestore error: ${e.code}');
-      throw Exception('Gagal menyimpan data: ${e.message}');
+      throw Exception('Data akun belum dapat disimpan');
     } catch (e) {
       print('❌ [SAVE] Error: $e');
       rethrow;

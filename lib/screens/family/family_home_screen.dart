@@ -189,7 +189,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       if (mounted) {
         setState(() {
           _isLoadingUsers = false;
-          _debugErrorMessage = 'Error: ${e.toString()}';
+          _debugErrorMessage = 'Data pengguna belum dapat dimuat';
         });
       }
     }

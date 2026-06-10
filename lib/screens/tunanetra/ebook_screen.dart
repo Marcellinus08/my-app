@@ -116,7 +116,9 @@ const List<_GuideTopic> _guides = [
       _GuideSection('Status dan keputusan', [
         'Smart Cane menentukan status berdasarkan data sensor dan model.',
         'Teman Arah menyampaikan status aman, hati-hati, atau bahaya melalui tampilan dan suara.',
-        'Saran arah dari alat dapat berupa maju, belok kiri, belok kanan, atau berhenti.',
+        'Jika model mengenali objek saat ada hambatan, nama objek seperti orang, kursi, atau kendaraan ikut disebutkan dalam peringatan.',
+        'Keputusan arah ikut dibacakan sebagai maju, pindah ke kiri, pindah ke kanan, atau berhenti.',
+        'Setelah peringatan hati-hati atau bahaya, Teman Arah mengatakan "Jalur sudah aman. Silakan lanjutkan perjalanan." ketika kondisi kembali aman dan stabil.',
       ]),
       _GuideSection('Deteksi objek', [
         'Kamera Smart Cane dapat mengenali objek seperti orang, kendaraan, dan benda lain.',

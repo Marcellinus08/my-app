@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/family_place_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../widgets/app_dialog.dart';
 
@@ -117,8 +118,13 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
       _gmapLinkController.clear();
       setState(() => _selectedCategory = null);
       _showSnackBar('Tempat berhasil disimpan');
-    } catch (e) {
-      _showSnackBar(e.toString(), isError: true);
+    } catch (error) {
+      if (!mounted) return;
+      AppFeedback.error(
+        context,
+        error,
+        fallback: 'Tempat belum dapat disimpan. Silakan coba lagi.',
+      );
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -149,19 +155,10 @@ class _FamilyManagePlacesScreenState extends State<FamilyManagePlacesScreen> {
 
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          message,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        backgroundColor: isError ? AppColors.error : AppColors.success,
-        elevation: 2,
-      ),
+    AppFeedback.show(
+      context,
+      message,
+      type: isError ? AppFeedbackType.error : AppFeedbackType.success,
     );
   }
 

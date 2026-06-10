@@ -693,6 +693,9 @@ class SmartCaneSensorData {
         mlConfidence != null;
   }
 
+  String? get detectedObjectLabel => _detectedObjectLabel;
+  String? get guidanceDecisionText => _decisionText;
+
   String get distanceText {
     final distance = distanceCm;
     if (distance == null) return 'jarak tidak tersedia';
@@ -727,8 +730,8 @@ class SmartCaneSensorData {
 
     return switch (rawDecision.toLowerCase()) {
       'maju' => 'Maju',
-      'kiri' => 'Belok kiri',
-      'kanan' => 'Belok kanan',
+      'kiri' || 'belok kiri' || 'left' => 'Pindah ke kiri',
+      'kanan' || 'belok kanan' || 'right' => 'Pindah ke kanan',
       'stop' || 'berhenti' => 'Berhenti',
       _ => rawDecision,
     };
@@ -775,6 +778,9 @@ class SmartCaneSensorData {
     if (normalized == 'none' ||
         normalized == 'unknown' ||
         normalized == 'tidak ada' ||
+        normalized == 'no detection' ||
+        normalized == 'no object' ||
+        normalized == 'tidak terdeteksi' ||
         normalized == '-') {
       return null;
     }

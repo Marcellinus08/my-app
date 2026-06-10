@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'package:intl/intl.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/pairing_service.dart';
@@ -70,11 +71,10 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
 
   Future<void> _saveUserData() async {
     if (_nameController.text.isEmpty || _emailController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nama dan Email tidak boleh kosong'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.show(
+        context,
+        'Nama dan email harus diisi.',
+        type: AppFeedbackType.error,
       );
       return;
     }
@@ -104,22 +104,16 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             );
           });
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Profil berhasil diperbarui'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          AppFeedback.success(context, 'Profil berhasil diperbarui.');
         }
       }
-    } catch (e) {
-      debugPrint('[TunaNetraProfile] Error saving user data: $e');
+    } catch (error) {
+      debugPrint('[TunaNetraProfile] Error saving user data: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal menyimpan profil: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
+        AppFeedback.error(
+          context,
+          error,
+          fallback: 'Profil belum dapat disimpan. Silakan coba lagi.',
         );
       }
     }
@@ -175,22 +169,16 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             );
           });
 
-          ScaffoldMessenger.of(this.context).showSnackBar(
-            const SnackBar(
-              content: Text('Kode penghubung berhasil dibuat'),
-              backgroundColor: Colors.green,
-            ),
-          );
+          AppFeedback.success(this.context, 'Kode penghubung berhasil dibuat.');
         }
       }
-    } catch (e) {
-      debugPrint('[TunaNetraProfile] Error regenerating pairing code: $e');
+    } catch (error) {
+      debugPrint('[TunaNetraProfile] Error regenerating pairing code: $error');
       if (mounted) {
-        ScaffoldMessenger.of(this.context).showSnackBar(
-          SnackBar(
-            content: Text('Gagal membuat kode penghubung: $e'),
-            backgroundColor: Colors.redAccent,
-          ),
+        AppFeedback.error(
+          this.context,
+          error,
+          fallback: 'Kode penghubung belum dapat dibuat. Silakan coba lagi.',
         );
       }
     }

@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../services/auth_service.dart';
 import '../../services/user_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 
 class FamilyProfileScreen extends StatefulWidget {
@@ -107,11 +108,10 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
     final phoneNumber = _phoneController.text.trim();
 
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nama tidak boleh kosong'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.show(
+        context,
+        'Nama harus diisi.',
+        type: AppFeedbackType.error,
       );
       return;
     }
@@ -142,20 +142,14 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
         _isSaving = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profil berhasil diperbarui'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
+      AppFeedback.success(context, 'Profil berhasil diperbarui.');
+    } catch (error) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal memperbarui profil: $e'),
-          backgroundColor: Colors.redAccent,
-        ),
+      AppFeedback.error(
+        context,
+        error,
+        fallback: 'Profil belum dapat diperbarui. Silakan coba lagi.',
       );
     }
   }

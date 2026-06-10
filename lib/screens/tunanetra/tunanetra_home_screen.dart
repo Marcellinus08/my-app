@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import '../../utils/constants.dart';
+import '../../utils/app_feedback.dart';
 import '../../services/auth_service.dart';
 import '../../services/core_permission_service.dart';
 import '../../services/live_tracking_service.dart';
@@ -1362,14 +1363,11 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       );
       _queueSosStatusAnnouncement('SOS berhasil dikirim ke keluarga');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Gagal mengirim SOS: ${_formatSosError(sosError ?? 'tidak diketahui')}',
-          ),
-          backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 4),
-        ),
+      AppFeedback.error(
+        context,
+        sosError,
+        fallback:
+            'SOS belum dapat dikirim. Periksa koneksi dan coba kembali segera.',
       );
       _queueSosStatusAnnouncement('SOS gagal dikirim');
     }
@@ -1481,21 +1479,17 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           backgroundColor: accepted ? Colors.green : Colors.orange,
         ),
       );
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().replaceAll('Exception: ', '')),
-          backgroundColor: AppColors.error,
-        ),
+      AppFeedback.error(
+        context,
+        error,
+        fallback:
+            'Respons koneksi keluarga belum dapat diproses. Silakan coba lagi.',
       );
     } finally {
       _isPairingDialogOpen = false;
     }
-  }
-
-  String _formatSosError(Object error) {
-    return error.toString().replaceAll('Exception: ', '');
   }
 
   @override

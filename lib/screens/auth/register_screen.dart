@@ -1,10 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../models/user_models.dart';
 import '../../services/auth_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/user_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../widgets/modern_text_field.dart';
 
@@ -160,25 +159,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
     // Validate email format
     final emailValidation = _validateEmail(_userEmailController.text);
     if (emailValidation != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(emailValidation),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.fixed,
-        ),
-      );
+      AppFeedback.show(context, emailValidation, type: AppFeedbackType.error);
       return;
     }
 
     // Validate password
     final passwordValidation = _validatePassword(_userPasswordController.text);
     if (passwordValidation != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(passwordValidation),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.fixed,
-        ),
+      AppFeedback.show(
+        context,
+        passwordValidation,
+        type: AppFeedbackType.error,
       );
       return;
     }
@@ -286,18 +277,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       print('✅ Family contact saved');
 
       if (mounted) {
-        // Show success notification with pairing code
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✅ Registrasi Berhasil!\n',
-              style: const TextStyle(height: 1.4, fontSize: 12),
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.fixed,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        AppFeedback.success(context, 'Pendaftaran berhasil.');
 
         print(
           '\n[UI] Registration complete, redirecting to login immediately...',
@@ -315,12 +295,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } on PairingException catch (e) {
       if (mounted) {
         _closeVerificationDialogIfOpen();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ ${e.message}'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.fixed,
-          ),
+        AppFeedback.error(
+          context,
+          e,
+          fallback: 'Kode pairing tidak valid atau sudah tidak tersedia.',
         );
       }
     } catch (e) {
@@ -333,14 +311,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       }
 
       if (mounted) {
-        String errorMsg = e.toString().replaceAll("Exception: ", "");
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ $errorMsg'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.fixed,
-            duration: const Duration(seconds: 5),
-          ),
+        AppFeedback.error(
+          context,
+          e,
+          fallback:
+              'Pendaftaran belum dapat diselesaikan. Periksa data lalu coba lagi.',
         );
       }
     } finally {
@@ -443,15 +418,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       print('✅ Registration complete!');
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Registrasi berhasil. Permintaan koneksi terkirim ke $targetName.',
-            ),
-            backgroundColor: Colors.green,
-            behavior: SnackBarBehavior.fixed,
-            duration: const Duration(seconds: 4),
-          ),
+        AppFeedback.success(
+          context,
+          'Pendaftaran berhasil. Permintaan koneksi terkirim ke $targetName.',
         );
 
         await Future.delayed(const Duration(milliseconds: 500));
@@ -461,23 +430,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } on PairingException catch (e) {
       if (mounted) {
         _closeVerificationDialogIfOpen();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ ${e.message}'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.fixed,
-          ),
+        AppFeedback.error(
+          context,
+          e,
+          fallback: 'Kode pairing tidak valid atau sudah tidak tersedia.',
         );
       }
     } catch (e) {
       if (mounted) {
         _closeVerificationDialogIfOpen();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ ${e.toString().replaceAll("Exception: ", "")}'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.fixed,
-          ),
+        AppFeedback.error(
+          context,
+          e,
+          fallback:
+              'Pendaftaran keluarga belum dapat diselesaikan. Silakan coba lagi.',
         );
       }
     } finally {

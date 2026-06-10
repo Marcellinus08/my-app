@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../widgets/modern_text_field.dart';
 
@@ -75,67 +76,30 @@ class _LoginScreenState extends State<LoginScreen> {
         print('⚠️ Email not verified yet');
         if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Email belum diverifikasi. Periksa kotak masuk Anda untuk tautan verifikasi',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-            behavior: SnackBarBehavior.fixed,
-            elevation: 2,
-            action: SnackBarAction(
-              label: 'Kirim Ulang',
-              textColor: Colors.white,
-              onPressed: () async {
-                try {
-                  await _authService.resendVerificationEmail();
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Email verifikasi berhasil dikirim ulang',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        backgroundColor: Colors.green,
-                        duration: Duration(seconds: 3),
-                        behavior: SnackBarBehavior.fixed,
-                        elevation: 2,
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Gagal mengirim ulang email verifikasi',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        backgroundColor: Colors.red,
-                        duration: Duration(seconds: 3),
-                        behavior: SnackBarBehavior.fixed,
-                        elevation: 2,
-                      ),
-                    );
-                  }
-                }
-              },
-            ),
-          ),
+        AppFeedback.warning(
+          context,
+          'Email belum diverifikasi. Periksa kotak masuk atau folder spam.',
+          actionLabel: 'Kirim Ulang',
+          onAction: () async {
+            try {
+              await _authService.resendVerificationEmail();
+              if (mounted) {
+                AppFeedback.success(
+                  context,
+                  'Email verifikasi berhasil dikirim ulang.',
+                );
+              }
+            } catch (error) {
+              if (mounted) {
+                AppFeedback.error(
+                  context,
+                  error,
+                  fallback:
+                      'Email verifikasi belum dapat dikirim. Coba kembali beberapa saat lagi.',
+                );
+              }
+            }
+          },
         );
 
         // Keep user logged in but prevent navigation until verified
@@ -147,72 +111,38 @@ class _LoginScreenState extends State<LoginScreen> {
 
       await Future.delayed(const Duration(milliseconds: 500));
 
-      if (mounted) {
-        final registeredUserType = await _authService.getUserType();
+      if (!mounted) return;
+      final registeredUserType = await _authService.getUserType();
 
-        if (registeredUserType == null) {
-          await _authService.logout();
-          throw Exception('Tipe akun tidak ditemukan. Silakan hubungi admin.');
-        }
-
-        if (registeredUserType != _selectedUserType) {
-          await _authService.logout();
-          throw Exception('Email atau kata sandi yang dipilih salah.');
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Anda berhasil masuk',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-            behavior: SnackBarBehavior.fixed,
-            elevation: 2,
-          ),
-        );
-
-        if (registeredUserType == UserType.tunanetra) {
-          Navigator.pushReplacementNamed(context, AppRoutes.tunaNetraHome);
-        } else {
-          final familyId = _authService.currentUserId ?? '';
-          Navigator.pushReplacementNamed(
-            context,
-            AppRoutes.familyHome,
-            arguments: {'familyId': familyId},
-          );
-        }
+      if (registeredUserType == null) {
+        await _authService.logout();
+        throw Exception('Tipe akun tidak ditemukan. Silakan hubungi admin.');
       }
-    } catch (e) {
+
+      if (registeredUserType != _selectedUserType) {
+        await _authService.logout();
+        throw Exception('Email atau kata sandi tidak sesuai.');
+      }
+
+      if (!mounted) return;
+      AppFeedback.success(context, 'Anda berhasil masuk.');
+
+      if (registeredUserType == UserType.tunanetra) {
+        Navigator.pushReplacementNamed(context, AppRoutes.tunaNetraHome);
+      } else {
+        final familyId = _authService.currentUserId ?? '';
+        Navigator.pushReplacementNamed(
+          context,
+          AppRoutes.familyHome,
+          arguments: {'familyId': familyId},
+        );
+      }
+    } catch (error) {
       if (mounted) {
-        String errorMessage = 'Error tidak terduga';
-
-        if (e is Exception) {
-          errorMessage = e.toString().replaceAll('Exception: ', '');
-        } else {
-          errorMessage = e.toString();
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              errorMessage,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.fixed,
-            elevation: 2,
-          ),
+        AppFeedback.error(
+          context,
+          error,
+          fallback: 'Tidak dapat masuk. Periksa data akun lalu coba lagi.',
         );
       }
     } finally {
@@ -243,8 +173,6 @@ class _LoginScreenState extends State<LoginScreen> {
               setDialogState(() => isSending = true);
               var dialogWasClosed = false;
               final navigator = Navigator.of(dialogContext);
-              final messenger = ScaffoldMessenger.of(this.context);
-
               try {
                 await _authService.sendPasswordResetEmail(
                   resetEmailController.text.trim(),
@@ -253,44 +181,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 if (!mounted) return;
                 dialogWasClosed = true;
                 navigator.pop();
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Tautan atur ulang kata sandi sudah dikirim ke email Anda',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    backgroundColor: Colors.green,
-                    duration: Duration(seconds: 4),
-                    behavior: SnackBarBehavior.fixed,
-                    elevation: 2,
-                  ),
+                AppFeedback.success(
+                  this.context,
+                  'Tautan atur ulang kata sandi sudah dikirim ke email Anda.',
                 );
-              } catch (e) {
+              } catch (error) {
                 if (!mounted) return;
-
-                final message = e is Exception
-                    ? e.toString().replaceAll('Exception: ', '')
-                    : e.toString();
-
-                messenger.showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      message,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    backgroundColor: Colors.red,
-                    duration: const Duration(seconds: 3),
-                    behavior: SnackBarBehavior.fixed,
-                    elevation: 2,
-                  ),
+                AppFeedback.error(
+                  this.context,
+                  error,
+                  fallback:
+                      'Tautan atur ulang belum dapat dikirim. Coba kembali beberapa saat lagi.',
                 );
               } finally {
                 if (!dialogWasClosed && context.mounted) {

@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:math' as math;
 import '../../utils/constants.dart';
+import '../../utils/app_feedback.dart';
 import '../../models/place_model.dart';
 import '../../models/navigation_instruction_model.dart';
 import '../../services/places_service.dart';
@@ -47,6 +48,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   Future<void> _speechQueue = Future<void>.value();
   bool _hasSpoken = false;
   bool _isSpeaking = false;
+  int _localSpeechGeneration = 0;
   bool _navigationSttActive = false;
   bool _navigationSttStarting = false;
   bool _isSendingSos = false;
@@ -162,7 +164,13 @@ class _NavigationScreenState extends State<NavigationScreen>
   String _destinationName = '';
 
   Future<void> speakSafe(String text) async {
+    final localGeneration = _localSpeechGeneration;
     final speech = _speechQueue.then((_) async {
+      if (localGeneration != _localSpeechGeneration ||
+          _ttsService.isSttActive) {
+        return;
+      }
+
       _isSpeaking = true;
       try {
         await _ttsService.speak(text);
@@ -272,6 +280,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
 
     _navigationSttStarting = true;
+    _localSpeechGeneration++;
 
     _sttService
         .startListening(
@@ -285,6 +294,8 @@ class _NavigationScreenState extends State<NavigationScreen>
 
             _handleNavigationCommand(text);
           },
+          pauseFor: const Duration(seconds: 2),
+          finalResultsOnly: true,
           onStatus: (status) {
             _navigationSttActive = status == 'listening';
           },
@@ -302,6 +313,12 @@ class _NavigationScreenState extends State<NavigationScreen>
     _navigationSttActive = false;
     _navigationSttStarting = false;
     await _sttService.stopListening();
+  }
+
+  Future<void> _finishNavigationStt() async {
+    await _sttService.finishListening();
+    _navigationSttActive = false;
+    _navigationSttStarting = false;
   }
 
   Future<void> _handleNavigationCommand(String command) async {
@@ -354,7 +371,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       return;
     }
 
-    await speakSafe('Perintah tidak dikenali');
+    await speakSafe(
+      'Perintah tidak dikenali. Tekan dan tahan tombol merah untuk mencoba kembali.',
+    );
   }
 
   bool _isCheckDistanceCommand(String command) {
@@ -443,7 +462,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     if (event.isVoiceAssistantStop) {
       debugPrint('[SMARTCANE_BUTTON] Navigasi mematikan STT');
-      await _stopNavigationStt();
+      await _finishNavigationStt();
       return;
     }
 
@@ -482,14 +501,13 @@ class _NavigationScreenState extends State<NavigationScreen>
         ),
       );
       unawaited(_announceSosStatus('Status SOS, berhasil dikirim ke keluarga'));
-    } catch (e) {
+    } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal mengirim SOS: ${e.toString()}'),
-          backgroundColor: AppColors.error,
-          duration: const Duration(seconds: 4),
-        ),
+      AppFeedback.error(
+        context,
+        error,
+        fallback:
+            'SOS belum dapat dikirim. Periksa koneksi dan coba kembali segera.',
       );
       unawaited(_announceSosStatus('Status SOS, gagal dikirim'));
     } finally {
@@ -2764,39 +2782,21 @@ class _NavigationScreenState extends State<NavigationScreen>
       print(
         '[ROUTING] ✅ Route loaded (Foot: ${_routeDurationMinutes.toStringAsFixed(0)} min)',
       );
-    } catch (e) {
-      print('[ROUTING] ❌ Error loading route: $e');
+    } catch (error) {
+      print('[ROUTING] ❌ Error loading route: $error');
       if (mounted) {
-        // Extract and format error message with better descriptions
-        String errorMsg = e.toString().replaceFirst('Exception: ', '');
-
-        // Map generic messages to user-friendly Indonesian messages
-        String userFriendlyMsg = errorMsg;
-        if (errorMsg.contains('Failed') || errorMsg.contains('network')) {
-          userFriendlyMsg =
-              '❌ Tidak dapat terhubung ke server.\nPastikan koneksi internet Anda stabil.';
-        } else if (errorMsg.contains('timeout') || errorMsg.contains('Time')) {
-          userFriendlyMsg =
-              '⏱️ Koneksi lambat atau server tidak merespons.\nCoba lagi dalam beberapa saat.';
-        } else if (errorMsg.contains('connection')) {
-          userFriendlyMsg =
-              '📡 Tidak ada koneksi internet.\nSilakan periksa jaringan Anda.';
-        } else {
-          userFriendlyMsg = '⚠️ Gagal menghitung rute.\nPesan: $errorMsg';
-        }
+        final userFriendlyMsg = AppErrorMessage.from(
+          error,
+          fallback:
+              'Rute belum dapat dihitung. Periksa tujuan dan coba kembali.',
+        );
 
         setState(() {
           _isLoadingRoute = false;
           _routeLoadError = userFriendlyMsg;
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(userFriendlyMsg),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
-        );
+        AppFeedback.show(context, userFriendlyMsg, type: AppFeedbackType.error);
       }
     }
   }

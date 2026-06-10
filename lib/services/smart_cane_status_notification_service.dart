@@ -32,6 +32,9 @@ class SmartCaneStatusNotificationService {
   bool _hasAnnouncedConnecting = false;
   _SmartCaneHazardLevel _lastHazardLevel = _SmartCaneHazardLevel.safe;
   DateTime? _lastHazardAnnouncementAt;
+  String? _lastAnnouncedHazardObject;
+  String? _lastAnnouncedGuidanceDecision;
+  DateTime? _safePathDetectedAt;
 
   void start() {
     if (_isStarted) return;
@@ -96,6 +99,9 @@ class SmartCaneStatusNotificationService {
     _hasAnnouncedConnecting = false;
     _lastHazardLevel = _SmartCaneHazardLevel.safe;
     _lastHazardAnnouncementAt = null;
+    _lastAnnouncedHazardObject = null;
+    _lastAnnouncedGuidanceDecision = null;
+    _safePathDetectedAt = null;
   }
 
   _SmartCaneRuntimeState get _currentState {
@@ -164,26 +170,79 @@ class SmartCaneStatusNotificationService {
         : _SmartCaneHazardLevel.safe;
 
     if (currentLevel == _SmartCaneHazardLevel.safe) {
-      _resetHazardState();
+      _announceSafePathWhenStable();
       return;
     }
 
+    _safePathDetectedAt = null;
     final now = DateTime.now();
+    final objectLabel = sensorData.detectedObjectLabel;
+    final guidanceDecision = sensorData.guidanceDecisionText;
     final levelChanged = currentLevel != _lastHazardLevel;
+    final objectChanged =
+        objectLabel != null && objectLabel != _lastAnnouncedHazardObject;
+    final decisionChanged =
+        guidanceDecision != null &&
+        guidanceDecision != _lastAnnouncedGuidanceDecision;
     final lastAnnouncementAt = _lastHazardAnnouncementAt;
     final repeatIntervalElapsed =
         lastAnnouncementAt == null ||
         now.difference(lastAnnouncementAt) >= const Duration(seconds: 8);
 
-    if (!levelChanged && !repeatIntervalElapsed) return;
+    if (!levelChanged &&
+        !objectChanged &&
+        !decisionChanged &&
+        !repeatIntervalElapsed) {
+      return;
+    }
 
     _lastHazardLevel = currentLevel;
     _lastHazardAnnouncementAt = now;
+    _lastAnnouncedHazardObject = objectLabel;
+    _lastAnnouncedGuidanceDecision = guidanceDecision;
 
     _queueTts(
-      currentLevel == _SmartCaneHazardLevel.danger
-          ? 'Bahaya, hambatan terdeteksi.'
-          : 'Hati-hati, hambatan terdeteksi.',
+      _hazardAnnouncement(currentLevel, objectLabel, guidanceDecision),
+      interrupt: true,
+    );
+  }
+
+  String _hazardAnnouncement(
+    _SmartCaneHazardLevel level,
+    String? objectLabel,
+    String? guidanceDecision,
+  ) {
+    final prefix = level == _SmartCaneHazardLevel.danger
+        ? 'Bahaya'
+        : 'Hati-hati';
+    final hazardMessage = objectLabel == null
+        ? '$prefix, hambatan terdeteksi.'
+        : '$prefix, $objectLabel terdeteksi sebagai hambatan.';
+    if (guidanceDecision == null) return hazardMessage;
+    return '$hazardMessage $guidanceDecision.';
+  }
+
+  void _announceSafePathWhenStable() {
+    if (_lastHazardLevel == _SmartCaneHazardLevel.safe) {
+      _safePathDetectedAt = null;
+      return;
+    }
+
+    final now = DateTime.now();
+    final safePathDetectedAt = _safePathDetectedAt;
+    if (safePathDetectedAt == null) {
+      _safePathDetectedAt = now;
+      return;
+    }
+
+    if (now.difference(safePathDetectedAt) <
+        const Duration(milliseconds: 1500)) {
+      return;
+    }
+
+    _resetHazardState();
+    _queueTts(
+      'Jalur sudah aman. Silakan lanjutkan perjalanan.',
       interrupt: true,
     );
   }
@@ -191,6 +250,9 @@ class SmartCaneStatusNotificationService {
   void _resetHazardState() {
     _lastHazardLevel = _SmartCaneHazardLevel.safe;
     _lastHazardAnnouncementAt = null;
+    _lastAnnouncedHazardObject = null;
+    _lastAnnouncedGuidanceDecision = null;
+    _safePathDetectedAt = null;
   }
 
   void _announceNoRememberedCane() {

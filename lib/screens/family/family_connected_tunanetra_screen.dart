@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../../services/pairing_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../widgets/app_dialog.dart';
 
@@ -52,7 +53,7 @@ class _FamilyConnectedTunaNetraScreenState
 
       if (doc.exists) {
         final userData = {'uid': doc.id, ...?doc.data()};
-        
+
         // Try to get connectedAt from family_members subcollection
         try {
           final familyMemberDoc = await FirebaseFirestore.instance
@@ -366,11 +367,11 @@ class _FamilyConnectedTunaNetraScreenState
     required String tunaNetraUid,
     required String tunaNetraName,
   }) async {
-    final messenger = ScaffoldMessenger.of(context);
     final confirmed = await showAppConfirmDialog(
       context: context,
       title: 'Putuskan Koneksi',
-      description: 'Apakah Anda yakin ingin memutuskan koneksi dengan $tunaNetraName?',
+      description:
+          'Apakah Anda yakin ingin memutuskan koneksi dengan $tunaNetraName?',
       icon: Icons.link_off_rounded,
       iconColor: AppColors.warning,
       cancelText: 'Batal',
@@ -383,12 +384,11 @@ class _FamilyConnectedTunaNetraScreenState
 
     final familyUid = FirebaseAuth.instance.currentUser?.uid;
     if (familyUid == null || familyUid.isEmpty) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('Akun keluarga belum terdeteksi'),
-          backgroundColor: AppColors.error,
-        ),
+      if (!context.mounted) return;
+      AppFeedback.show(
+        context,
+        'Akun keluarga belum terdeteksi. Silakan masuk kembali.',
+        type: AppFeedbackType.error,
       );
       return;
     }
@@ -396,22 +396,14 @@ class _FamilyConnectedTunaNetraScreenState
     try {
       await _pairingService.removePairedUser(familyUid, tunaNetraUid);
 
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: const Text('Koneksi berhasil diputuskan'),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            'Gagal memutuskan koneksi: ${e.toString().replaceAll('Exception: ', '')}',
-          ),
-          backgroundColor: AppColors.error,
-        ),
+      if (!context.mounted) return;
+      AppFeedback.success(context, 'Koneksi berhasil diputuskan.');
+    } catch (error) {
+      if (!context.mounted) return;
+      AppFeedback.error(
+        context,
+        error,
+        fallback: 'Koneksi belum dapat diputuskan. Silakan coba lagi.',
       );
     }
   }
