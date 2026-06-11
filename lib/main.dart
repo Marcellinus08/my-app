@@ -25,6 +25,12 @@ import 'screens/family/family_manage_places_screen.dart';
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<ScaffoldMessengerState> appScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
+VoidCallback? _onTunaNetraHomeReady;
+
+void notifyTunaNetraHomeReady() {
+  _onTunaNetraHomeReady?.call();
+}
+
 final RouteObserver<ModalRoute<void>> routeObserver =
     RouteObserver<ModalRoute<void>>();
 
@@ -138,6 +144,10 @@ class _MyAppState extends State<MyApp> {
     _smartCaneStatusNotificationService = SmartCaneStatusNotificationService(
       scaffoldMessengerKey: appScaffoldMessengerKey,
     );
+    _onTunaNetraHomeReady = () {
+      _startSmartCaneStatusNotifications();
+      unawaited(_smartCaneStatusNotificationService.beginStartupFlow());
+    };
     _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
       user,
     ) {
@@ -169,6 +179,7 @@ class _MyAppState extends State<MyApp> {
     _authStateSubscription?.cancel();
     _bleAutoReconnectDelayTimer?.cancel();
     _smartCaneStatusNotificationService.stop();
+    _onTunaNetraHomeReady = null;
     super.dispose();
   }
 
@@ -193,7 +204,6 @@ class _MyAppState extends State<MyApp> {
       }
 
       _startSmartCaneStatusNotifications();
-      unawaited(_smartCaneStatusNotificationService.beginStartupFlow());
       _hasStartedBleAutoReconnect = true;
       unawaited(
         SmartCaneBleService.instance.initializeAutoReconnect(

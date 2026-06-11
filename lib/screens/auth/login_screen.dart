@@ -102,9 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
           },
         );
 
-        // Keep user logged in but prevent navigation until verified
-        // Or optionally allow login and show verification reminder
-        // For now, allow login but show the warning above
+        return;
       } else {
         print('Email verified - proceeding with login');
       }

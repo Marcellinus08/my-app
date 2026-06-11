@@ -26,6 +26,19 @@ class TunaNetraVoiceCommands {
         text.contains('bantuan');
   }
 
+  static bool isReconnectSmartCaneCommand(String command) {
+    final text = command.toLowerCase();
+    final asksToReconnect =
+        text.contains('hubungkan ulang') ||
+        text.contains('sambungkan ulang') ||
+        text.contains('koneksikan ulang');
+    final mentionsCane =
+        text.contains('smartcane') ||
+        text.contains('smarthcane') ||
+        text.contains('tongkat');
+    return asksToReconnect && mentionsCane;
+  }
+
   static bool claimSosTrigger({
     Duration cooldown = const Duration(seconds: 5),
   }) {
@@ -134,6 +147,10 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
         if (onCommand != null) {
           onCommand(text).then((handled) {
             if (handled) return;
+            if (TunaNetraVoiceCommands.isReconnectSmartCaneCommand(text)) {
+              _handleReconnectSmartCaneCommand();
+              return;
+            }
             if (TunaNetraVoiceCommands.isSosCommand(text)) {
               _handleSosCommand();
               return;
@@ -142,6 +159,11 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
               _handleHomeVoiceCommand(isHomePage: isHomePage);
             }
           });
+          return;
+        }
+
+        if (TunaNetraVoiceCommands.isReconnectSmartCaneCommand(text)) {
+          _handleReconnectSmartCaneCommand();
           return;
         }
 
@@ -197,6 +219,51 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
     } finally {
       _isHomeCommandSpeaking = false;
       _isSendingHardwareSos = false;
+      _hasHandledHomeCommand = false;
+    }
+  }
+
+  Future<void> _handleReconnectSmartCaneCommand() async {
+    if (_hasHandledHomeCommand) return;
+    _hasHandledHomeCommand = true;
+    _homeCommandListenerActive = false;
+    await _homeCommandSttService.stopListening();
+
+    final bleService = SmartCaneBleService.instance;
+    _isHomeCommandSpeaking = true;
+    try {
+      if (bleService.isConnected) {
+        await _homeCommandTtsService.speak('SmartCane sudah terhubung.');
+        return;
+      }
+
+      if (bleService.isConnecting || bleService.isAutoConnecting) {
+        await _homeCommandTtsService.speak(
+          'SmartCane sedang dihubungkan. Mohon tunggu.',
+        );
+        return;
+      }
+
+      final rememberedCaneId = await bleService.getRememberedCaneRemoteId();
+      if (rememberedCaneId == null) {
+        await _homeCommandTtsService.speak(
+          'Belum ada SmartCane tersimpan. Buka menu koneksi untuk menghubungkan SmartCane.',
+        );
+        return;
+      }
+
+      await _homeCommandTtsService.speak(
+        'Mencoba menghubungkan ulang SmartCane.',
+      );
+      await bleService.initializeAutoReconnect(force: true, maxAttempts: 5);
+
+      await _homeCommandTtsService.speak(
+        bleService.isConnected
+            ? 'SmartCane berhasil terhubung kembali.'
+            : 'SmartCane belum dapat terhubung. Pastikan SmartCane menyala dan berada di dekat Anda.',
+      );
+    } finally {
+      _isHomeCommandSpeaking = false;
       _hasHandledHomeCommand = false;
     }
   }

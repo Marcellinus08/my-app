@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../services/auth_service.dart';
 import '../../services/pairing_service.dart';
+import '../../services/pending_registration_service.dart';
 import '../../services/user_service.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
+import '../../widgets/app_dialog.dart';
 import '../../widgets/modern_text_field.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -14,9 +16,11 @@ class RegisterScreen extends StatefulWidget {
   State<RegisterScreen> createState() => _RegisterScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
+class _RegisterScreenState extends State<RegisterScreen>
+    with WidgetsBindingObserver {
   final _authService = AuthService();
   final _pairingService = PairingService();
+  final _pendingRegistrationService = PendingRegistrationService();
   final _userService = UserService();
 
   // Form Keys
@@ -40,8 +44,37 @@ class _RegisterScreenState extends State<RegisterScreen> {
   UserType _selectedUserType = UserType.tunanetra;
   bool _isLoading = false;
   bool _isVerificationDialogOpen = false;
+  bool _verificationCancelled = false;
+  bool _isRestoringRegistration = false;
 
-  void _showVerificationDialog({required String title, required String email}) {
+  void _showVerificationDialog({required String email}) {
+    if (!mounted || _isVerificationDialogOpen) return;
+
+    _isVerificationDialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierColor: AppDialogStyle.barrierColor,
+      barrierDismissible: false,
+      builder: (dialogContext) => _EmailVerificationDialog(
+        email: email,
+        onCancel: () {
+          _verificationCancelled = true;
+          _isVerificationDialogOpen = false;
+          Navigator.of(dialogContext).pop();
+        },
+        onResend: () => _authService.resendVerificationEmail(maxRetries: 1),
+      ),
+    ).whenComplete(() {
+      _isVerificationDialogOpen = false;
+    });
+  }
+
+  // TODO: Remove after the verification UI migration is fully released.
+  // ignore: unused_element
+  void _showLegacyVerificationDialog({
+    required String title,
+    required String email,
+  }) {
     if (!mounted || _isVerificationDialogOpen) return;
 
     _isVerificationDialogOpen = true;
@@ -49,8 +82,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        return WillPopScope(
-          onWillPop: () async => false,
+        return PopScope(
+          canPop: false,
           child: AlertDialog(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(20),
@@ -99,6 +132,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _userEmailController = TextEditingController();
     _userPasswordController = TextEditingController();
     _userNameController = TextEditingController();
@@ -109,10 +143,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _familyPairingCodeController = TextEditingController();
     _familyNameController2 = TextEditingController();
     _familyPhoneController2 = TextEditingController();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restorePendingRegistration();
+    });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _userEmailController.dispose();
     _userPasswordController.dispose();
     _userNameController.dispose();
@@ -124,6 +162,168 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _familyNameController2.dispose();
     _familyPhoneController2.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _restorePendingRegistration();
+    }
+  }
+
+  Future<void> _restorePendingRegistration() async {
+    if (!mounted ||
+        _isRestoringRegistration ||
+        _isVerificationDialogOpen ||
+        _isLoading) {
+      return;
+    }
+
+    final pending = await _pendingRegistrationService.load();
+    final currentUser = _authService.currentUser;
+    if (pending == null ||
+        currentUser == null ||
+        currentUser.email?.toLowerCase() != pending.email.toLowerCase()) {
+      return;
+    }
+
+    _isRestoringRegistration = true;
+    _verificationCancelled = false;
+    if (mounted) setState(() => _isLoading = true);
+
+    try {
+      var verified = await _authService.isEmailVerified();
+      if (!verified && mounted) {
+        _showVerificationDialog(email: pending.email);
+        verified = await _authService.waitForEmailVerificationWithLongPolling(
+          isCancelled: () => _verificationCancelled,
+        );
+      }
+
+      _closeVerificationDialogIfOpen();
+
+      if (_verificationCancelled) {
+        await _pendingRegistrationService.clear();
+        await _authService.deleteAccount();
+        if (mounted) {
+          AppFeedback.show(
+            context,
+            'Pendaftaran dibatalkan.',
+            type: AppFeedbackType.info,
+          );
+        }
+        return;
+      }
+
+      if (!verified) return;
+
+      await _completePendingRegistration(pending);
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.error(
+          context,
+          error,
+          fallback:
+              'Pendaftaran belum dapat diselesaikan. Aplikasi akan mencoba lagi saat dibuka kembali.',
+        );
+      }
+    } finally {
+      _isRestoringRegistration = false;
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _completePendingRegistration(PendingRegistration pending) async {
+    final user = _authService.currentUser;
+    if (user == null) {
+      throw Exception('Sesi pendaftaran tidak ditemukan');
+    }
+
+    if (pending.userType == 'tunanetra') {
+      await _runFinalizationStep(
+        () => _authService.saveUserDataToFirestore(
+          uid: user.uid,
+          email: pending.email,
+          name: pending.name,
+          phoneNumber: pending.phoneNumber,
+          userType: UserType.tunanetra,
+        ),
+      );
+      await _runFinalizationStep(
+        () => _pairingService.savePairingCode(user.uid, pending.pairingCode),
+      );
+      await _runFinalizationStep(
+        () => _userService.saveTunaNetraUser(
+          uid: user.uid,
+          email: pending.email,
+          name: pending.name,
+          phoneNumber: pending.phoneNumber,
+          pairingCode: pending.pairingCode,
+          familyContacts: [],
+        ),
+      );
+      await _pendingRegistrationService.clear();
+      if (mounted) {
+        await _showRegistrationSuccess();
+      }
+      return;
+    }
+
+    final targetUser = await _pairingService.verifyPairingCode(
+      pending.pairingCode,
+    );
+    if (targetUser == null) {
+      throw Exception('Kode pairing tidak valid atau sudah tidak tersedia');
+    }
+
+    await _runFinalizationStep(
+      () => _userService.saveFamilyUser(
+        uid: user.uid,
+        email: pending.email,
+        name: pending.name,
+        phoneNumber: pending.phoneNumber,
+        pairingCode: pending.pairingCode,
+        pairedUserUid: '',
+        isEmailVerified: true,
+      ),
+    );
+    await _pairingService.createPairingRequest(
+      familyUid: user.uid,
+      pairingCode: pending.pairingCode,
+    );
+    await _pendingRegistrationService.clear();
+    if (mounted) {
+      await _showRegistrationSuccess();
+    }
+  }
+
+  Future<void> _runFinalizationStep(
+    Future<void> Function() operation, {
+    int maxAttempts = 3,
+  }) async {
+    Object? lastError;
+    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await operation();
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < maxAttempts) {
+          await Future.delayed(Duration(seconds: attempt * 2));
+        }
+      }
+    }
+    throw lastError ?? Exception('Penyelesaian pendaftaran gagal');
+  }
+
+  Future<void> _showRegistrationSuccess() async {
+    if (!mounted) return;
+
+    AppFeedback.success(context, 'Akun berhasil terdaftar. Silakan masuk.');
+    await Future.delayed(const Duration(milliseconds: 2500));
+
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, AppRoutes.login);
   }
 
   // ========== VALIDATORS ==========
@@ -181,6 +381,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     setState(() => _isLoading = true);
+    _verificationCancelled = false;
+    bool provisionalAccountCreated = false;
+    bool emailVerified = false;
 
     try {
       final email = _userEmailController.text.trim().toLowerCase();
@@ -212,6 +415,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (user == null) {
         throw Exception('Gagal membuat akun');
       }
+      provisionalAccountCreated = true;
 
       print('\n✅ [UI] Firebase account created');
       print('   UID: ${user.uid}');
@@ -225,8 +429,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       String pairingCode = _pairingService.generatePairingCode();
       print('   Pairing code: $pairingCode');
 
+      await _pendingRegistrationService.save(
+        PendingRegistration(
+          userType: 'tunanetra',
+          email: email,
+          name: name,
+          phoneNumber: phone,
+          pairingCode: pairingCode,
+        ),
+      );
+
       if (mounted) {
-        _showVerificationDialog(title: '📧 Verifikasi Email', email: email);
+        _showVerificationDialog(email: email);
 
         setState(() => _isLoading = true);
       }
@@ -238,57 +452,67 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       // Using optimized defaults: 2s polling interval, 300 attempts = 10 minutes
       final verified = await _authService
-          .waitForEmailVerificationWithLongPolling();
+          .waitForEmailVerificationWithLongPolling(
+            isCancelled: () => _verificationCancelled,
+          );
 
       _closeVerificationDialogIfOpen(); // Close waiting dialog immediately
 
       if (!verified) {
-        throw Exception(
-          'Verifikasi email timeout. Silakan login dan verify email kemudian.',
-        );
+        await _pendingRegistrationService.clear();
+        await _authService.deleteAccount();
+        provisionalAccountCreated = false;
+        if (_verificationCancelled) {
+          if (mounted) {
+            AppFeedback.show(
+              context,
+              'Pendaftaran dibatalkan.',
+              type: AppFeedbackType.info,
+            );
+          }
+          return;
+        }
+        throw Exception('Waktu verifikasi habis. Silakan daftar kembali.');
       }
+      emailVerified = true;
 
       print('\n✅ [UI] Email verification confirmed!');
 
       // ===== STEP 4: Save Data to Firestore (AFTER verification) =====
       print('\n[UI] STEP 3: Saving user data to Firestore...');
 
-      await _authService.saveUserDataToFirestore(
-        uid: user.uid,
-        email: email,
-        name: name,
-        phoneNumber: phone,
-        userType: UserType.tunanetra,
+      await _runFinalizationStep(
+        () => _authService.saveUserDataToFirestore(
+          uid: user.uid,
+          email: email,
+          name: name,
+          phoneNumber: phone,
+          userType: UserType.tunanetra,
+        ),
       );
 
       print('\n[UI] Saving pairing code to Firestore...');
-      await _pairingService.savePairingCode(user.uid, pairingCode);
+      await _runFinalizationStep(
+        () => _pairingService.savePairingCode(user.uid, pairingCode),
+      );
       print('✅ Pairing code saved');
 
       print('\n[UI] Saving Pengguna data...');
-      await _userService.saveTunaNetraUser(
-        uid: user.uid,
-        email: email,
-        name: name,
-        phoneNumber: phone,
-        pairingCode: pairingCode,
-        familyContacts: [],
+      await _runFinalizationStep(
+        () => _userService.saveTunaNetraUser(
+          uid: user.uid,
+          email: email,
+          name: name,
+          phoneNumber: phone,
+          pairingCode: pairingCode,
+          familyContacts: [],
+        ),
       );
       print('✅ Family contact saved');
+      await _pendingRegistrationService.clear();
 
       if (mounted) {
-        AppFeedback.success(context, 'Pendaftaran berhasil.');
-
-        print(
-          '\n[UI] Registration complete, redirecting to login immediately...',
-        );
-        // Immediate navigation tanpa delay
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) {
-          // Clear notification sebelum navigate
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          Navigator.pushReplacementNamed(context, AppRoutes.login);
-        }
+        await _showRegistrationSuccess();
       }
 
       print('\n✅ [PENGGUNA REGISTRATION] COMPLETE\n');
@@ -308,6 +532,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (mounted) {
         // Try to close dialog if still open
         _closeVerificationDialogIfOpen();
+      }
+
+      if (provisionalAccountCreated && !emailVerified) {
+        await _pendingRegistrationService.clear();
+        try {
+          await _authService.deleteAccount();
+        } catch (_) {
+          await _authService.logout();
+        }
       }
 
       if (mounted) {
@@ -331,6 +564,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     setState(() => _isLoading = true);
+    _verificationCancelled = false;
+    bool provisionalAccountCreated = false;
+    bool emailVerified = false;
 
     try {
       final pairingCode = _familyPairingCodeController.text
@@ -354,8 +590,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
         '📧 [Keluarga] Creating account and sending verification email to: $email',
       );
 
-      _showVerificationDialog(title: 'Verifikasi Email Keluarga', email: email);
-
       final user = await _authService.registerWithEmailPasswordAndVerification(
         email: email,
         password: password,
@@ -367,20 +601,49 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (user == null) {
         throw Exception('Gagal membuat akun keluarga');
       }
+      provisionalAccountCreated = true;
+
+      if (mounted) {
+        _showVerificationDialog(email: email);
+      }
+
+      await _pendingRegistrationService.save(
+        PendingRegistration(
+          userType: 'family',
+          email: email,
+          name: _familyNameController2.text.trim(),
+          phoneNumber: _familyPhoneController2.text.trim(),
+          pairingCode: pairingCode,
+        ),
+      );
 
       print('✅ [Keluarga] Account created: ${user.uid}');
 
       print('⏳ [Keluarga] Waiting for email verification...');
       final verified = await _authService
-          .waitForEmailVerificationWithLongPolling();
+          .waitForEmailVerificationWithLongPolling(
+            isCancelled: () => _verificationCancelled,
+          );
 
       _closeVerificationDialogIfOpen();
 
       if (!verified) {
-        throw Exception(
-          'Verifikasi email timeout. Silakan login dan verifikasi email kemudian.',
-        );
+        await _pendingRegistrationService.clear();
+        await _authService.deleteAccount();
+        provisionalAccountCreated = false;
+        if (_verificationCancelled) {
+          if (mounted) {
+            AppFeedback.show(
+              context,
+              'Pendaftaran dibatalkan.',
+              type: AppFeedbackType.info,
+            );
+          }
+          return;
+        }
+        throw Exception('Waktu verifikasi habis. Silakan daftar kembali.');
       }
+      emailVerified = true;
 
       // Re-check pairing code after verification to ensure target user still exists.
       final verifiedPairingInfo = await _pairingService.verifyPairingCode(
@@ -394,19 +657,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
           verifiedPairingInfo['name'] ??
           pairedUserInfo['name'] ??
           'pengguna TunaNetra';
+      print('[Keluarga] Pairing target confirmed: $targetName');
 
       print('🔄 [Keluarga] Saving Keluarga data...');
       final familyName = _familyNameController2.text.trim();
       final familyPhone = _familyPhoneController2.text.trim();
 
-      await _userService.saveFamilyUser(
-        uid: user.uid,
-        email: email,
-        name: familyName,
-        phoneNumber: familyPhone,
-        pairingCode: pairingCode,
-        pairedUserUid: '',
-        isEmailVerified: true,
+      await _runFinalizationStep(
+        () => _userService.saveFamilyUser(
+          uid: user.uid,
+          email: email,
+          name: familyName,
+          phoneNumber: familyPhone,
+          pairingCode: pairingCode,
+          pairedUserUid: '',
+          isEmailVerified: true,
+        ),
       );
 
       print('🔄 [Keluarga] Sending pairing request to Pengguna...');
@@ -416,16 +682,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       print('✅ Registration complete!');
+      await _pendingRegistrationService.clear();
 
       if (mounted) {
-        AppFeedback.success(
-          context,
-          'Pendaftaran berhasil. Permintaan koneksi terkirim ke $targetName.',
-        );
-
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, AppRoutes.login);
+        await _showRegistrationSuccess();
       }
     } on PairingException catch (e) {
       if (mounted) {
@@ -439,6 +699,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (e) {
       if (mounted) {
         _closeVerificationDialogIfOpen();
+      }
+      if (provisionalAccountCreated && !emailVerified) {
+        await _pendingRegistrationService.clear();
+        try {
+          await _authService.deleteAccount();
+        } catch (_) {
+          await _authService.logout();
+        }
+      }
+      if (mounted) {
         AppFeedback.error(
           context,
           e,
@@ -1134,6 +1404,285 @@ class _AuthSubmitButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _EmailVerificationDialog extends StatefulWidget {
+  final String email;
+  final VoidCallback onCancel;
+  final Future<void> Function() onResend;
+
+  const _EmailVerificationDialog({
+    required this.email,
+    required this.onCancel,
+    required this.onResend,
+  });
+
+  @override
+  State<_EmailVerificationDialog> createState() =>
+      _EmailVerificationDialogState();
+}
+
+class _EmailVerificationDialogState extends State<_EmailVerificationDialog> {
+  bool _isResending = false;
+
+  Future<void> _resend() async {
+    if (_isResending) return;
+    setState(() => _isResending = true);
+    try {
+      await widget.onResend();
+      if (mounted) {
+        AppFeedback.success(
+          context,
+          'Email verifikasi berhasil dikirim ulang.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        AppFeedback.error(
+          context,
+          error,
+          fallback:
+              'Email verifikasi belum dapat dikirim ulang. Coba beberapa saat lagi.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isResending = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: AppDialogStyle.insetPadding,
+        titlePadding: AppDialogStyle.titlePadding,
+        contentPadding: AppDialogStyle.contentPadding,
+        actionsPadding: AppDialogStyle.actionPadding,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppDialogStyle.borderRadius),
+          side: const BorderSide(color: AppDialogStyle.borderColor, width: 1),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: AppColors.infoLight,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.mark_email_unread_outlined,
+                color: AppColors.primary,
+                size: 21,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Verifikasi email',
+                style: AppTextStyles.bodyLarge.copyWith(
+                  color: AppColors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Tautan verifikasi telah dikirim ke alamat berikut.',
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppDialogStyle.borderColor),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.email_outlined,
+                      color: AppColors.primary,
+                      size: 19,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        widget.email,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const _VerificationStep(
+                number: '1',
+                text: 'Buka kotak masuk atau folder spam.',
+              ),
+              const SizedBox(height: 9),
+              const _VerificationStep(
+                number: '2',
+                text: 'Tekan tautan Verifikasi email.',
+              ),
+              const SizedBox(height: 9),
+              const _VerificationStep(
+                number: '3',
+                text: 'Kembali ke aplikasi setelah berhasil.',
+              ),
+              const SizedBox(height: 18),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.infoLight.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Menunggu konfirmasi verifikasi',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: AppColors.primaryDark,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: widget.onCancel,
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSecondary,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    'Batalkan',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isResending ? null : _resend,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: Text(
+                    _isResending ? 'Mengirim...' : 'Kirim ulang',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VerificationStep extends StatelessWidget {
+  final String number;
+  final String text;
+
+  const _VerificationStep({required this.number, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: AppColors.infoLight,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            number,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.primaryDark,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              text,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

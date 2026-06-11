@@ -356,8 +356,15 @@ class AuthService {
       } catch (e) {
         print('⚠️  [REGISTER] Warning: Could not send verification email');
         print('   Error: $e');
-        print('   User can manually trigger resend from login screen');
-        print('   Proceeding with registration anyway...');
+        try {
+          await user.delete();
+          print('Provisional Auth account removed');
+        } catch (deleteError) {
+          print('Could not remove provisional account: $deleteError');
+        }
+        throw Exception(
+          'Email verifikasi belum dapat dikirim. Periksa koneksi lalu coba lagi.',
+        );
       }
 
       print('\n✅ [AUTH SERVICE] STEP 1 COMPLETE - WAITING FOR VERIFICATION');
@@ -372,6 +379,37 @@ class AuthService {
 
       switch (e.code) {
         case 'email-already-in-use':
+          try {
+            final existingCredential = await _auth
+                .signInWithEmailAndPassword(email: email, password: password)
+                .timeout(const Duration(seconds: 30));
+            final existingUser = existingCredential.user;
+            if (existingUser != null) {
+              await existingUser.reload();
+              final profile = await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(existingUser.uid)
+                  .get()
+                  .timeout(const Duration(seconds: 15));
+
+              if (!profile.exists) {
+                final refreshedUser = _auth.currentUser;
+                if (refreshedUser != null && !refreshedUser.emailVerified) {
+                  await refreshedUser.sendEmailVerification().timeout(
+                    const Duration(seconds: 30),
+                  );
+                }
+                print(
+                  '[AUTH] Resuming incomplete registration for ${existingUser.uid}',
+                );
+                return refreshedUser ?? existingUser;
+              }
+            }
+          } catch (recoveryError) {
+            print(
+              '[AUTH] Incomplete registration recovery failed: $recoveryError',
+            );
+          }
           throw Exception('Email sudah terdaftar');
         case 'weak-password':
           throw Exception('Password terlalu lemah');
@@ -413,6 +451,7 @@ class AuthService {
           .set({
             'uid': uid,
             'email': email,
+            'username': name,
             'name': name,
             'phoneNumber': phoneNumber,
             'userType': userType.toString(),
@@ -440,7 +479,34 @@ class AuthService {
   /// Cek apakah email sudah diverifikasi
   /// Check if current user's email is verified
   /// Automatically refreshes user data from Firebase
-  Future<bool> isEmailVerified() async {
+  Future<bool> isEmailVerified({int maxRetries = 3}) async {
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await _checkEmailVerifiedOnce();
+      } on FirebaseAuthException catch (e) {
+        if (e.code != 'network-request-failed') rethrow;
+        print(
+          '[AUTH] Network not ready after returning to the app '
+          '(attempt $attempt/$maxRetries)',
+        );
+      } on TimeoutException catch (e) {
+        print(
+          '[AUTH] Verification check timed out '
+          '(attempt $attempt/$maxRetries): $e',
+        );
+      }
+
+      if (attempt < maxRetries) {
+        await Future.delayed(Duration(seconds: attempt));
+      }
+    }
+
+    // The polling loop will retry. A foreground network transition must not
+    // cancel an otherwise valid registration.
+    return false;
+  }
+
+  Future<bool> _checkEmailVerifiedOnce() async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
@@ -450,9 +516,21 @@ class AuthService {
 
       // Refresh user untuk dapatkan email verification status terbaru dari Firebase
       print('[AUTH] Refreshing email verification status for: ${user.email}');
-      await user.reload();
+      await user.reload().timeout(const Duration(seconds: 15));
 
-      final verified = user.emailVerified;
+      final refreshedUser = _auth.currentUser;
+      final verified = refreshedUser?.emailVerified ?? false;
+      if (verified) {
+        try {
+          await refreshedUser
+              ?.getIdToken(true)
+              .timeout(const Duration(seconds: 15));
+        } catch (tokenError) {
+          // Verification is already valid. A delayed token refresh must not
+          // turn a successful email verification into a failed registration.
+          print('[AUTH] Token refresh delayed: $tokenError');
+        }
+      }
       print('[AUTH] Email verified status: $verified');
       return verified;
     } catch (e) {
@@ -470,6 +548,7 @@ class AuthService {
   Future<bool> waitForEmailVerificationWithLongPolling({
     int maxAttempts = 300, // 10 minutes (300 * 2 seconds)
     Duration checkInterval = const Duration(seconds: 2),
+    bool Function()? isCancelled,
   }) async {
     try {
       print('\n╔════════════════════════════════════════════════════════╗');
@@ -486,8 +565,18 @@ class AuthService {
       print('   📧 Waiting for user to click verification link...\n');
 
       for (int i = 0; i < maxAttempts; i++) {
+        if (isCancelled?.call() ?? false) {
+          print('[AUTH] Verification polling cancelled by user');
+          return false;
+        }
+
         // Wait before checking
         await Future.delayed(checkInterval);
+
+        if (isCancelled?.call() ?? false) {
+          print('[AUTH] Verification polling cancelled by user');
+          return false;
+        }
 
         // Refresh and check status
         final verified = await isEmailVerified();

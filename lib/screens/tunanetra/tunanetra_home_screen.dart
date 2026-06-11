@@ -116,6 +116,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         .batteryDataStream
         .listen(_handleSmartCaneBatteryData);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      notifyTunaNetraHomeReady();
       await CorePermissionService().ensureTunaNetraCorePermissions(
         onLocationPermissionHandled: (_) async {
           if (!mounted) return;
@@ -163,10 +164,25 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     });
   }
 
-  Future<void> speakSafe(String text) async {
+  Future<void> speakSafe(
+    String text, {
+    TtsPriority priority = TtsPriority.normal,
+    String? deduplicationKey,
+    String? replacementKey,
+    Duration? maxAge,
+  }) async {
     _isSpeaking = true;
-    await _ttsService.speak(text);
-    _isSpeaking = false;
+    try {
+      await _ttsService.speak(
+        text,
+        priority: priority,
+        deduplicationKey: deduplicationKey,
+        replacementKey: replacementKey,
+        maxAge: maxAge,
+      );
+    } finally {
+      _isSpeaking = false;
+    }
   }
 
   void _handleSmartCaneBatteryData(SmartCaneBatteryData data) {
@@ -295,6 +311,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       await _triggerEmergency();
     } else if (command.contains("cek cuaca")) {
       await _speakCurrentWeather();
+    } else if (_isReconnectSmartCaneCommand(command)) {
+      await _reconnectSmartCaneFromVoice();
     } else if (_isConnectSmartCaneCommand(command)) {
       await speakSafe("Membuka koneksi SmartCane");
       await _handleHomeConnectionTap();
@@ -365,6 +383,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     return TunaNetraVoiceCommands.isHomeCommand(text) ||
         text.contains("cek cuaca") ||
         text.contains("bluetooth") ||
+        text.contains("hubungkan ulang tongkat") ||
+        text.contains("hubungkan ulang smartcane") ||
+        text.contains("hubungkan ulang smarthcane") ||
+        text.contains("sambungkan ulang tongkat") ||
+        text.contains("sambungkan ulang smartcane") ||
+        text.contains("sambungkan ulang smarthcane") ||
         text.contains("hubungkan tongkat") ||
         text.contains("hubungkan smartcane") ||
         text.contains("hubungkan smarthcane") ||
@@ -386,6 +410,56 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         command.contains("hubungkan tongkat") ||
         command.contains("hubungkan smartcane") ||
         command.contains("hubungkan smarthcane");
+  }
+
+  bool _isReconnectSmartCaneCommand(String command) {
+    return TunaNetraVoiceCommands.isReconnectSmartCaneCommand(command);
+  }
+
+  Future<void> _reconnectSmartCaneFromVoice() async {
+    if (_bleService.isConnected) {
+      await speakSafe("SmartCane sudah terhubung.");
+      return;
+    }
+
+    if (_bleService.isConnecting || _bleService.isAutoConnecting) {
+      await speakSafe("SmartCane sedang dihubungkan. Mohon tunggu.");
+      return;
+    }
+
+    final rememberedCaneId = await _bleService.getRememberedCaneRemoteId();
+    if (rememberedCaneId == null) {
+      await speakSafe(
+        "Belum ada SmartCane tersimpan. Gunakan perintah hubungkan SmartCane untuk membuka menu koneksi.",
+      );
+      return;
+    }
+
+    await speakSafe("Mencoba menghubungkan ulang SmartCane.");
+    await _bleService.initializeAutoReconnect(
+      force: true,
+      maxAttempts: 5,
+      log: (message) => debugPrint(message),
+      updateStatus: _updateHomeBleStatus,
+    );
+
+    if (_bleService.isConnected) {
+      if (mounted) {
+        AppFeedback.success(context, 'SmartCane berhasil terhubung kembali.');
+      }
+      await speakSafe("SmartCane berhasil terhubung kembali.");
+      return;
+    }
+
+    if (mounted) {
+      AppFeedback.warning(
+        context,
+        'SmartCane belum dapat terhubung. Pastikan tongkat menyala dan berada di dekat Anda.',
+      );
+    }
+    await speakSafe(
+      "SmartCane belum dapat terhubung. Pastikan SmartCane menyala dan berada di dekat Anda.",
+    );
   }
 
   bool _isCheckSmartCaneCommand(String command) {
@@ -1338,7 +1412,11 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     Object? sosError;
 
     try {
-      await speakSafe('Mengirim SOS darurat');
+      await speakSafe(
+        'Mengirim SOS darurat',
+        priority: TtsPriority.critical,
+        deduplicationKey: 'home-sos-sending',
+      );
       await _sosService.sendSosAlert();
       sosSent = true;
     } catch (e) {
@@ -1386,7 +1464,11 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       return;
     }
     try {
-      await speakSafe(message);
+      await speakSafe(
+        message,
+        priority: TtsPriority.critical,
+        deduplicationKey: 'home-sos-status-$message',
+      );
     } finally {
       _sosStatusAnnouncement = null;
     }

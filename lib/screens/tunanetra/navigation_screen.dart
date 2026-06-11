@@ -45,7 +45,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   final SosService _sosService = SosService();
   final TTSService _ttsService = TTSService();
   final STTService _sttService = STTService();
-  Future<void> _speechQueue = Future<void>.value();
   bool _hasSpoken = false;
   bool _isSpeaking = false;
   int _localSpeechGeneration = 0;
@@ -163,23 +162,28 @@ class _NavigationScreenState extends State<NavigationScreen>
   int _arrivalConfirmationCount = 0;
   String _destinationName = '';
 
-  Future<void> speakSafe(String text) async {
+  Future<void> speakSafe(
+    String text, {
+    TtsPriority priority = TtsPriority.normal,
+    String? deduplicationKey,
+    String? replacementKey,
+    Duration? maxAge,
+  }) async {
     final localGeneration = _localSpeechGeneration;
-    final speech = _speechQueue.then((_) async {
-      if (localGeneration != _localSpeechGeneration ||
-          _ttsService.isSttActive) {
-        return;
-      }
+    if (localGeneration != _localSpeechGeneration) return;
 
-      _isSpeaking = true;
-      try {
-        await _ttsService.speak(text);
-      } finally {
-        _isSpeaking = false;
-      }
-    });
-    _speechQueue = speech.catchError((Object _) {});
-    await speech;
+    _isSpeaking = true;
+    try {
+      await _ttsService.speak(
+        text,
+        priority: priority,
+        deduplicationKey: deduplicationKey,
+        replacementKey: replacementKey,
+        maxAge: maxAge,
+      );
+    } finally {
+      _isSpeaking = false;
+    }
   }
 
   @override
@@ -341,6 +345,11 @@ class _NavigationScreenState extends State<NavigationScreen>
       return;
     }
 
+    if (TunaNetraVoiceCommands.isReconnectSmartCaneCommand(cleanedCommand)) {
+      await _reconnectSmartCaneFromNavigationVoice();
+      return;
+    }
+
     if (_isCheckDistanceCommand(cleanedCommand)) {
       await _speakNavigationDistance();
       return;
@@ -373,6 +382,41 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     await speakSafe(
       'Perintah tidak dikenali. Tekan dan tahan tombol merah untuk mencoba kembali.',
+    );
+  }
+
+  Future<void> _reconnectSmartCaneFromNavigationVoice() async {
+    if (_smartCaneBleService.isConnected) {
+      await speakSafe('SmartCane sudah terhubung.');
+      return;
+    }
+
+    if (_smartCaneBleService.isConnecting ||
+        _smartCaneBleService.isAutoConnecting) {
+      await speakSafe('SmartCane sedang dihubungkan. Mohon tunggu.');
+      return;
+    }
+
+    final rememberedCaneId = await _smartCaneBleService
+        .getRememberedCaneRemoteId();
+    if (rememberedCaneId == null) {
+      await speakSafe(
+        'Belum ada SmartCane tersimpan. Buka menu koneksi untuk menghubungkan SmartCane.',
+      );
+      return;
+    }
+
+    await speakSafe('Mencoba menghubungkan ulang SmartCane.');
+    await _smartCaneBleService.initializeAutoReconnect(
+      force: true,
+      maxAttempts: 5,
+      log: debugPrint,
+    );
+
+    await speakSafe(
+      _smartCaneBleService.isConnected
+          ? 'SmartCane berhasil terhubung kembali.'
+          : 'SmartCane belum dapat terhubung. Pastikan SmartCane menyala dan berada di dekat Anda.',
     );
   }
 
@@ -490,7 +534,11 @@ class _NavigationScreenState extends State<NavigationScreen>
     recordSosPressedEvent();
 
     try {
-      await speakSafe('Mengirim SOS darurat');
+      await speakSafe(
+        'Mengirim SOS darurat',
+        priority: TtsPriority.critical,
+        deduplicationKey: 'navigation-sos-sending',
+      );
       await _sosService.sendSosAlert();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -518,7 +566,11 @@ class _NavigationScreenState extends State<NavigationScreen>
   Future<void> _announceSosStatus(String message) async {
     await Future.delayed(const Duration(milliseconds: 600));
     if (!mounted) return;
-    await speakSafe(message);
+    await speakSafe(
+      message,
+      priority: TtsPriority.critical,
+      deduplicationKey: 'navigation-sos-status-$message',
+    );
   }
 
   void _safeMoveMap(LatLng center, [double? zoom]) {
@@ -823,7 +875,14 @@ class _NavigationScreenState extends State<NavigationScreen>
       });
     }
 
-    unawaited(speakSafe('Belok berhasil. Lanjutkan perjalanan.'));
+    unawaited(
+      speakSafe(
+        'Belok berhasil. Lanjutkan perjalanan.',
+        priority: TtsPriority.navigation,
+        replacementKey: 'navigation-guidance',
+        maxAge: const Duration(seconds: 8),
+      ),
+    );
     _updateLiveInstructionDistance(stabilizedLocation, allowVoiceCue: false);
   }
 
@@ -1374,7 +1433,16 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (!hasNextTurn &&
         conservativeDistance <= _turnAreaDistanceMeters &&
         _announcedNowInstructionIndexes.add(_currentInstructionIndex)) {
-      unawaited(speakSafe('Tujuan berada di depan.'));
+      unawaited(
+        speakSafe(
+          'Tujuan berada di depan.',
+          priority: TtsPriority.navigation,
+          deduplicationKey:
+              'navigation-destination-ahead-$_currentInstructionIndex',
+          replacementKey: 'navigation-guidance',
+          maxAge: const Duration(seconds: 8),
+        ),
+      );
       return;
     }
 
@@ -1401,7 +1469,15 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (cueMeters == 20 && announcedCueMeters.contains(10)) return;
     if (!announcedCueMeters.add(cueMeters)) return;
 
-    unawaited(speakSafe("Dalam $cueMeters meter, $cueInstruction"));
+    unawaited(
+      speakSafe(
+        "Dalam $cueMeters meter, $cueInstruction",
+        priority: TtsPriority.navigation,
+        deduplicationKey: 'navigation-cue-$_currentInstructionIndex-$cueMeters',
+        replacementKey: 'navigation-guidance',
+        maxAge: const Duration(seconds: 8),
+      ),
+    );
   }
 
   void _announceTurnArea({
@@ -1448,6 +1524,10 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     await speakSafe(
       'Anda sudah masuk ${_turnAreaInstruction(cueInstruction)}.',
+      priority: TtsPriority.navigation,
+      deduplicationKey: 'navigation-turn-area-$sourceInstructionIndex',
+      replacementKey: 'navigation-guidance',
+      maxAge: const Duration(seconds: 6),
     );
 
     if (!mounted ||
@@ -1541,7 +1621,15 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     if (!mounted) return;
 
-    unawaited(speakSafe("Anda keluar jalur. Menghitung ulang rute"));
+    unawaited(
+      speakSafe(
+        'Anda keluar jalur. Menghitung ulang rute',
+        priority: TtsPriority.warning,
+        deduplicationKey: 'navigation-off-route',
+        replacementKey: 'navigation-guidance',
+        maxAge: const Duration(seconds: 10),
+      ),
+    );
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -2137,6 +2225,8 @@ class _NavigationScreenState extends State<NavigationScreen>
     bool returnToPlaceList = true,
     String endReason = 'manual_exit',
   }) async {
+    await _ttsService.cancelByReplacementKey('navigation-guidance');
+
     final wasNavigating = _isNavigating;
     final navigationStartedAt = _tripStartedAt ?? _navigationStartTime;
     final destinationName = _selectedPlace?.name ?? 'unknown';
@@ -2210,6 +2300,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
     if (_currentTripId != null) {
       final startedAt = _tripStartedAt ?? _navigationStartTime;
       final durationSeconds = startedAt == null
@@ -2232,6 +2323,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       ..removeListener(_onLocationAnimationTick)
       ..dispose();
     unawaited(_liveTrackingService.stopNavigationTracking());
+    unawaited(_ttsService.cancelByReplacementKey('navigation-guidance'));
     _stopNavigationStt();
     super.dispose();
   }
@@ -2738,6 +2830,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           _lastDurationUpdateTime = tripStartedAt;
           _destinationName = _selectedPlace?.name ?? 'unknown';
         });
+        _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(true);
 
         _updateLiveInstructionDistance(_userLocation, allowVoiceCue: false);
 
@@ -2745,10 +2838,18 @@ class _NavigationScreenState extends State<NavigationScreen>
             ? 'Ikuti rute yang ditampilkan.'
             : '${instructions.first.instruction}.';
         if (wasNavigating) {
-          await speakSafe('Rute baru ditemukan. $firstInstruction');
+          await speakSafe(
+            'Rute baru ditemukan. $firstInstruction',
+            priority: TtsPriority.navigation,
+            replacementKey: 'navigation-guidance',
+            maxAge: const Duration(seconds: 10),
+          );
         } else {
           await speakSafe(
             'Rute ditemukan. Silakan mulai navigasi. $firstInstruction',
+            priority: TtsPriority.navigation,
+            replacementKey: 'navigation-guidance',
+            maxAge: const Duration(seconds: 12),
           );
         }
 
@@ -2886,7 +2987,12 @@ class _NavigationScreenState extends State<NavigationScreen>
         });
 
         if (forwardInstruction && instructionText.isNotEmpty) {
-          await speakSafe(instructionText);
+          await speakSafe(
+            instructionText,
+            priority: TtsPriority.navigation,
+            replacementKey: 'navigation-guidance',
+            maxAge: const Duration(seconds: 8),
+          );
           _updateLiveInstructionDistance(_userLocation, allowVoiceCue: false);
         }
 
@@ -2926,7 +3032,12 @@ class _NavigationScreenState extends State<NavigationScreen>
       ),
     );
 
-    await speakSafe("Anda telah tiba di $destinationName");
+    await speakSafe(
+      "Anda telah tiba di $destinationName",
+      priority: TtsPriority.critical,
+      deduplicationKey: 'navigation-arrived-$destinationName',
+      replacementKey: 'navigation-guidance',
+    );
     await _endNavigationSession(endReason: 'arrived');
 
     if (!mounted) return;
@@ -2937,6 +3048,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   /// Stop navigation tracking and cleanup timers
   void _stopNavigationTracking({bool clearDuration = true}) {
+    _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
     print('[NAVIGATION] ⏹️ Stopping navigation tracking');
     _durationUpdateTimer?.cancel();
     _durationUpdateTimer = null;

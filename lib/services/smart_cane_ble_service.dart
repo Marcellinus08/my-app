@@ -38,6 +38,7 @@ class SmartCaneBleService extends ChangeNotifier {
   SmartCaneBatteryData? _latestBatteryData;
   bool _isConnecting = false;
   bool _isAutoConnecting = false;
+  bool _navigationHazardAnnouncementsEnabled = false;
   String _sensorPayloadBuffer = '';
 
   BluetoothDevice? get connectedDevice => _connectedDevice;
@@ -52,6 +53,8 @@ class SmartCaneBleService extends ChangeNotifier {
   bool get isConnecting => _isConnecting;
   bool get isAutoConnecting => _isAutoConnecting;
   bool get isConnected => _connectedDevice != null;
+  bool get navigationHazardAnnouncementsEnabled =>
+      _navigationHazardAnnouncementsEnabled;
   bool get isSensorRunning {
     final data = _latestSensorData;
     return isConnected &&
@@ -69,6 +72,12 @@ class SmartCaneBleService extends ChangeNotifier {
   }
 
   bool get isSmartCaneReady => isConnected && isSensorRunning && isModelRunning;
+
+  void setNavigationHazardAnnouncementsEnabled(bool enabled) {
+    if (_navigationHazardAnnouncementsEnabled == enabled) return;
+    _navigationHazardAnnouncementsEnabled = enabled;
+    notifyListeners();
+  }
 
   bool get _hasFreshSensorData {
     final receivedAt = _latestSensorReceivedAt;

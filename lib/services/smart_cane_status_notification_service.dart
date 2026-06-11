@@ -10,6 +10,8 @@ enum _SmartCaneRuntimeState { disconnected, connecting, waiting, ready }
 
 enum _SmartCaneHazardLevel { safe, warning, danger }
 
+enum _SmartCaneBatteryLevel { normal, low, critical }
+
 class SmartCaneStatusNotificationService {
   SmartCaneStatusNotificationService({
     required this.scaffoldMessengerKey,
@@ -35,6 +37,8 @@ class SmartCaneStatusNotificationService {
   String? _lastAnnouncedHazardObject;
   String? _lastAnnouncedGuidanceDecision;
   DateTime? _safePathDetectedAt;
+  bool _wasNavigationHazardAnnouncementsEnabled = false;
+  _SmartCaneBatteryLevel _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
 
   void start() {
     if (_isStarted) return;
@@ -102,6 +106,8 @@ class SmartCaneStatusNotificationService {
     _lastAnnouncedHazardObject = null;
     _lastAnnouncedGuidanceDecision = null;
     _safePathDetectedAt = null;
+    _wasNavigationHazardAnnouncementsEnabled = false;
+    _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
   }
 
   _SmartCaneRuntimeState get _currentState {
@@ -121,6 +127,7 @@ class SmartCaneStatusNotificationService {
     if (!_isStarted) return;
 
     _evaluateHazardAlert();
+    _evaluateBatteryAlert();
 
     final currentState = _currentState;
     final previousState = _lastState;
@@ -155,6 +162,18 @@ class SmartCaneStatusNotificationService {
   }
 
   void _evaluateHazardAlert() {
+    final announcementsEnabled =
+        _bleService.navigationHazardAnnouncementsEnabled;
+    if (!announcementsEnabled) {
+      if (_wasNavigationHazardAnnouncementsEnabled) {
+        unawaited(_ttsService.cancelByReplacementKey('smart-cane-hazard'));
+      }
+      _wasNavigationHazardAnnouncementsEnabled = false;
+      _resetHazardState();
+      return;
+    }
+
+    _wasNavigationHazardAnnouncementsEnabled = true;
     final sensorData = _bleService.latestSensorData;
     if (!_bleService.isConnected ||
         !_bleService.isSensorRunning ||
@@ -203,7 +222,53 @@ class SmartCaneStatusNotificationService {
 
     _queueTts(
       _hazardAnnouncement(currentLevel, objectLabel, guidanceDecision),
-      interrupt: true,
+      priority: currentLevel == _SmartCaneHazardLevel.danger
+          ? TtsPriority.critical
+          : TtsPriority.warning,
+      replacementKey: 'smart-cane-hazard',
+    );
+  }
+
+  void _evaluateBatteryAlert() {
+    final batteryData = _bleService.latestBatteryData;
+    if (!_bleService.isConnected || batteryData == null) {
+      _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
+      return;
+    }
+
+    final percentage = batteryData.percentage;
+    final currentLevel = percentage <= 10
+        ? _SmartCaneBatteryLevel.critical
+        : percentage <= 20
+        ? _SmartCaneBatteryLevel.low
+        : _SmartCaneBatteryLevel.normal;
+
+    if (currentLevel == _SmartCaneBatteryLevel.normal) {
+      if (percentage >= 25) {
+        _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
+      }
+      return;
+    }
+
+    if (currentLevel.index <= _lastBatteryLevel.index) return;
+    _lastBatteryLevel = currentLevel;
+
+    final isCritical = currentLevel == _SmartCaneBatteryLevel.critical;
+    final message = isCritical
+        ? 'Baterai SmartCane tersisa $percentage persen. Segera lakukan pengisian daya.'
+        : 'Baterai SmartCane rendah, tersisa $percentage persen. Segera lakukan pengisian daya.';
+
+    _showSnackBar(
+      message: message,
+      color: isCritical ? AppColors.error : AppColors.warning,
+      icon: isCritical
+          ? Icons.battery_alert_rounded
+          : Icons.battery_2_bar_rounded,
+    );
+    _queueTts(
+      message,
+      priority: isCritical ? TtsPriority.critical : TtsPriority.warning,
+      replacementKey: 'smart-cane-battery',
     );
   }
 
@@ -243,7 +308,8 @@ class SmartCaneStatusNotificationService {
     _resetHazardState();
     _queueTts(
       'Jalur sudah aman. Silakan lanjutkan perjalanan.',
-      interrupt: true,
+      priority: TtsPriority.warning,
+      replacementKey: 'smart-cane-hazard',
     );
   }
 
@@ -301,7 +367,8 @@ class SmartCaneStatusNotificationService {
   }
 
   void _announceDisconnected() {
-    const message = 'Koneksi SmartCane terputus.';
+    const message =
+        'Koneksi SmartCane terputus. Ucapkan hubungkan ulang SmartCane untuk mencoba kembali.';
     _showSnackBar(
       message: message,
       color: AppColors.error,
@@ -338,8 +405,12 @@ class SmartCaneStatusNotificationService {
     _startupTimeoutTimer = null;
   }
 
-  void _queueTts(String message, {bool interrupt = false}) {
-    if (interrupt) {
+  void _queueTts(
+    String message, {
+    TtsPriority priority = TtsPriority.normal,
+    String? replacementKey,
+  }) {
+    if (priority == TtsPriority.warning || priority == TtsPriority.critical) {
       _announcementGeneration++;
       _announcementQueue = Future<void>.value();
     }
@@ -350,7 +421,11 @@ class SmartCaneStatusNotificationService {
           if (generation != _announcementGeneration) {
             return Future<void>.value();
           }
-          return _ttsService.speak(message);
+          return _ttsService.speak(
+            message,
+            priority: priority,
+            replacementKey: replacementKey,
+          );
         })
         .catchError((Object error, StackTrace stackTrace) {
           debugPrint('[SMARTCANE-STATUS] TTS gagal: $error');

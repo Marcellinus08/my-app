@@ -53,6 +53,8 @@ Perintah yang dikenali:
 - mengandung `navigasi` untuk membuka halaman navigasi
 - mengandung `ebook` atau `buku panduan` untuk membuka buku panduan
 - mengandung `tongkat pintar` untuk membuka pengaturan smartcane
+- `hubungkan ulang SmartCane` untuk mencoba menyambungkan kembali perangkat
+  SmartCane yang sebelumnya telah tersimpan, tanpa membuka menu koneksi
 - mengandung `pengaturan` untuk membuka halaman pengaturan
 
 Jika perintah tidak dikenali, aplikasi membacakan "Perintah tidak dikenali", lalu STT diaktifkan kembali.
@@ -222,14 +224,42 @@ menghindari TTS berulang akibat perubahan sensor sesaat.
 ## Hubungan STT dan TTS
 Pada beberapa bagian, STT dan TTS saling bergantian agar suara aplikasi tidak bertabrakan dengan input suara pengguna.
 
+### TTS Manager Global
+
+Seluruh halaman menggunakan satu instance `TTSService`. Permintaan suara
+tidak lagi dijalankan langsung secara terpisah oleh setiap halaman, tetapi
+masuk ke satu antrean global dengan urutan prioritas:
+
+1. `critical`: bahaya Smart Cane, SOS, dan pengguna tiba di tujuan.
+2. `warning`: hati-hati, jalur kembali aman, dan peringatan keluar rute.
+3. `navigation`: panduan jarak, area belok, dan instruksi rute.
+4. `normal`: status koneksi, baterai, halaman, dan jawaban perintah.
+5. `low`: pembacaan panjang seperti isi buku panduan.
+
+Aturan antrean:
+
+- pesan `critical` langsung memotong suara yang sedang berjalan
+- pesan `warning` memotong suara biasa dan navigasi, tetapi menunggu jika
+  pesan `critical` sedang dibacakan
+- informasi biasa menunggu sampai pesan yang lebih penting selesai
+- pesan dengan kunci duplikat yang sama tidak dimasukkan dua kali
+- pesan yang melewati masa berlaku dibuang sebelum dibacakan
+- panduan navigasi memakai kunci `navigation-guidance`, sehingga panduan
+  terbaru menggantikan panduan lama yang belum dibacakan
+- saat navigasi berakhir, hanya antrean panduan navigasi yang dibatalkan
+- penghentian pembacaan buku panduan tidak membatalkan peringatan
+  keselamatan dari Smart Cane
+
 ### Prioritas STT
 
 Ketika STT mulai aktif:
 
 - seluruh TTS yang sedang berbicara langsung dihentikan
-- antrean TTS lama pada navigasi dibatalkan
-- permintaan TTS baru diabaikan selama STT masih mendengarkan
-- TTS baru dapat berjalan kembali setelah STT selesai atau dihentikan
+- pesan biasa dan navigasi yang masih menunggu dibuang
+- permintaan TTS biasa yang baru muncul tidak dimasukkan ke antrean
+- peringatan `warning` dan `critical` tetap disimpan
+- setelah STT selesai atau dihentikan, peringatan keselamatan yang belum
+  kedaluwarsa langsung diproses berdasarkan prioritasnya
 
 Aturan ini berlaku secara global untuk halaman utama, pilih tempat,
 navigasi aktif, status Smart Cane, buku panduan, dan halaman lain yang

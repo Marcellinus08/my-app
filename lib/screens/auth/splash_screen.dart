@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../utils/constants.dart';
 import '../../services/auth_service.dart';
+import '../../services/pending_registration_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -60,9 +61,18 @@ class _SplashScreenState extends State<SplashScreen>
     Timer(const Duration(milliseconds: 3500), () async {
       if (mounted) {
         final authService = AuthService();
+        final pendingRegistration = await PendingRegistrationService().load();
 
         // Check if user is already logged in
         if (authService.isAuthenticated) {
+          if (pendingRegistration != null) {
+            print(
+              '[SPLASH] Pending email registration found, resuming registration...',
+            );
+            Navigator.pushReplacementNamed(context, AppRoutes.register);
+            return;
+          }
+
           print('[SPLASH] User is authenticated, checking user type...');
 
           // Get user type

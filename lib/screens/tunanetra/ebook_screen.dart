@@ -565,14 +565,19 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
 
   Future<void> _toggleSpeech() async {
     if (_isSpeaking) {
-      await _ttsService.stop();
+      await _ttsService.cancelByReplacementKey('ebook-guide');
       if (mounted) setState(() => _isSpeaking = false);
       return;
     }
 
     setState(() => _isSpeaking = true);
     try {
-      await _ttsService.speak(_speechText);
+      await _ttsService.speak(
+        _speechText,
+        priority: TtsPriority.low,
+        replacementKey: 'ebook-guide',
+        maxAge: const Duration(minutes: 2),
+      );
     } finally {
       if (mounted) setState(() => _isSpeaking = false);
     }
@@ -580,7 +585,7 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
 
   @override
   void dispose() {
-    unawaited(_ttsService.stop());
+    unawaited(_ttsService.cancelByReplacementKey('ebook-guide'));
     super.dispose();
   }
 
