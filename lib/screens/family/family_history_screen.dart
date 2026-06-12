@@ -2779,7 +2779,7 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
                   children: [
                     _buildLocationInfo(
                       icon: Icons.radio_button_checked,
-                      color: AppColors.success,
+                      color: AppColors.primaryDark,
                       label: 'Dari',
                       value: originName,
                       showConnector: true,
@@ -2787,7 +2787,7 @@ class _FamilyHistoryDetailScreenState extends State<FamilyHistoryDetailScreen> {
                     const SizedBox(height: 4),
                     _buildLocationInfo(
                       icon: Icons.location_on_rounded,
-                      color: AppColors.error,
+                      color: AppColors.success,
                       label: 'Ke',
                       value: destinationName,
                     ),
@@ -3712,13 +3712,8 @@ class _NavigationHistoryDetailScreenState
     final status = data['status'] is String ? data['status'] as String : null;
     final statusColor = getStatusColor(status);
     final destinationName = _safeText(data['destinationName'], 'Tujuan');
+    final totalDistance = formatDistance(data['totalDistanceMeters']);
     final statusText = formatStatusText(status);
-    final statusSubtitle = switch (status) {
-      'completed' => 'Perjalanan selesai',
-      'cancelled' || 'canceled' || 'batal' => 'Perjalanan tidak diselesaikan',
-      'ongoing' => 'Perjalanan sedang berjalan',
-      _ => 'Status perjalanan tercatat',
-    };
 
     return Container(
       width: double.infinity,
@@ -3753,27 +3748,23 @@ class _NavigationHistoryDetailScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    statusText,
-                    style: AppTextStyles.caption.copyWith(
-                      color: statusColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
+                _buildDetailRow(
+                  'Status',
+                  statusText,
+                  valueColor: statusColor,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Tujuan',
+                  style: AppTextStyles.caption.copyWith(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 7),
+                const SizedBox(height: 2),
                 Text(
-                  'Tujuan: $destinationName',
+                  destinationName,
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textPrimary,
                     fontSize: 15,
@@ -3783,16 +3774,37 @@ class _NavigationHistoryDetailScreenState
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  statusSubtitle,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.straighten_rounded,
+                      color: AppColors.primary,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Total jarak',
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        totalDistance,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -3802,73 +3814,124 @@ class _NavigationHistoryDetailScreenState
     );
   }
 
-  Widget _buildRouteStep({
+  Widget _buildTripRouteTimeline({
+    required String originName,
+    required String destinationName,
+    required String startTime,
+    required String endTime,
+    required bool isCancelled,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        children: [
+          _buildTripTimelineNode(
+            icon: Icons.radio_button_checked,
+            color: AppColors.primaryDark,
+            value: originName,
+            time: startTime,
+            showConnector: true,
+          ),
+          if (isCancelled)
+            _buildTripTimelineNode(
+              icon: Icons.stop_circle_rounded,
+              color: AppColors.error,
+              value: 'Dibatalkan',
+              time: endTime,
+              showConnector: true,
+            ),
+          _buildTripTimelineNode(
+            icon: Icons.location_on_rounded,
+            color: AppColors.success,
+            value: destinationName,
+            time: isCancelled ? null : endTime,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTripTimelineNode({
     required IconData icon,
     required Color color,
-    required String label,
     required String value,
+    String? time,
     bool showConnector = false,
   }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Column(
-          children: [
-            Container(
-              width: 30,
-              height: 30,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.10),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: color, size: 17),
-            ),
-            if (showConnector)
-              Container(
-                width: 2,
-                height: 20,
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFCBD5E1),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 2),
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            width: 34,
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  child: Icon(icon, color: color, size: 17),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textPrimary,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
-                    height: 1.3,
+                if (showConnector)
+                  Expanded(
+                    child: Container(
+                      width: 2,
+                      constraints: const BoxConstraints(minHeight: 38),
+                      margin: const EdgeInsets.symmetric(vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
               ],
             ),
           ),
-        ),
-      ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(bottom: showConnector ? 12 : 0, top: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          value,
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.textPrimary,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (time != null) ...[
+                        const SizedBox(width: 10),
+                        Text(
+                          time,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: color,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -4618,6 +4681,8 @@ class _NavigationHistoryDetailScreenState
     final status = data['status'] is String ? data['status'] as String : null;
     final originName = _safeText(data['originName'], 'Lokasi awal');
     final destinationName = _safeText(data['destinationName'], 'Tujuan');
+    final isCancelled =
+        status == 'cancelled' || status == 'canceled' || status == 'batal';
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -4629,43 +4694,20 @@ class _NavigationHistoryDetailScreenState
           icon: Icons.info_outline_rounded,
           children: [
             _buildDetailRow('Tanggal', formatTripDate(startTime)),
-            _buildDetailRow('Waktu mulai', formatTripTime(startTime)),
-            _buildDetailRow('Waktu selesai', formatTripTime(endTime)),
-            _buildDetailRow(
-              'Durasi',
-              formatDisplayDuration(data['durationSeconds']),
+            const SizedBox(height: 14),
+            _buildTripRouteTimeline(
+              originName: originName,
+              destinationName: destinationName,
+              startTime: formatTripTime(startTime),
+              endTime: formatTripTime(endTime),
+              isCancelled: isCancelled,
             ),
-            _buildDetailRow(
-              'Status',
-              formatStatusText(status),
-              valueColor: getStatusColor(status),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        _buildSection(
-          title: 'Rute',
-          icon: Icons.route_rounded,
-          children: [
-            _buildRouteStep(
-              icon: Icons.radio_button_checked,
-              color: AppColors.success,
-              label: 'Dari',
-              value: originName,
-              showConnector: true,
-            ),
-            _buildRouteStep(
-              icon: Icons.location_on_rounded,
-              color: AppColors.error,
-              label: 'Ke',
-              value: destinationName,
-            ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 4),
             _buildRouteInfoTile(
-              icon: Icons.straighten_rounded,
+              icon: Icons.timer_outlined,
               color: AppColors.primary,
-              label: 'Jarak total',
-              value: formatDistance(data['totalDistanceMeters']),
+              label: 'Durasi',
+              value: formatDisplayDuration(data['durationSeconds']),
               maxLines: 1,
             ),
             _buildRouteInfoTile(
