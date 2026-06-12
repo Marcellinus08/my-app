@@ -1103,7 +1103,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                 child: _FamilyStatusPill(
                   icon: Icons.circle_rounded,
                   label: 'Status',
-                  value: activeCount > 0 ? '$activeCount aktif' : 'Belum aktif',
+                  value: activeCount > 0 ? '$activeCount aktif' : 'Tidak aktif',
                   color: activeCount > 0
                       ? AppColors.success
                       : AppColors.warning,
@@ -1419,8 +1419,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         ...List.generate(_monitoredUsers.length, (index) {
           final user = _monitoredUsers[index];
           final uid = user['uid'] as String? ?? '';
-          final phoneNumber = _readString(user['phoneNumber']);
-          final email = _readString(user['email']);
           final location = _latestLocations[uid];
           final isOnline = _isUserOnline(uid);
           final phoneBatteryLevel = _getLiveBatteryLevel(uid);
@@ -1459,209 +1457,19 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                     child: _buildUserCardHeader(
                       user: user,
                       isOnline: isOnline,
-                      smartCaneBatteryLevel: smartCaneBatteryLevel,
-                      phoneBatteryLevel: phoneBatteryLevel,
+                      lastActiveAt: location?.timestamp,
                     ),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                    child: Column(
-                      children: [
-                        if (phoneNumber != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 9),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.infoLight.withValues(
-                                      alpha: 0.62,
-                                    ),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Icon(
-                                    Icons.phone_rounded,
-                                    size: 18,
-                                    color: AppColors.primaryDark,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Nomor Telepon',
-                                        style: AppTextStyles.bodySmall.copyWith(
-                                          color: AppColors.textSecondary,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: FittedBox(
-                                          fit: BoxFit.scaleDown,
-                                          alignment: Alignment.centerLeft,
-                                          child: Text(
-                                            phoneNumber,
-                                            maxLines: 1,
-                                            style: AppTextStyles.bodyMedium
-                                                .copyWith(
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 13,
-                                                ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                        if (email != null)
-                          Row(
-                            children: [
-                              Container(
-                                width: 34,
-                                height: 34,
-                                decoration: BoxDecoration(
-                                  color: AppColors.successLight.withValues(
-                                    alpha: 0.62,
-                                  ),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  Icons.email_rounded,
-                                  size: 18,
-                                  color: AppColors.success,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Email',
-                                      style: AppTextStyles.bodySmall.copyWith(
-                                        color: AppColors.textSecondary,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    SizedBox(
-                                      width: double.infinity,
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          email,
-                                          maxLines: 1,
-                                          style: AppTextStyles.bodyMedium
-                                              .copyWith(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 12,
-                                              ),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
+                    child: _buildBatteryStatusIndicators(
+                      smartCaneBatteryLevel: smartCaneBatteryLevel,
+                      phoneBatteryLevel: phoneBatteryLevel,
                     ),
                   ),
 
-                  if (location != null) ...[
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 14),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildDeviceStatusInfo(
-                            icon: Icons.gps_fixed_rounded,
-                            label: 'GPS',
-                            value: location.gpsEnabled ? 'Aktif' : 'Mati',
-                            isActive: location.gpsEnabled,
-                          ),
-                          Container(
-                            width: 1,
-                            height: 28,
-                            color: const Color(0xFFE2E8F0),
-                          ),
-                          _buildDeviceStatusInfo(
-                            icon: Icons.wifi_rounded,
-                            label: 'Internet',
-                            value: location.internetAvailable
-                                ? 'Aktif'
-                                : 'Mati',
-                            isActive: location.internetAvailable,
-                          ),
-                          Container(
-                            width: 1,
-                            height: 28,
-                            color: const Color(0xFFE2E8F0),
-                          ),
-                          _buildDeviceStatusInfo(
-                            icon: Icons.directions_walk_rounded,
-                            label: 'Status',
-                            value: location.navigationStatus == 'navigating'
-                                ? 'Navigasi'
-                                : location.speed > 0.8
-                                ? 'Berjalan'
-                                : 'Diam',
-                            isActive: location.navigationStatus == 'navigating',
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  if (location != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.schedule_rounded,
-                            size: 16,
-                            color: AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Aktif terakhir: ${_formatTimeAgo(location.timestamp)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.textSecondary,
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                    padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
                     child: Row(
                       children: [
                         _buildManagePlacesButton(user),
@@ -1752,15 +1560,15 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                   ]
                 : null,
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: foregroundColor, size: 18),
-              const SizedBox(width: 6),
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, color: foregroundColor, size: 18),
+                  const SizedBox(width: 6),
+                  Text(
                     label,
                     maxLines: 1,
                     style: AppTextStyles.bodyMedium.copyWith(
@@ -1769,9 +1577,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                       fontSize: 13,
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -1820,16 +1628,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   Widget _buildUserCardHeader({
     required Map<String, dynamic> user,
     required bool isOnline,
-    required double? smartCaneBatteryLevel,
-    required double? phoneBatteryLevel,
+    required DateTime? lastActiveAt,
   }) {
     final userName = (user['name'] as String?)?.trim();
     final displayName = userName?.isNotEmpty == true ? userName! : 'Pengguna';
     final avatarText = displayName.characters.first.toUpperCase();
-    final batteryIndicators = _buildBatteryStatusIndicators(
-      smartCaneBatteryLevel: smartCaneBatteryLevel,
-      phoneBatteryLevel: phoneBatteryLevel,
-    );
 
     final avatar = Container(
       width: 48,
@@ -1876,12 +1679,20 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                 ),
               ),
               const SizedBox(width: 7),
-              Text(
-                isOnline ? 'Aktif' : 'Tidak aktif',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: isOnline ? AppColors.success : AppColors.warning,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+              Expanded(
+                child: Text(
+                  isOnline
+                      ? 'Aktif'
+                      : lastActiveAt != null
+                      ? 'Aktif ${_formatTimeAgo(lastActiveAt)}'
+                      : 'Tidak aktif',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: isOnline ? AppColors.success : AppColors.warning,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ],
@@ -1890,14 +1701,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       ),
     );
 
-    final identity = Row(
-      children: [avatar, const SizedBox(width: 12), userInfo],
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [identity, const SizedBox(height: 10), batteryIndicators],
-    );
+    return Row(children: [avatar, const SizedBox(width: 12), userInfo]);
   }
 
   Widget _buildBatteryStatusIndicators({
@@ -1908,7 +1712,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       children: [
         Expanded(
           child: _buildBatteryBadge(
-            label: 'Tongkat',
+            label: 'SmartCane',
             semanticLabel: 'Baterai tongkat pintar',
             battery: smartCaneBatteryLevel,
           ),
@@ -2042,53 +1846,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   bool _isLiveTrackingFresh(Timestamp? updatedAt) {
     if (updatedAt == null) return false;
     return _liveTrackingNow.difference(updatedAt.toDate()).inSeconds <= 60;
-  }
-
-  Widget _buildDeviceStatusInfo({
-    required IconData icon,
-    required String label,
-    required String value,
-    required bool isActive,
-  }) {
-    return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? AppColors.primary.withOpacity(0.1)
-                  : Colors.orange.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              icon,
-              size: 16,
-              color: isActive ? AppColors.primary : Colors.orange,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
-              fontSize: 9,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: isActive ? AppColors.primary : Colors.orange,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   String _formatTimeAgo(DateTime dateTime) {

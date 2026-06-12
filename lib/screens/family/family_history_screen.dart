@@ -1342,6 +1342,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         heading: heading,
         hasLocation: hasLocation,
         isGpsActive: isGpsActive || hasSosLocation,
+        canRecenterOnUser: hasLiveLocation,
       );
     }
 
@@ -1371,6 +1372,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
           heading: heading,
           hasLocation: hasLocation,
           isGpsActive: isGpsActive || hasSosLocation,
+          canRecenterOnUser: hasLiveLocation,
           activeRoute: activeRoute,
           destination: destination,
         );
@@ -1383,6 +1385,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     required double heading,
     required bool hasLocation,
     required bool isGpsActive,
+    required bool canRecenterOnUser,
     List<LatLng> activeRoute = const [],
     LatLng? destination,
   }) {
@@ -1396,7 +1399,9 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
             minZoom: 5.0,
             maxZoom: 18.0,
             interactionOptions: const InteractionOptions(
-              flags: InteractiveFlag.all,
+              flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+              enableMultiFingerGestureRace: true,
+              pinchZoomThreshold: 0.1,
             ),
           ),
           children: [
@@ -1471,6 +1476,50 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
             ),
           ],
         ),
+        if (canRecenterOnUser && !_isSheetExpanded)
+          Positioned(
+            right: 20,
+            bottom: 108,
+            child: Semantics(
+              button: true,
+              label: 'Kembali ke posisi pengguna',
+              hint: 'Memusatkan peta pada lokasi pengguna saat ini',
+              child: Tooltip(
+                message: 'Posisi pengguna',
+                child: Material(
+                  color: Colors.white,
+                  elevation: 4,
+                  shadowColor: const Color(0xFF0F172A).withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: () {
+                      try {
+                        _mapController.move(center, _liveZoom);
+                      } catch (error) {
+                        debugPrint(
+                          '[FamilyHistory] gagal memusatkan peta: $error',
+                        );
+                      }
+                    },
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: const Icon(
+                        Icons.my_location_rounded,
+                        color: AppColors.primaryDark,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (!hasLocation)
           Positioned.fill(
             child: Center(
@@ -2067,218 +2116,210 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                             ),
                       ),
                     ),
-                    DraggableScrollableSheet(
-                      controller: _sheetController,
-                      minChildSize: _sheetMin,
-                      maxChildSize: _sheetMax,
-                      initialChildSize: _sheetMin,
-                      builder: (context, controller) {
-                        final isExpanded = _isSheetExpanded;
-                        return Container(
-                          decoration: BoxDecoration(
-                            color: isExpanded
-                                ? AppColors.background
-                                : Colors.transparent,
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(24),
-                            ),
-                            boxShadow: isExpanded
-                                ? [
-                                    BoxShadow(
-                                      color: AppColors.primary.withOpacity(
-                                        0.18,
-                                      ),
-                                      blurRadius: 24,
-                                      offset: const Offset(0, -6),
-                                    ),
-                                  ]
-                                : [],
-                          ),
-                          child: isExpanded
-                              ? Stack(
-                                  children: [
-                                    Positioned(
-                                      top: 0,
-                                      left: 0,
-                                      right: 0,
-                                      bottom: 130,
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          20,
-                                          12,
-                                          20,
-                                          0,
+                    IgnorePointer(
+                      ignoring: !_isSheetExpanded,
+                      child: DraggableScrollableSheet(
+                        controller: _sheetController,
+                        minChildSize: _sheetMin,
+                        maxChildSize: _sheetMax,
+                        initialChildSize: _sheetMin,
+                        builder: (context, controller) {
+                          final isExpanded = _isSheetExpanded;
+                          return Container(
+                            decoration: BoxDecoration(
+                              color: isExpanded
+                                  ? AppColors.background
+                                  : Colors.transparent,
+                              borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(24),
+                              ),
+                              boxShadow: isExpanded
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.primary.withOpacity(
+                                          0.18,
                                         ),
-                                        child: ListView(
-                                          controller: controller,
-                                          padding: const EdgeInsets.only(
-                                            bottom: 24,
+                                        blurRadius: 24,
+                                        offset: const Offset(0, -6),
+                                      ),
+                                    ]
+                                  : [],
+                            ),
+                            child: isExpanded
+                                ? Stack(
+                                    children: [
+                                      Positioned(
+                                        top: 0,
+                                        left: 0,
+                                        right: 0,
+                                        bottom: 130,
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            20,
+                                            12,
+                                            20,
+                                            0,
                                           ),
-                                          children: [
-                                            GestureDetector(
-                                              onTap: _toggleSheet,
-                                              child: Center(
-                                                child: Container(
-                                                  width: 48,
-                                                  height: 5,
-                                                  decoration: BoxDecoration(
-                                                    color: AppColors
-                                                        .textTertiary
-                                                        .withOpacity(0.4),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          999,
-                                                        ),
+                                          child: ListView(
+                                            controller: controller,
+                                            padding: const EdgeInsets.only(
+                                              bottom: 24,
+                                            ),
+                                            children: [
+                                              GestureDetector(
+                                                onTap: _toggleSheet,
+                                                child: Center(
+                                                  child: Container(
+                                                    width: 48,
+                                                    height: 5,
+                                                    decoration: BoxDecoration(
+                                                      color: AppColors
+                                                          .textTertiary
+                                                          .withOpacity(0.4),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            999,
+                                                          ),
+                                                    ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 14),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    'Detail Lokasi',
-                                                    style: AppTextStyles
-                                                        .bodyLarge
-                                                        .copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                          color: AppColors
-                                                              .textPrimary,
-                                                        ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 14),
-                                            Row(
-                                              children: [
-                                                Container(
-                                                  width: 36,
-                                                  height: 36,
-                                                  decoration: BoxDecoration(
-                                                    color: AppColors.primary
-                                                        .withOpacity(0.12),
-                                                    shape: BoxShape.circle,
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.radar_rounded,
-                                                    color: AppColors.primary,
-                                                    size: 20,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 10),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      Text(
-                                                        'Info Realtime',
-                                                        style: AppTextStyles
-                                                            .bodyMedium
-                                                            .copyWith(
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .w800,
-                                                            ),
-                                                      ),
-                                                      const SizedBox(height: 2),
-                                                      Text(
-                                                        'Status aktivitas dan koneksi pengguna',
-                                                        style: AppTextStyles
-                                                            .bodySmall
-                                                            .copyWith(
-                                                              color: AppColors
-                                                                  .textSecondary,
-                                                            ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            const SizedBox(height: 12),
-                                            _buildTunaNetraInfoCard(
-                                              pairedUid,
-                                              liveData,
-                                            ),
-                                            const SizedBox(height: 16),
-                                            Container(
-                                              padding: const EdgeInsets.all(12),
-                                              decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius:
-                                                    BorderRadius.circular(18),
-                                                border: Border.all(
-                                                  color: AppColors.primary
-                                                      .withOpacity(0.12),
-                                                ),
-                                                boxShadow: [
-                                                  BoxShadow(
-                                                    color: AppColors.primary
-                                                        .withOpacity(0.08),
-                                                    blurRadius: 16,
-                                                    offset: const Offset(0, 8),
+                                              const SizedBox(height: 14),
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      'Detail Lokasi',
+                                                      style: AppTextStyles
+                                                          .bodyLarge
+                                                          .copyWith(
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color: AppColors
+                                                                .textPrimary,
+                                                          ),
+                                                    ),
                                                   ),
                                                 ],
                                               ),
-                                              child: Column(
-                                                children:
-                                                    _buildLivePanelContent(
-                                                      liveData,
+                                              const SizedBox(height: 14),
+                                              Row(
+                                                children: [
+                                                  Container(
+                                                    width: 36,
+                                                    height: 36,
+                                                    decoration: BoxDecoration(
+                                                      color: AppColors.primary
+                                                          .withOpacity(0.12),
+                                                      shape: BoxShape.circle,
                                                     ),
+                                                    child: const Icon(
+                                                      Icons.radar_rounded,
+                                                      color: AppColors.primary,
+                                                      size: 20,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      children: [
+                                                        Text(
+                                                          'Info Realtime',
+                                                          style: AppTextStyles
+                                                              .bodyMedium
+                                                              .copyWith(
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800,
+                                                              ),
+                                                        ),
+                                                        const SizedBox(
+                                                          height: 2,
+                                                        ),
+                                                        Text(
+                                                          'Status aktivitas dan koneksi pengguna',
+                                                          style: AppTextStyles
+                                                              .bodySmall
+                                                              .copyWith(
+                                                                color: AppColors
+                                                                    .textSecondary,
+                                                              ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      left: 20,
-                                      right: 20,
-                                      bottom: 12,
-                                      child: _buildCollapsedSheetCard(liveData),
-                                    ),
-                                  ],
-                                )
-                              : Material(
-                                  color: Colors.transparent,
-                                  child: Stack(
-                                    children: [
-                                      Positioned.fill(
-                                        child: GestureDetector(
-                                          behavior: HitTestBehavior.translucent,
-                                          onTap: () =>
-                                              _showTunaNetraInfo(pairedUid),
-                                        ),
-                                      ),
-                                      Align(
-                                        alignment: Alignment.bottomCenter,
-                                        child: GestureDetector(
-                                          onTap: () =>
-                                              _showTunaNetraInfo(pairedUid),
-                                          child: Padding(
-                                            padding: const EdgeInsets.fromLTRB(
-                                              20,
-                                              0,
-                                              20,
-                                              16,
-                                            ),
-                                            child: _buildCollapsedSheetCard(
-                                              liveData,
-                                            ),
+                                              const SizedBox(height: 12),
+                                              _buildTunaNetraInfoCard(
+                                                pairedUid,
+                                                liveData,
+                                              ),
+                                              const SizedBox(height: 16),
+                                              Container(
+                                                padding: const EdgeInsets.all(
+                                                  12,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white,
+                                                  borderRadius:
+                                                      BorderRadius.circular(18),
+                                                  border: Border.all(
+                                                    color: AppColors.primary
+                                                        .withOpacity(0.12),
+                                                  ),
+                                                  boxShadow: [
+                                                    BoxShadow(
+                                                      color: AppColors.primary
+                                                          .withOpacity(0.08),
+                                                      blurRadius: 16,
+                                                      offset: const Offset(
+                                                        0,
+                                                        8,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                child: Column(
+                                                  children:
+                                                      _buildLivePanelContent(
+                                                        liveData,
+                                                      ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                       ),
+                                      Positioned(
+                                        left: 20,
+                                        right: 20,
+                                        bottom: 12,
+                                        child: _buildCollapsedSheetCard(
+                                          liveData,
+                                        ),
+                                      ),
                                     ],
-                                  ),
-                                ),
-                        );
-                      },
+                                  )
+                                : const SizedBox.shrink(),
+                          );
+                        },
+                      ),
                     ),
+                    if (!_isSheetExpanded)
+                      Positioned(
+                        left: 20,
+                        right: 20,
+                        bottom: 16,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _showTunaNetraInfo(pairedUid),
+                          child: _buildCollapsedSheetCard(liveData),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -2998,6 +3039,8 @@ class NavigationHistoryDetailScreen extends StatefulWidget {
 class _NavigationHistoryDetailScreenState
     extends State<NavigationHistoryDetailScreen> {
   final MapController _historyMapController = MapController();
+  bool _isHistoryMapReady = false;
+  String? _lastFocusedRouteSignature;
 
   @override
   void dispose() {
@@ -3193,41 +3236,118 @@ class _NavigationHistoryDetailScreenState
     required String status,
   }) {
     final markers = <Marker>{};
+    final isCompleted = status.toLowerCase() == 'completed';
+    var destinationMerged = false;
     final destination = parseLatLng(
       tripData['destinationLat'],
       tripData['destinationLng'],
     );
 
     if (routePoints.length == 1) {
+      final point = routePoints.first;
+      final distanceToDestination = destination == null
+          ? double.infinity
+          : const Distance().as(LengthUnit.Meter, point, destination);
+      destinationMerged =
+          isCompleted && destination != null && distanceToDestination <= 20;
+
       markers.add(
-        _buildHistoryMarker(
-          point: routePoints.first,
-          icon: Icons.location_on,
-          color: status == 'ongoing' ? AppColors.primary : Colors.green,
-          label: status == 'ongoing' ? 'Posisi terakhir' : 'Titik rute',
-        ),
+        destinationMerged
+            ? _buildCombinedHistoryMarker(
+                point: destination,
+                icons: const [
+                  (Icons.location_on, Colors.red),
+                  (Icons.flag_rounded, Colors.deepPurple),
+                ],
+                label: 'Sampai Tujuan',
+                width: 142,
+              )
+            : _buildHistoryMarker(
+                point: point,
+                icon: Icons.location_on,
+                color: status == 'ongoing' ? AppColors.primary : Colors.green,
+                label: status == 'ongoing' ? 'Posisi terakhir' : 'Titik rute',
+              ),
       );
     } else if (routePoints.length >= 2) {
-      markers.add(
-        _buildHistoryMarker(
-          point: routePoints.first,
-          icon: Icons.radio_button_checked,
-          color: Colors.green,
-          label: 'Awal',
-        ),
+      final start = routePoints.first;
+      final end = routePoints.last;
+      final startEndDistance = const Distance().as(
+        LengthUnit.Meter,
+        start,
+        end,
       );
+      final endDestinationDistance = destination == null
+          ? double.infinity
+          : const Distance().as(LengthUnit.Meter, end, destination);
+      final isEndAtDestination =
+          isCompleted && destination != null && endDestinationDistance <= 20;
+      final isStartEndOverlapping =
+          !isCompleted && status != 'ongoing' && startEndDistance <= 20;
 
-      markers.add(
-        _buildHistoryMarker(
-          point: routePoints.last,
-          icon: Icons.location_on,
-          color: status == 'ongoing' ? AppColors.primary : Colors.red,
-          label: status == 'ongoing' ? 'Posisi terakhir' : 'Akhir',
-        ),
-      );
+      if (isEndAtDestination && startEndDistance <= 20) {
+        destinationMerged = true;
+        markers.add(
+          _buildCombinedHistoryMarker(
+            point: destination,
+            icons: const [
+              (Icons.radio_button_checked, Colors.green),
+              (Icons.flag_rounded, Colors.deepPurple),
+            ],
+            label: 'Awal & Sampai Tujuan',
+            width: 172,
+          ),
+        );
+      } else if (isEndAtDestination) {
+        destinationMerged = true;
+        markers.add(
+          _buildHistoryMarker(
+            point: start,
+            icon: Icons.radio_button_checked,
+            color: Colors.green,
+            label: 'Awal',
+          ),
+        );
+        markers.add(
+          _buildCombinedHistoryMarker(
+            point: destination,
+            icons: const [
+              (Icons.location_on, Colors.red),
+              (Icons.flag_rounded, Colors.deepPurple),
+            ],
+            label: 'Sampai Tujuan',
+            width: 142,
+          ),
+        );
+      } else if (isStartEndOverlapping) {
+        markers.add(
+          _buildOverlappingStartEndMarker(
+            point: end,
+            distanceMeters: startEndDistance,
+          ),
+        );
+      } else {
+        markers.add(
+          _buildHistoryMarker(
+            point: start,
+            icon: Icons.radio_button_checked,
+            color: Colors.green,
+            label: 'Awal',
+          ),
+        );
+
+        markers.add(
+          _buildHistoryMarker(
+            point: end,
+            icon: Icons.location_on,
+            color: status == 'ongoing' ? AppColors.primary : Colors.red,
+            label: status == 'ongoing' ? 'Posisi terakhir' : 'Akhir',
+          ),
+        );
+      }
     }
 
-    if (destination != null) {
+    if (destination != null && !destinationMerged) {
       markers.add(
         _buildHistoryMarker(
           point: destination,
@@ -3239,6 +3359,154 @@ class _NavigationHistoryDetailScreenState
     }
 
     return markers;
+  }
+
+  Marker _buildCombinedHistoryMarker({
+    required LatLng point,
+    required List<(IconData, Color)> icons,
+    required String label,
+    required double width,
+  }) {
+    return Marker(
+      point: point,
+      width: width,
+      height: 82,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var index = 0; index < icons.length; index++) ...[
+                  if (index > 0) const SizedBox(width: 3),
+                  _buildCompactHistoryMarkerIcon(
+                    icon: icons[index].$1,
+                    color: icons[index].$2,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textPrimary,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Marker _buildOverlappingStartEndMarker({
+    required LatLng point,
+    required double distanceMeters,
+  }) {
+    return Marker(
+      point: point,
+      width: 132,
+      height: 82,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.18),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildCompactHistoryMarkerIcon(
+                  icon: Icons.radio_button_checked,
+                  color: Colors.green,
+                ),
+                const SizedBox(width: 3),
+                _buildCompactHistoryMarkerIcon(
+                  icon: Icons.location_on,
+                  color: Colors.red,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              'Awal & Akhir · ${distanceMeters.round()} m',
+              maxLines: 1,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textPrimary,
+                fontSize: 9.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactHistoryMarkerIcon({
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: Icon(icon, color: Colors.white, size: 17),
+    );
   }
 
   Set<Polyline> buildHistoryPolylines(List<LatLng> routePoints) {
@@ -3969,6 +4237,45 @@ class _NavigationHistoryDetailScreenState
     }
   }
 
+  String _routeFocusSignature({
+    required List<LatLng> routePoints,
+    required Map<String, dynamic> tripData,
+  }) {
+    final first = routePoints.isNotEmpty ? routePoints.first : null;
+    final last = routePoints.isNotEmpty ? routePoints.last : null;
+    return [
+      routePoints.length,
+      first?.latitude,
+      first?.longitude,
+      last?.latitude,
+      last?.longitude,
+      tripData['originLat'],
+      tripData['originLng'],
+      tripData['destinationLat'],
+      tripData['destinationLng'],
+    ].join('|');
+  }
+
+  void _focusRouteWhenReady({
+    required List<LatLng> routePoints,
+    required Map<String, dynamic> tripData,
+    bool force = false,
+  }) {
+    if (!_isHistoryMapReady) return;
+
+    final signature = _routeFocusSignature(
+      routePoints: routePoints,
+      tripData: tripData,
+    );
+    if (!force && signature == _lastFocusedRouteSignature) return;
+    _lastFocusedRouteSignature = signature;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _focusRoute(routePoints: routePoints, tripData: tripData);
+    });
+  }
+
   Widget _buildRouteMapSection(Map<String, dynamic> tripData) {
     final status = tripData['status'] is String
         ? tripData['status'] as String
@@ -4043,10 +4350,7 @@ class _NavigationHistoryDetailScreenState
             ).toList();
             final polylines = buildHistoryPolylines(routePoints).toList();
 
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) return;
-              _focusRoute(routePoints: routePoints, tripData: tripData);
-            });
+            _focusRouteWhenReady(routePoints: routePoints, tripData: tripData);
 
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -4069,6 +4373,14 @@ class _NavigationHistoryDetailScreenState
                         initialZoom: routePoints.length >= 2 ? 15 : 16,
                         minZoom: 5,
                         maxZoom: 18,
+                        onMapReady: () {
+                          _isHistoryMapReady = true;
+                          _focusRouteWhenReady(
+                            routePoints: routePoints,
+                            tripData: tripData,
+                            force: true,
+                          );
+                        },
                         interactionOptions: const InteractionOptions(
                           flags: InteractiveFlag.all,
                         ),
@@ -4110,6 +4422,15 @@ class _NavigationHistoryDetailScreenState
                     ),
                   ),
                 ),
+                if (status == 'cancelled' ||
+                    status == 'canceled' ||
+                    status == 'batal') ...[
+                  const SizedBox(height: 12),
+                  _buildEndCoordinateTile(
+                    lat: tripData['endLat'],
+                    lng: tripData['endLng'],
+                  ),
+                ],
               ],
             );
           },
@@ -4364,10 +4685,6 @@ class _NavigationHistoryDetailScreenState
               ),
               maxLines: 2,
             ),
-            if (status == 'cancelled' ||
-                status == 'canceled' ||
-                status == 'batal')
-              _buildEndCoordinateTile(lat: data['endLat'], lng: data['endLng']),
           ],
         ),
         const SizedBox(height: 14),
