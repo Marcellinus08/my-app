@@ -42,11 +42,10 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   // List of monitored users
   List<Map<String, dynamic>> _monitoredUsers = [];
   Map<String, FamilyLocation?> _latestLocations = {};
-  Map<String, StreamSubscription<FamilyLocation>?> _subscriptions = {};
   Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?>
   _userProfileSubscriptions = {};
   Map<String, Map<String, dynamic>?> _liveTrackingData = {};
-  Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?>
+  Map<String, StreamSubscription<Map<String, dynamic>?>?>
   _liveTrackingSubscriptions = {};
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
   _activeSosSubscription;
@@ -141,13 +140,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             .where((uid) => uid.isNotEmpty)
             .toSet();
 
-        for (final uid in _subscriptions.keys.toList()) {
-          if (!activeUids.contains(uid)) {
-            _subscriptions.remove(uid)?.cancel();
-            _latestLocations.remove(uid);
-          }
-        }
-
         for (final uid in _userProfileSubscriptions.keys.toList()) {
           if (!activeUids.contains(uid)) {
             _userProfileSubscriptions.remove(uid)?.cancel();
@@ -177,7 +169,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       for (var user in users) {
         final uid = user['uid'] as String?;
         if (uid != null && uid.isNotEmpty) {
-          _subscribeToUserLocation(uid);
           _subscribeToUserProfile(uid);
           _subscribeToLiveTracking(uid);
         }
@@ -195,39 +186,37 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     }
   }
 
-  void _subscribeToUserLocation(String uid) {
-    if (_subscriptions[uid] != null) {
-      _subscriptions[uid]?.cancel();
-    }
-
-    final stream = _locationService.listenToRealtime(uid, storeHistory: true);
-    final sub = stream.listen((location) {
-      if (mounted) {
-        setState(() {
-          _latestLocations[uid] = location;
-        });
-      }
-    });
-
-    _subscriptions[uid] = sub;
-  }
-
   void _subscribeToLiveTracking(String uid) {
     if (_liveTrackingSubscriptions[uid] != null) {
       _liveTrackingSubscriptions[uid]?.cancel();
     }
 
-    final sub = _firestore
-        .collection('live_tracking')
-        .doc(uid)
-        .snapshots()
-        .listen((snapshot) {
-          if (mounted) {
-            setState(() {
-              _liveTrackingData[uid] = snapshot.data();
+    final sub = _locationService
+        .watchLiveTracking(uid)
+        .listen(
+          (data) {
+            if (mounted) {
+              setState(() {
+                _liveTrackingData[uid] = data;
+                _latestLocations[uid] = data == null
+                    ? null
+                    : FamilyLocation.fromMap(uid, data);
+              });
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            debugPrint(
+              '[FamilyHome] Live tracking listener gagal untuk $uid: $error',
+            );
+            Future<void>.delayed(const Duration(seconds: 2), () {
+              if (!mounted ||
+                  !_monitoredUsers.any((user) => user['uid'] == uid)) {
+                return;
+              }
+              _subscribeToLiveTracking(uid);
             });
-          }
-        });
+          },
+        );
 
     _liveTrackingSubscriptions[uid] = sub;
   }
@@ -402,13 +391,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     if (liveData == null) return false;
 
     final connectionStatus = liveData['connectionStatus'];
-    final lat = _parseDouble(liveData['lat']);
-    final lng = _parseDouble(liveData['lng']);
+    final gpsStatus = liveData['gpsStatus'];
     final updatedAt = _parseTimestamp(liveData['updatedAt']);
 
     return connectionStatus == 'online' &&
-        lat != null &&
-        lng != null &&
+        gpsStatus == 'gps_live' &&
         _isLiveTrackingFresh(updatedAt);
   }
 
@@ -899,9 +886,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
 
   @override
   void dispose() {
-    for (var sub in _subscriptions.values) {
-      sub?.cancel();
-    }
     for (var sub in _userProfileSubscriptions.values) {
       sub?.cancel();
     }
@@ -1624,7 +1608,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                           _buildDeviceStatusInfo(
                             icon: Icons.wifi_rounded,
                             label: 'Internet',
-                            value: location.internetAvailable ? 'OK' : 'Lemah',
+                            value: location.internetAvailable
+                                ? 'Aktif'
+                                : 'Mati',
                             isActive: location.internetAvailable,
                           ),
                           Container(
@@ -1661,7 +1647,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Lokasi terakhir: ${_formatTimeAgo(location.timestamp)}',
+                              'Aktif terakhir: ${_formatTimeAgo(location.timestamp)}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: AppTextStyles.bodySmall.copyWith(
@@ -2040,7 +2026,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Timestamp? _parseTimestamp(dynamic value) {
-    return value is Timestamp ? value : null;
+    if (value is Timestamp) return value;
+    if (value is num) {
+      return Timestamp.fromMillisecondsSinceEpoch(value.round());
+    }
+    return null;
   }
 
   String? _readString(dynamic value) {

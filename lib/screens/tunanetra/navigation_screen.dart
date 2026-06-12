@@ -539,16 +539,16 @@ class _NavigationScreenState extends State<NavigationScreen>
         priority: TtsPriority.critical,
         deduplicationKey: 'navigation-sos-sending',
       );
-      await _sosService.sendSosAlert();
+      final result = await _sosService.sendSosAlert();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('SOS berhasil dikirim ke keluarga'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 3),
-        ),
+      AppFeedback.show(
+        context,
+        result.feedbackMessage,
+        type: result.deliveredToAnyFamily
+            ? AppFeedbackType.success
+            : AppFeedbackType.warning,
       );
-      unawaited(_announceSosStatus('Status SOS, berhasil dikirim ke keluarga'));
+      unawaited(_announceSosStatus(result.spokenMessage));
     } catch (error) {
       if (!mounted) return;
       AppFeedback.error(
@@ -556,6 +556,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         error,
         fallback:
             'SOS belum dapat dikirim. Periksa koneksi dan coba kembali segera.',
+        announce: true,
       );
       unawaited(_announceSosStatus('Status SOS, gagal dikirim'));
     } finally {
@@ -1631,11 +1632,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       ),
     );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Anda keluar jalur. Menghitung ulang rute...'),
-        duration: Duration(seconds: 3),
-      ),
+    AppFeedback.warning(
+      context,
+      'Anda keluar jalur. Rute sedang dihitung ulang.',
     );
 
     await _loadRoute();
@@ -1808,17 +1807,19 @@ class _NavigationScreenState extends State<NavigationScreen>
 
       // Check if location service is enabled
       bool isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!mounted) return;
       if (!isServiceEnabled) {
         print('[NAVIGATION] ❌ Location service is disabled');
         setState(() {
           _userLocation = defaultLocation;
-          _isLocationReady = true;
+          _isLocationReady = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Aktifkan layanan lokasi terlebih dahulu'),
-            duration: Duration(seconds: 3),
-          ),
+        AppFeedback.warning(
+          context,
+          'Layanan lokasi belum aktif. Aktifkan GPS untuk memulai navigasi.',
+          actionLabel: 'Buka pengaturan',
+          onAction: () => unawaited(Geolocator.openLocationSettings()),
+          announce: true,
         );
         return;
       }
@@ -1830,6 +1831,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         print('[NAVIGATION] Permission denied, requesting...');
         permission = await Geolocator.requestPermission();
       }
+      if (!mounted) return;
 
       if (permission == LocationPermission.deniedForever) {
         print('[NAVIGATION] ❌ Permission permanently denied');
@@ -1837,11 +1839,12 @@ class _NavigationScreenState extends State<NavigationScreen>
           _userLocation = defaultLocation;
           _isLocationReady = false; // Keep false - using default location
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Izin lokasi diperlukan'),
-            duration: Duration(seconds: 3),
-          ),
+        AppFeedback.warning(
+          context,
+          'Izin lokasi dinonaktifkan permanen. Buka pengaturan aplikasi lalu izinkan lokasi.',
+          actionLabel: 'Buka pengaturan',
+          onAction: () => unawaited(Geolocator.openAppSettings()),
+          announce: true,
         );
         return;
       }
@@ -1853,8 +1856,10 @@ class _NavigationScreenState extends State<NavigationScreen>
             '[NAVIGATION] Getting initial GPS location (one-time, battery friendly)...',
           );
           Position position = await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.bestForNavigation,
-            timeLimit: const Duration(seconds: 60),
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.bestForNavigation,
+              timeLimit: Duration(seconds: 60),
+            ),
           );
 
           print(
@@ -1917,7 +1922,8 @@ class _NavigationScreenState extends State<NavigationScreen>
           if (mounted) {
             _onGpsPositionUpdate(position);
 
-            // Load route on first GPS location to ensure accuracy
+            // Bentuk rute dari pembacaan GPS pertama. Akurasi GPS tetap
+            // divalidasi saat memperbarui progres rute dan status tiba.
             if (!hasLoadedRouteOnceFromStreaming && _selectedPlace != null) {
               print(
                 '[NAVIGATION] Loading route with real GPS location from streaming...',
@@ -2345,14 +2351,10 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   void _goToCurrentLocation() {
     _safeMoveMap(_userLocation, 18.0);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Moving to current location: ${_userLocation.latitude.toStringAsFixed(4)}, ${_userLocation.longitude.toStringAsFixed(4)}',
-        ),
-        backgroundColor: AppColors.primary,
-        duration: const Duration(seconds: 2),
-      ),
+    AppFeedback.info(
+      context,
+      'Peta dipusatkan ke posisi Anda.',
+      announce: true,
     );
   }
 
@@ -2402,12 +2404,10 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     _safeMoveMap(center, zoom);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Menampilkan ${_places.length} tempat + posisi Anda'),
-        backgroundColor: AppColors.primary,
-        duration: const Duration(seconds: 2),
-      ),
+    AppFeedback.info(
+      context,
+      'Menampilkan ${_places.length} tempat dan posisi Anda.',
+      announce: true,
     );
   }
 
@@ -2461,8 +2461,8 @@ class _NavigationScreenState extends State<NavigationScreen>
                 Row(
                   children: [
                     Container(
-                      width: 42,
-                      height: 42,
+                      width: 48,
+                      height: 48,
                       decoration: BoxDecoration(
                         color: AppColors.primaryLight.withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(12),
@@ -2897,7 +2897,12 @@ class _NavigationScreenState extends State<NavigationScreen>
           _routeLoadError = userFriendlyMsg;
         });
 
-        AppFeedback.show(context, userFriendlyMsg, type: AppFeedbackType.error);
+        AppFeedback.show(
+          context,
+          userFriendlyMsg,
+          type: AppFeedbackType.error,
+          announce: true,
+        );
       }
     }
   }
@@ -3319,12 +3324,13 @@ class _NavigationScreenState extends State<NavigationScreen>
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
               child: const SizedBox(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 24,
+                  semanticLabel: 'Kembali',
                 ),
               ),
             ),
@@ -3370,8 +3376,8 @@ class _NavigationScreenState extends State<NavigationScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           SizedBox(
-            width: 42,
-            height: 42,
+            width: 48,
+            height: 48,
             child: CircularProgressIndicator(
               strokeWidth: 3,
               valueColor: AlwaysStoppedAnimation<Color>(AppColors.primaryDark),
@@ -3507,8 +3513,8 @@ class _NavigationScreenState extends State<NavigationScreen>
                   child: Row(
                     children: [
                       Container(
-                        width: 42,
-                        height: 42,
+                        width: 48,
+                        height: 48,
                         decoration: BoxDecoration(
                           color: isFamilyPlace
                               ? familyAccentSoft.withValues(alpha: 0.86)
@@ -3848,8 +3854,8 @@ class _NavigationScreenState extends State<NavigationScreen>
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Container(
-                              width: 42,
-                              height: 42,
+                              width: 48,
+                              height: 48,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 color: const Color(0xFF22C55E),
@@ -3928,14 +3934,10 @@ class _NavigationScreenState extends State<NavigationScreen>
                                 _selectedPlace!.longitude,
                               ),
                             );
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  'Navigasi ke ${_selectedPlace!.name}',
-                                ),
-                                backgroundColor: AppColors.primary,
-                                duration: const Duration(seconds: 2),
-                              ),
+                            AppFeedback.info(
+                              context,
+                              'Peta dipusatkan ke ${_selectedPlace!.name}.',
+                              announce: true,
                             );
                           },
                           child: Column(
@@ -4069,12 +4071,13 @@ class _NavigationScreenState extends State<NavigationScreen>
                         },
                         borderRadius: BorderRadius.circular(12),
                         child: const SizedBox(
-                          width: 42,
-                          height: 42,
+                          width: 48,
+                          height: 48,
                           child: Icon(
                             Icons.arrow_back_rounded,
                             color: Colors.white,
                             size: 24,
+                            semanticLabel: 'Kembali',
                           ),
                         ),
                       ),
@@ -4142,7 +4145,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                     padding: const EdgeInsets.all(10),
                     child: Icon(
                       Icons.my_location_rounded,
-                      color: Colors.green.shade600,
+                      color: AppColors.primaryDark,
                       size: 22,
                     ),
                   ),

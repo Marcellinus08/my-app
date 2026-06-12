@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
+import 'realtime_live_tracking_service.dart';
+
 class NavigationHistoryService {
   NavigationHistoryService({FirebaseFirestore? firestore, FirebaseAuth? auth})
     : _firestore = firestore ?? FirebaseFirestore.instance,
@@ -10,6 +12,8 @@ class NavigationHistoryService {
 
   final FirebaseFirestore _firestore;
   final FirebaseAuth _auth;
+  final RealtimeLiveTrackingService _realtimeTracking =
+      RealtimeLiveTrackingService.instance;
   static const Duration _offlineNavigationTimeout = Duration(seconds: 60);
 
   CollectionReference<Map<String, dynamic>> get _collection =>
@@ -173,24 +177,21 @@ class NavigationHistoryService {
     if (tripId.trim().isEmpty || userId.trim().isEmpty) return false;
 
     try {
+      final liveData = await _realtimeTracking.get(userId);
+      final liveUpdatedAt = _parseRealtimeTimestamp(liveData?['updatedAt']);
+      final isOffline =
+          liveUpdatedAt != null &&
+          DateTime.now().difference(liveUpdatedAt) >= _offlineNavigationTimeout;
+      if (liveData == null || !isOffline) return false;
+
       final tripRef = _collection.doc(tripId);
-      final liveTrackingRef = _firestore
-          .collection('live_tracking')
-          .doc(userId);
       final eventRef = tripRef.collection('events').doc();
 
       return await _firestore.runTransaction((transaction) async {
         final tripSnapshot = await transaction.get(tripRef);
-        final liveTrackingSnapshot = await transaction.get(liveTrackingRef);
-        if (!tripSnapshot.exists || !liveTrackingSnapshot.exists) return false;
+        if (!tripSnapshot.exists) return false;
 
         final tripData = tripSnapshot.data();
-        final liveData = liveTrackingSnapshot.data();
-        final liveUpdatedAt = liveData?['updatedAt'];
-        final isOffline =
-            liveUpdatedAt is Timestamp &&
-            DateTime.now().difference(liveUpdatedAt.toDate()) >=
-                _offlineNavigationTimeout;
 
         if (tripData == null ||
             tripData['userId'] != userId ||
@@ -204,8 +205,8 @@ class NavigationHistoryService {
         final durationSeconds = startTime is Timestamp
             ? now.toDate().difference(startTime.toDate()).inSeconds
             : 0;
-        final lastLat = liveData?['lat'];
-        final lastLng = liveData?['lng'];
+        final lastLat = liveData['lat'];
+        final lastLng = liveData['lng'];
         final endLat = lastLat is num ? lastLat.toDouble() : null;
         final endLng = lastLng is num ? lastLng.toDouble() : null;
 
@@ -232,13 +233,6 @@ class NavigationHistoryService {
           'timestamp': now,
           'createdAt': now,
         });
-        transaction.set(liveTrackingRef, {
-          'isNavigating': false,
-          'currentTripId': null,
-          'destinationName': null,
-          'connectionStatus': 'offline',
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
 
         return true;
       });
@@ -247,6 +241,20 @@ class NavigationHistoryService {
       debugPrintStack(stackTrace: st);
       return false;
     }
+  }
+
+  DateTime? _parseRealtimeTimestamp(dynamic value) {
+    if (value is num) {
+      return DateTime.fromMillisecondsSinceEpoch(value.round());
+    }
+    if (value is String) {
+      final milliseconds = int.tryParse(value);
+      if (milliseconds != null) {
+        return DateTime.fromMillisecondsSinceEpoch(milliseconds);
+      }
+      return DateTime.tryParse(value);
+    }
+    return null;
   }
 
   Future<int> cancelOngoingTripsBecauseUserOffline({

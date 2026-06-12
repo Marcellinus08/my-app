@@ -188,12 +188,13 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
               child: const SizedBox(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 23,
+                  semanticLabel: 'Kembali',
                 ),
               ),
             ),
@@ -480,70 +481,79 @@ class _SettingsItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDanger = color == AppColors.error;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: isDanger ? 0.10 : 0.09),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodyLarge.copyWith(
-                        color: AppColors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                      ),
+    return Semantics(
+      button: true,
+      label: title,
+      hint: subtitle ?? 'Ketuk dua kali untuk membuka',
+      child: ExcludeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: isDanger ? 0.10 : 0.09),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        subtitle!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
-                          fontSize: 12.5,
-                          height: 1.25,
+                    child: Icon(icon, color: color, size: 22),
+                  ),
+                  const SizedBox(width: 13),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.bodyLarge.copyWith(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            height: 1.15,
+                          ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
+                        if (subtitle != null) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            subtitle!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.chevron_right_rounded,
+                      color: isDanger
+                          ? AppColors.error
+                          : AppColors.textSecondary,
+                      size: 18,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.chevron_right_rounded,
-                  color: isDanger ? AppColors.error : AppColors.textSecondary,
-                  size: 18,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

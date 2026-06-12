@@ -14,6 +14,7 @@ import '../../services/core_permission_service.dart';
 import '../../services/live_tracking_service.dart';
 import '../../services/navigation_history_service.dart';
 import '../../services/pairing_service.dart';
+import '../../services/realtime_live_tracking_service.dart';
 import '../../services/sos_service.dart';
 import '../../services/smart_cane_ble_service.dart';
 import '../../services/weather_service.dart';
@@ -79,6 +80,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   Future<void>? _sosStatusAnnouncement;
   StreamSubscription<SmartCaneButtonEvent>? _smartCaneButtonSubscription;
   StreamSubscription<SmartCaneBatteryData>? _smartCaneBatterySubscription;
+  StreamSubscription<String>? _userNameSubscription;
   SmartCaneBatteryData? _latestSmartCaneBatteryData;
 
   late AnimationController _fadeController;
@@ -367,6 +369,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           onError: (_) {
             _homeSttActive = false;
           },
+          pauseFor: const Duration(seconds: 2),
+          finalResultsOnly: true,
         )
         .whenComplete(() {
           _homeSttStarting = false;
@@ -377,6 +381,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _homeSttActive = false;
     _homeSttStarting = false;
     await _sttService.stopListening();
+  }
+
+  Future<void> _finishHomeStt() async {
+    _homeSttActive = false;
+    _homeSttStarting = false;
+    await _sttService.finishListening();
   }
 
   bool _isKnownHomeVoiceCommand(String text) {
@@ -547,7 +557,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
     if (event.isVoiceAssistantStop) {
       debugPrint('[SMARTCANE_BUTTON] Home mematikan STT');
-      await _stopHomeStt();
+      await _finishHomeStt();
       return;
     }
 
@@ -594,7 +604,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       );
 
       // Subscribe to stream changes
-      _userNameStream.listen((newName) {
+      _userNameSubscription?.cancel();
+      _userNameSubscription = _userNameStream.listen((newName) {
         if (mounted) {
           setState(() {
             _userName = newName;
@@ -602,9 +613,39 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           _speakIfReady();
         }
       });
+      unawaited(_syncRealtimeTrackingAccess(uid));
     } else {
       print('❌ User UID is null');
       _userNameStream = Stream.value('Pengguna');
+    }
+  }
+
+  Future<void> _syncRealtimeTrackingAccess(String userId) async {
+    try {
+      final snapshot = await _firestore.collection('users').doc(userId).get();
+      final connectedFamilies = snapshot.data()?['connectedFamilies'];
+      final familyUids = <String>{};
+      if (connectedFamilies is List) {
+        for (final family in connectedFamilies) {
+          if (family is Map && family['uid'] is String) {
+            familyUids.add(family['uid'] as String);
+          }
+        }
+      }
+
+      final familyMembers = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('family_members')
+          .get();
+      familyUids.addAll(familyMembers.docs.map((doc) => doc.id));
+
+      await RealtimeLiveTrackingService.instance.syncFamilyAccess(
+        userId: userId,
+        familyUids: familyUids,
+      );
+    } catch (error) {
+      debugPrint('[HOME] Gagal menyinkronkan akses live tracking: $error');
     }
   }
 
@@ -1048,8 +1089,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
                     Row(
                       children: [
                         Container(
-                          width: 42,
-                          height: 42,
+                          width: 48,
+                          height: 48,
                           decoration: BoxDecoration(
                             color: AppColors.infoLight.withValues(alpha: 0.62),
                             borderRadius: BorderRadius.circular(12),
@@ -1351,17 +1392,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   void _showHomeBleSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(
-            message,
-            style: AppTextStyles.bodySmall.copyWith(color: Colors.white),
-          ),
-          backgroundColor: isError ? AppColors.error : AppColors.success,
-        ),
-      );
+    AppFeedback.show(
+      context,
+      message,
+      type: isError ? AppFeedbackType.error : AppFeedbackType.success,
+      announce: true,
+    );
   }
 
   String _homeDeviceName(BluetoothDevice device) {
@@ -1408,7 +1444,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       _isSendingSos = true;
     });
 
-    var sosSent = false;
+    SosSendResult? sosResult;
     Object? sosError;
 
     try {
@@ -1417,8 +1453,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         priority: TtsPriority.critical,
         deduplicationKey: 'home-sos-sending',
       );
-      await _sosService.sendSosAlert();
-      sosSent = true;
+      sosResult = await _sosService.sendSosAlert();
     } catch (e) {
       sosError = e;
     } finally {
@@ -1431,21 +1466,23 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
     if (!mounted) return;
 
-    if (sosSent) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('SOS berhasil dikirim ke keluarga'),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 3),
-        ),
+    if (sosResult != null) {
+      AppFeedback.show(
+        context,
+        sosResult.feedbackMessage,
+        type: sosResult.deliveredToAnyFamily
+            ? AppFeedbackType.success
+            : AppFeedbackType.warning,
+        announce: false,
       );
-      _queueSosStatusAnnouncement('SOS berhasil dikirim ke keluarga');
+      _queueSosStatusAnnouncement(sosResult.spokenMessage);
     } else {
       AppFeedback.error(
         context,
         sosError,
         fallback:
             'SOS belum dapat dikirim. Periksa koneksi dan coba kembali segera.',
+        announce: true,
       );
       _queueSosStatusAnnouncement('SOS gagal dikirim');
     }
@@ -1551,15 +1588,13 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            accepted
-                ? 'Keluarga berhasil terhubung'
-                : 'Permintaan keluarga ditolak',
-          ),
-          backgroundColor: accepted ? Colors.green : Colors.orange,
-        ),
+      AppFeedback.show(
+        context,
+        accepted
+            ? 'Keluarga berhasil terhubung.'
+            : 'Permintaan keluarga ditolak.',
+        type: accepted ? AppFeedbackType.success : AppFeedbackType.warning,
+        announce: true,
       );
     } catch (error) {
       if (!mounted) return;
@@ -1568,6 +1603,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         error,
         fallback:
             'Respons koneksi keluarga belum dapat diproses. Silakan coba lagi.',
+        announce: true,
       );
     } finally {
       _isPairingDialogOpen = false;
@@ -1739,8 +1775,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   Widget _buildWeatherBadge() {
     if (_weatherData == null) {
       return Container(
-        width: 42,
-        height: 42,
+        width: 48,
+        height: 48,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(14),
@@ -1942,6 +1978,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _bleService.removeListener(_syncHomeBleServiceState);
     _smartCaneButtonSubscription?.cancel();
     _smartCaneBatterySubscription?.cancel();
+    _userNameSubscription?.cancel();
     _authStateSub?.cancel();
     _stopHomeStt();
     routeObserver.unsubscribe(this);
@@ -2015,14 +2052,27 @@ class _StatusPill extends StatelessWidget {
       ),
     );
 
-    if (onTap == null) return content;
+    if (onTap == null) {
+      return Semantics(
+        liveRegion: true,
+        label: '$label, $value',
+        child: ExcludeSemantics(child: content),
+      );
+    }
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: content,
+    return Semantics(
+      button: true,
+      label: '$label, $value',
+      hint: 'Ketuk dua kali untuk membuka',
+      child: ExcludeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: content,
+          ),
+        ),
       ),
     );
   }
@@ -2058,8 +2108,8 @@ class _HomeBleDeviceTile extends StatelessWidget {
           child: Row(
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   color: AppColors.infoLight.withValues(alpha: 0.62),
                   borderRadius: BorderRadius.circular(12),
@@ -2215,71 +2265,78 @@ class _PrimaryActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Ink(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            color: color,
+    return Semantics(
+      button: true,
+      label: title,
+      hint: subtitle,
+      child: ExcludeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
             borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: color.withOpacity(0.18),
-                blurRadius: 16,
-                offset: const Offset(0, 8),
+            child: Ink(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withOpacity(0.18),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(icon, color: Colors.white, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.button.copyWith(
-                        fontSize: 18,
-                        letterSpacing: 0,
-                      ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.16),
+                      borderRadius: BorderRadius.circular(13),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption.copyWith(
-                        color: Colors.white.withOpacity(0.88),
-                        fontWeight: FontWeight.w600,
-                        height: 1.25,
-                      ),
+                    child: Icon(icon, color: Colors.white, size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.button.copyWith(
+                            fontSize: 18,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption.copyWith(
+                            color: Colors.white.withOpacity(0.88),
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 10),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white.withOpacity(0.86),
+                    size: 26,
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.white.withOpacity(0.86),
-                size: 26,
-              ),
-            ],
+            ),
           ),
         ),
       ),

@@ -19,11 +19,25 @@ class TunaNetraVoiceCommands {
   }
 
   static bool isSosCommand(String command) {
-    final text = command.toLowerCase();
-    return text.contains('sos') ||
-        text.contains('darurat') ||
-        text.contains('tolong') ||
-        text.contains('bantuan');
+    final text = command
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    const exactCommands = {
+      'sos',
+      'kirim sos',
+      'aktifkan sos',
+      'sos darurat',
+      'kirim sos darurat',
+      'saya darurat',
+      'saya butuh bantuan darurat',
+      'tolong kirim sos',
+    };
+
+    return exactCommands.contains(text) ||
+        text.startsWith('kirim sos ') ||
+        text.startsWith('aktifkan sos ');
   }
 
   static bool isReconnectSmartCaneCommand(String command) {
@@ -108,7 +122,7 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
 
     if (event.isVoiceAssistantStop) {
       _homeCommandListenerActive = false;
-      await _homeCommandSttService.stopListening();
+      await _homeCommandSttService.finishListening();
       return;
     }
 
@@ -182,6 +196,8 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
       onError: (_) {
         _homeCommandListenerActive = false;
       },
+      pauseFor: const Duration(seconds: 2),
+      finalResultsOnly: true,
     );
     _isStartingHomeCommandListener = false;
   }
@@ -208,11 +224,9 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
     try {
       _isHomeCommandSpeaking = true;
       await _homeCommandTtsService.speak('Mengirim SOS darurat');
-      await SosService().sendSosAlert();
+      final result = await SosService().sendSosAlert();
       await Future.delayed(const Duration(milliseconds: 600));
-      await _homeCommandTtsService.speak(
-        'Status SOS, berhasil dikirim ke keluarga',
-      );
+      await _homeCommandTtsService.speak(result.spokenMessage);
     } catch (_) {
       await Future.delayed(const Duration(milliseconds: 600));
       await _homeCommandTtsService.speak('Status SOS, gagal dikirim');

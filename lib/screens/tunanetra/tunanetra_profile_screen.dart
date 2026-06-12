@@ -75,6 +75,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
         context,
         'Nama dan email harus diisi.',
         type: AppFeedbackType.error,
+        announce: true,
       );
       return;
     }
@@ -104,7 +105,11 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             );
           });
 
-          AppFeedback.success(context, 'Profil berhasil diperbarui.');
+          AppFeedback.success(
+            context,
+            'Profil berhasil diperbarui.',
+            announce: true,
+          );
         }
       }
     } catch (error) {
@@ -114,6 +119,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
           context,
           error,
           fallback: 'Profil belum dapat disimpan. Silakan coba lagi.',
+          announce: true,
         );
       }
     }
@@ -169,7 +175,11 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             );
           });
 
-          AppFeedback.success(this.context, 'Kode penghubung berhasil dibuat.');
+          AppFeedback.success(
+            this.context,
+            'Kode penghubung berhasil dibuat.',
+            announce: true,
+          );
         }
       }
     } catch (error) {
@@ -179,6 +189,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
           this.context,
           error,
           fallback: 'Kode penghubung belum dapat dibuat. Silakan coba lagi.',
+          announce: true,
         );
       }
     }
@@ -246,12 +257,15 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
               },
               borderRadius: BorderRadius.circular(12),
               child: SizedBox(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 child: Icon(
                   _isEditing ? Icons.close_rounded : Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 23,
+                  semanticLabel: _isEditing
+                      ? 'Batal mengubah profil'
+                      : 'Kembali',
                 ),
               ),
             ),
@@ -409,8 +423,8 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     return Row(
       children: [
         Container(
-          width: 42,
-          height: 42,
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
             color: AppColors.infoLight.withValues(alpha: 0.58),
             borderRadius: BorderRadius.circular(12),
@@ -503,8 +517,8 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     return Row(
       children: [
         Container(
-          width: 42,
-          height: 42,
+          width: 48,
+          height: 48,
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(12),

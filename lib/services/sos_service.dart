@@ -7,6 +7,43 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
+import 'realtime_live_tracking_service.dart';
+
+class SosSendResult {
+  final String sosId;
+  final int successCount;
+  final int failedCount;
+
+  const SosSendResult({
+    required this.sosId,
+    required this.successCount,
+    required this.failedCount,
+  });
+
+  bool get deliveredToAnyFamily => successCount > 0;
+  bool get deliveredToAllFamilies => successCount > 0 && failedCount == 0;
+
+  String get feedbackMessage {
+    if (deliveredToAllFamilies) {
+      return 'SOS berhasil dikirim ke keluarga.';
+    }
+    if (deliveredToAnyFamily) {
+      return 'SOS terkirim ke sebagian keluarga. Beberapa notifikasi belum berhasil dikirim.';
+    }
+    return 'SOS tersimpan, tetapi notifikasi keluarga belum terkirim. Coba kembali segera.';
+  }
+
+  String get spokenMessage {
+    if (deliveredToAllFamilies) {
+      return 'Status SOS, berhasil dikirim ke keluarga.';
+    }
+    if (deliveredToAnyFamily) {
+      return 'Status SOS, terkirim ke sebagian keluarga.';
+    }
+    return 'Status SOS, tersimpan tetapi notifikasi keluarga gagal dikirim. Coba kembali segera.';
+  }
+}
+
 class SosService {
   static const String workerSendSosUrl =
       'https://teman-arah-sos-worker.teman-arah.workers.dev/send-sos';
@@ -23,7 +60,7 @@ class SosService {
        _firestore = firestore ?? FirebaseFirestore.instance,
        _httpClient = httpClient ?? http.Client();
 
-  Future<void> sendSosAlert() async {
+  Future<SosSendResult> sendSosAlert() async {
     try {
       debugPrint('[SosService] sendSosAlert started');
 
@@ -154,6 +191,12 @@ class SosService {
           'for every family device.',
         );
       }
+
+      return SosSendResult(
+        sosId: sosId,
+        successCount: successCount,
+        failedCount: failedCount,
+      );
     } catch (e) {
       debugPrint('[SosService] sendSosAlert failed: $e');
       rethrow;
@@ -229,11 +272,7 @@ class SosService {
   }
 
   Future<Map<String, dynamic>?> getLiveTracking(String uid) async {
-    final snapshot = await _firestore
-        .collection('live_tracking')
-        .doc(uid)
-        .get();
-    return snapshot.data();
+    return RealtimeLiveTrackingService.instance.get(uid);
   }
 
   Future<LatLng?> getCurrentLocationFallback() async {

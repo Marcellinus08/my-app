@@ -48,6 +48,8 @@ class DefaultFirebaseOptions {
     appId: '1:60336439697:android:5863a0a5ba25821dbc1a30',
     messagingSenderId: '60336439697',
     projectId: 'smarthcane-11b47',
+    databaseURL:
+        'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'smarthcane-11b47.firebasestorage.app',
   );
 
@@ -56,6 +58,8 @@ class DefaultFirebaseOptions {
     appId: '1:60336439697:ios:5863a0a5ba25821dbc1a30',
     messagingSenderId: '60336439697',
     projectId: 'smarthcane-11b47',
+    databaseURL:
+        'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'smarthcane-11b47.firebasestorage.app',
     iosBundleId: 'com.example.myApp',
   );
@@ -65,6 +69,8 @@ class DefaultFirebaseOptions {
     appId: '1:60336439697:ios:5863a0a5ba25821dbc1a30',
     messagingSenderId: '60336439697',
     projectId: 'smarthcane-11b47',
+    databaseURL:
+        'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'smarthcane-11b47.firebasestorage.app',
     iosBundleId: 'com.example.myApp',
   );
@@ -74,6 +80,8 @@ class DefaultFirebaseOptions {
     appId: '1:60336439697:web:5863a0a5ba25821dbc1a30',
     messagingSenderId: '60336439697',
     projectId: 'smarthcane-11b47',
+    databaseURL:
+        'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'smarthcane-11b47.firebasestorage.app',
     authDomain: 'smarthcane-11b47.firebaseapp.com',
   );

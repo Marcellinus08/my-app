@@ -43,6 +43,11 @@ class CorePermissionService {
     final locationGranted =
         locationPermission == LocationPermission.always ||
         locationPermission == LocationPermission.whileInUse;
+    if (locationPermission == LocationPermission.deniedForever) {
+      await ttsService.speak(
+        'Izin lokasi dinonaktifkan permanen. Buka pengaturan aplikasi, lalu izinkan akses lokasi.',
+      );
+    }
     await onLocationPermissionHandled?.call(locationGranted);
 
     var microphonePermission = await Permission.microphone.status;
@@ -54,6 +59,11 @@ class CorePermissionService {
     }
 
     final microphoneGranted = microphonePermission.isGranted;
+    if (microphonePermission.isPermanentlyDenied) {
+      await ttsService.speak(
+        'Izin mikrofon dinonaktifkan permanen. Buka pengaturan aplikasi, lalu izinkan mikrofon untuk memakai perintah suara.',
+      );
+    }
     if (microphoneGranted) {
       final stt = SpeechToText();
       await stt.initialize();

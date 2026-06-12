@@ -36,12 +36,30 @@ final RouteObserver<ModalRoute<void>> routeObserver =
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await _ensureFirebaseInitialized();
   debugPrint('[MAIN] background message received');
   debugPrint('[MAIN] background payload data: ${message.data}');
 
   if (message.data['type'] == 'sos') {
     await NotificationService.showBackgroundSosFullScreenNotification(message);
+  }
+}
+
+Future<FirebaseApp> _ensureFirebaseInitialized() async {
+  if (Firebase.apps.isNotEmpty) {
+    return Firebase.app();
+  }
+
+  try {
+    return await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } on FirebaseException catch (error) {
+    // Flutter Web can retain the JavaScript Firebase app during hot restart.
+    if (error.code == 'duplicate-app' && Firebase.apps.isNotEmpty) {
+      return Firebase.app();
+    }
+    rethrow;
   }
 }
 
@@ -55,9 +73,7 @@ void main() async {
     print('📡 Calling Firebase.initializeApp()...');
     final startInit = DateTime.now();
 
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    ).timeout(
+    await _ensureFirebaseInitialized().timeout(
       const Duration(seconds: 30),
       onTimeout: () {
         print('❌ Firebase.initializeApp() timed out after 30s!');

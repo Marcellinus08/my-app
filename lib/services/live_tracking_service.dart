@@ -1,20 +1,22 @@
 import 'dart:async';
 
 import 'package:battery_plus/battery_plus.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import 'smart_cane_ble_service.dart';
+import 'realtime_live_tracking_service.dart';
 
 class LiveTrackingService {
   static final LiveTrackingService _instance = LiveTrackingService._internal();
   factory LiveTrackingService() => _instance;
   LiveTrackingService._internal();
 
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final Battery _battery = Battery();
+  final RealtimeLiveTrackingService _realtimeTracking =
+      RealtimeLiveTrackingService.instance;
 
   StreamSubscription<Position>? _homeSubscription;
   StreamSubscription<Position>? _navigationSubscription;
@@ -32,6 +34,29 @@ class LiveTrackingService {
   static const Duration _navigationThrottleDuration = Duration(seconds: 2);
   static const Duration _homeRefreshInterval = Duration(seconds: 10);
 
+  LocationSettings get _navigationLocationSettings {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 1,
+        intervalDuration: const Duration(seconds: 1),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'Navigasi Teman Arah aktif',
+          notificationText:
+              'Lokasi tetap dipantau agar panduan navigasi terus berjalan.',
+          notificationChannelName: 'Navigasi aktif',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+    }
+
+    return const LocationSettings(
+      accuracy: LocationAccuracy.bestForNavigation,
+      distanceFilter: 1,
+    );
+  }
+
   Future<void> startHomeLocationTracking() async {
     if (_isStartingHomeTracking ||
         _homeSubscription != null ||
@@ -41,11 +66,14 @@ class LiveTrackingService {
     _isStartingHomeTracking = true;
     final startToken = ++_homeStartToken;
 
-    _homeRefreshTimer = Timer.periodic(_homeRefreshInterval, (_) {
-      unawaited(_refreshHomeTracking(startStreamIfNeeded: true));
-    });
-
     try {
+      // Tandai aplikasi aktif segera. Ketersediaan GPS adalah status terpisah.
+      await updateInactiveTracking();
+
+      _homeRefreshTimer = Timer.periodic(_homeRefreshInterval, (_) {
+        unawaited(_refreshHomeTracking(startStreamIfNeeded: true));
+      });
+
       await _refreshHomeTracking(
         startStreamIfNeeded: true,
         startToken: startToken,
@@ -101,8 +129,10 @@ class LiveTrackingService {
 
     try {
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
       );
       if (startToken != null && startToken != _homeStartToken) return;
       _lastHomePosition = position;
@@ -143,10 +173,7 @@ class LiveTrackingService {
 
       _navigationSubscription =
           Geolocator.getPositionStream(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.bestForNavigation,
-              distanceFilter: 1,
-            ),
+            locationSettings: _navigationLocationSettings,
           ).listen(
             (position) {
               _lastNavigationPosition = position;
@@ -261,14 +288,13 @@ class LiveTrackingService {
       final smartCaneBatteryLevel =
           SmartCaneBleService.instance.latestBatteryData?.percentage;
 
-      await _firestore.collection('live_tracking').doc(user.uid).set({
-        'userId': user.uid,
+      await _realtimeTracking.setOwnTracking({
         'lat': position.latitude,
         'lng': position.longitude,
-        'accuracy': null,
+        'accuracy': position.accuracy,
         'destinationName': null,
-        'heading': null,
-        'speed': null,
+        'heading': position.heading,
+        'speed': position.speed,
         'isNavigating': false,
         'currentTripId': null,
         'isPredicted': false,
@@ -276,8 +302,7 @@ class LiveTrackingService {
         'connectionStatus': 'online',
         'batteryLevel': batteryLevel,
         'smartCaneBatteryLevel': smartCaneBatteryLevel,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
 
       print(
         '[LIVE_TRACKING] Home location updated: ${position.latitude}, ${position.longitude}, battery: $batteryLevel%, caneBattery: ${smartCaneBatteryLevel ?? '-'}%',
@@ -291,8 +316,7 @@ class LiveTrackingService {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    await _firestore.collection('live_tracking').doc(user.uid).set({
-      'userId': user.uid,
+    await _realtimeTracking.setOwnTracking({
       'batteryLevel': null,
       'smartCaneBatteryLevel': null,
       'lat': null,
@@ -305,9 +329,9 @@ class LiveTrackingService {
       'currentTripId': null,
       'isPredicted': false,
       'gpsStatus': null,
-      'connectionStatus': 'offline',
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+      // Offline sesungguhnya ditangani oleh onDisconnect Realtime Database.
+      'connectionStatus': 'online',
+    });
   }
 
   Future<void> _performUpdate(Map<String, dynamic> data) async {
@@ -318,13 +342,11 @@ class LiveTrackingService {
     final smartCaneBatteryLevel =
         SmartCaneBleService.instance.latestBatteryData?.percentage;
 
-    await _firestore.collection('live_tracking').doc(user.uid).set({
-      'userId': user.uid,
+    await _realtimeTracking.setOwnTracking({
       ...data,
       'batteryLevel': batteryLevel,
       'smartCaneBatteryLevel': smartCaneBatteryLevel,
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    });
   }
 
   Future<void> updateNavigationTripState({
@@ -335,12 +357,10 @@ class LiveTrackingService {
     if (user == null) return;
 
     try {
-      await _firestore.collection('live_tracking').doc(user.uid).set({
-        'userId': user.uid,
-        'isNavigating': isNavigating,
-        'currentTripId': isNavigating ? currentTripId : null,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _realtimeTracking.updateOwnTripState(
+        currentTripId: currentTripId,
+        isNavigating: isNavigating,
+      );
     } catch (e) {
       print('[LIVE_TRACKING] Failed to update navigation trip state: $e');
     }

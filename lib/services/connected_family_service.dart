@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'realtime_live_tracking_service.dart';
+
 /// Service untuk mengelola akun keluarga yang terhubung ke pengguna tunanetra
 class ConnectedFamilyService {
   static final ConnectedFamilyService _instance =
@@ -14,6 +16,8 @@ class ConnectedFamilyService {
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final RealtimeLiveTrackingService _realtimeTracking =
+      RealtimeLiveTrackingService.instance;
 
   /// Dapatkan daftar keluarga yang terhubung ke pengguna tunanetra
   Future<List<Map<String, dynamic>>> getConnectedFamilies() async {
@@ -95,6 +99,10 @@ class ConnectedFamilyService {
       await _firestore.collection('users').doc(userId).update({
         'connectedFamilies': connectedFamilies,
       });
+      await _realtimeTracking.revokeFamilyAccess(
+        userId: userId,
+        familyUid: familyUid,
+      );
 
       print('✅ Family removed from connected list');
     } catch (e) {

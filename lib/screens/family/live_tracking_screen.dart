@@ -7,6 +7,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
 import '../../services/navigation_history_service.dart';
+import '../../services/realtime_live_tracking_service.dart';
 
 class LiveTrackingScreen extends StatefulWidget {
   final String pairedUserUid; // UID of the visually impaired user being tracked
@@ -117,7 +118,11 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   }
 
   Timestamp? _parseTimestamp(dynamic value) {
-    return value is Timestamp ? value : null;
+    if (value is Timestamp) return value;
+    if (value is num) {
+      return Timestamp.fromMillisecondsSinceEpoch(value.round());
+    }
+    return null;
   }
 
   LatLng? _parseLatLng(dynamic lat, dynamic lng) {
@@ -260,11 +265,10 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Pelacakan Langsung')),
-      body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('live_tracking')
-            .doc(widget.pairedUserUid)
-            .snapshots(),
+      body: StreamBuilder<Map<String, dynamic>?>(
+        stream: RealtimeLiveTrackingService.instance.watch(
+          widget.pairedUserUid,
+        ),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return const Center(
@@ -282,8 +286,7 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final hasLiveData = snapshot.hasData && snapshot.data?.exists == true;
-          final data = hasLiveData ? snapshot.data!.data() : null;
+          final data = snapshot.data;
 
           final lat = _parseDouble(data?['lat']);
           final lng = _parseDouble(data?['lng']);

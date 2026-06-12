@@ -1,13 +1,18 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 
 import '../models/family_location_model.dart';
 import 'analytics_service.dart';
+import 'realtime_live_tracking_service.dart';
 
 class FamilyLocationService {
-  final FirebaseDatabase _db = FirebaseDatabase.instance;
+  final FirebaseDatabase _db = FirebaseDatabase.instanceFor(
+    app: Firebase.app(),
+    databaseURL: RealtimeLiveTrackingService.databaseUrl,
+  );
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   StreamSubscription<DatabaseEvent>? _sub;
@@ -15,9 +20,9 @@ class FamilyLocationService {
   /// Listen to realtime location updates for a given user UID in Realtime DB
   Stream<FamilyLocation> listenToRealtime(
     String uid, {
-    bool storeHistory = true,
+    bool storeHistory = false,
   }) async* {
-    final ref = _db.ref('family_locations/$uid');
+    final ref = _db.ref('live_tracking/$uid');
     final controller = StreamController<FamilyLocation>();
 
     _sub = ref.onValue.listen((event) {
@@ -56,12 +61,23 @@ class FamilyLocationService {
     yield* controller.stream;
   }
 
+  Stream<Map<String, dynamic>?> watchLiveTracking(String uid) {
+    return _db.ref('live_tracking/$uid').onValue.map((event) {
+      final value = event.snapshot.value;
+      if (value is! Map) return null;
+      return value.map((key, entry) => MapEntry(key.toString(), entry));
+    });
+  }
+
   void dispose() {
     _sub?.cancel();
   }
 
   /// Fetch recent history from Firestore
-  Future<List<FamilyLocation>> fetchHistory(String uid, {int limit = 50}) async {
+  Future<List<FamilyLocation>> fetchHistory(
+    String uid, {
+    int limit = 50,
+  }) async {
     final qs = await _firestore
         .collection('location_history')
         .where('uid', isEqualTo: uid)
@@ -81,7 +97,9 @@ class FamilyLocationService {
     // stationary: if last N points all have speed < 0.5 m/s for > 10 minutes
     final stationaryPoints = recent.where((r) => r.speed < 0.5).toList();
     if (stationaryPoints.length >= 3) {
-      final span = latest.timestamp.difference(stationaryPoints.last.timestamp).inMinutes;
+      final span = latest.timestamp
+          .difference(stationaryPoints.last.timestamp)
+          .inMinutes;
       if (span >= 10) return true;
     }
     return false;
@@ -95,6 +113,10 @@ class FamilyLocationService {
       'message': message,
       'timestamp': FieldValue.serverTimestamp(),
     });
-    AnalyticsService().logFamilyAlert(familyId: familyId, uid: uid, message: message);
+    AnalyticsService().logFamilyAlert(
+      familyId: familyId,
+      uid: uid,
+      message: message,
+    );
   }
 }

@@ -1,30 +1,43 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:teman_arah/main.dart';
+import 'package:teman_arah/utils/app_feedback.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('feedback production menampilkan pesan ramah pengguna', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    late BuildContext pageContext;
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            pageContext = context;
+            return const Scaffold(body: Text('Halaman uji'));
+          },
+        ),
+      ),
+    );
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+    AppFeedback.show(
+      pageContext,
+      'Izin lokasi diperlukan untuk memulai navigasi.',
+      type: AppFeedbackType.warning,
+    );
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(
+      find.text('Izin lokasi diperlukan untuk memulai navigasi.'),
+      findsOneWidget,
+    );
+    final semanticLabels = tester
+        .widgetList<Semantics>(find.byType(Semantics))
+        .map((widget) => widget.properties.label);
+    expect(
+      semanticLabels,
+      contains('Izin lokasi diperlukan untuk memulai navigasi.'),
+    );
+    semantics.dispose();
   });
 }

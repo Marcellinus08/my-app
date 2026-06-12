@@ -67,6 +67,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                 AppFeedback.success(
                   this.context,
                   'Kata sandi berhasil diubah.',
+                  announce: true,
                 );
               } catch (error) {
                 if (!mounted) return;
@@ -75,6 +76,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                   error,
                   fallback:
                       'Kata sandi belum dapat diubah. Periksa sandi lama lalu coba lagi.',
+                  announce: true,
                 );
               } finally {
                 if (!dialogWasClosed && context.mounted) {
@@ -331,6 +333,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
         context,
         'Email akun tidak ditemukan. Silakan masuk kembali.',
         type: AppFeedbackType.error,
+        announce: true,
       );
       return;
     }
@@ -354,6 +357,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
       AppFeedback.success(
         context,
         'Tautan atur ulang kata sandi dikirim ke $email.',
+        announce: true,
       );
     } catch (error) {
       if (!mounted) return;
@@ -362,6 +366,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
         error,
         fallback:
             'Tautan atur ulang belum dapat dikirim. Silakan coba lagi nanti.',
+        announce: true,
       );
     }
   }
@@ -445,12 +450,13 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
               child: const SizedBox(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 23,
+                  semanticLabel: 'Kembali',
                 ),
               ),
             ),
@@ -495,66 +501,73 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
     required Color color,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: color, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: AppTextStyles.bodyLarge.copyWith(
-                        color: AppColors.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        height: 1.18,
-                      ),
+    return Semantics(
+      button: true,
+      label: title,
+      hint: subtitle,
+      child: ExcludeSemantics(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textSecondary,
-                        fontSize: 12.5,
-                        height: 1.25,
-                      ),
+                    child: Icon(icon, color: color, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: AppTextStyles.bodyLarge.copyWith(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            height: 1.18,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 12.5,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: AppColors.textSecondary,
+                      size: 14,
+                    ),
+                  ),
+                ],
               ),
-              Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: AppColors.textSecondary,
-                  size: 14,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

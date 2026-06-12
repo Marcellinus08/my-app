@@ -375,12 +375,13 @@ class _EbookScreenState extends State<EbookScreen>
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
               child: const SizedBox(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 24,
+                  semanticLabel: 'Kembali',
                 ),
               ),
             ),
@@ -450,81 +451,91 @@ class _EbookScreenState extends State<EbookScreen>
   Widget _buildGuideItem(_GuideTopic guide) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () async {
-            await stopHomeVoiceCommandListener();
-            if (!mounted) return;
+      child: Semantics(
+        button: true,
+        label: guide.title,
+        hint: guide.description,
+        child: ExcludeSemantics(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () async {
+                await stopHomeVoiceCommandListener();
+                if (!mounted) return;
 
-            await Navigator.push(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => _GuideDetailScreen(guide: guide),
-              ),
-            );
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => _GuideDetailScreen(guide: guide),
+                  ),
+                );
 
-            if (mounted) {
-              startHomeVoiceCommandListener();
-            }
-          },
-          borderRadius: BorderRadius.circular(14),
-          child: Ink(
-            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.white,
+                if (mounted) {
+                  startHomeVoiceCommandListener();
+                }
+              },
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: _cardBorder),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppColors.infoLight.withValues(alpha: 0.62),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    guide.icon,
-                    color: AppColors.primaryDark,
-                    size: 21,
-                  ),
+              child: Ink(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 13,
+                  vertical: 12,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        guide.title,
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          height: 1.22,
-                        ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _cardBorder),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.infoLight.withValues(alpha: 0.62),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        guide.description,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textSecondary,
-                          fontSize: 12.5,
-                          height: 1.32,
-                        ),
+                      child: Icon(
+                        guide.icon,
+                        color: AppColors.primaryDark,
+                        size: 21,
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            guide.title,
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              height: 1.22,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            guide.description,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: 12.5,
+                              height: 1.32,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textSecondary,
+                      size: 20,
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.textSecondary,
-                  size: 20,
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -636,12 +647,13 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
               child: const SizedBox(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 24,
+                  semanticLabel: 'Kembali',
                 ),
               ),
             ),

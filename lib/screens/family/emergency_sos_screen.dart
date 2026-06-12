@@ -239,7 +239,7 @@ class EmergencySosScreen extends StatelessWidget {
       iconColor: AppColors.success,
       cancelText: 'Batal',
       confirmText: 'Ya, Tandai',
-      confirmButtonColor: AppColors.success,
+      confirmButtonColor: AppColors.primaryDark,
     );
 
     if (confirmed != true || !context.mounted) return;
@@ -711,9 +711,9 @@ class _EmergencyActions extends StatelessWidget {
                 child: _EmergencyButton(
                   icon: Icons.check_circle_rounded,
                   label: 'Ditangani',
-                  backgroundColor: AppColors.success,
+                  backgroundColor: AppColors.primaryDark,
                   foregroundColor: Colors.white,
-                  borderColor: AppColors.success,
+                  borderColor: AppColors.primaryDark,
                   onPressed: onResolve,
                   compact: true,
                 ),

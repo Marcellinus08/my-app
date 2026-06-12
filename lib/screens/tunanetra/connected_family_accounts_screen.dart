@@ -152,12 +152,13 @@ class _ConnectedFamilyAccountsScreenState
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
               child: const SizedBox(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 23,
+                  semanticLabel: 'Kembali',
                 ),
               ),
             ),
@@ -346,8 +347,8 @@ class _ConnectedFamilyAccountsScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 42,
-                height: 42,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
                   color: AppColors.primaryLight.withValues(alpha: 0.14),
                   borderRadius: BorderRadius.circular(12),
@@ -633,7 +634,11 @@ class _ConnectedFamilyAccountsScreenState
         }
 
         if (mounted) {
-          AppFeedback.success(context, 'Koneksi berhasil dihapus.');
+          AppFeedback.success(
+            context,
+            'Koneksi berhasil dihapus.',
+            announce: true,
+          );
         }
       }
     } catch (error) {
@@ -642,6 +647,7 @@ class _ConnectedFamilyAccountsScreenState
           context,
           error,
           fallback: 'Koneksi keluarga belum dapat dihapus. Silakan coba lagi.',
+          announce: true,
         );
       }
     }

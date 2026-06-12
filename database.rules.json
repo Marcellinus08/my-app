@@ -1,0 +1,24 @@
+{
+  "rules": {
+    "live_tracking": {
+      "$userId": {
+        ".read": "auth != null && (auth.uid === $userId || root.child('live_tracking_access').child($userId).child(auth.uid).val() === true)",
+        ".write": "auth != null && auth.uid === $userId",
+        ".validate": "newData.hasChildren(['userId', 'connectionStatus', 'updatedAt']) && newData.child('userId').val() === $userId"
+      }
+    },
+    "live_tracking_access": {
+      "$userId": {
+        ".read": "auth != null && auth.uid === $userId",
+        ".write": "auth != null && auth.uid === $userId",
+        "$familyUid": {
+          ".read": "auth != null && (auth.uid === $userId || auth.uid === $familyUid)",
+          ".write": "auth != null && (auth.uid === $userId || (auth.uid === $familyUid && !newData.exists()))",
+          ".validate": "!newData.exists() || newData.val() === true"
+        }
+      }
+    },
+    ".read": false,
+    ".write": false
+  }
+}

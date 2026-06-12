@@ -2,6 +2,36 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:teman_arah/services/smart_cane_ble_service.dart';
 
 void main() {
+  group('SmartCaneBatteryData.tryParse', () {
+    test('membaca persentase dan data daya dari payload SmartCane', () {
+      final result = SmartCaneBatteryData.tryParse(
+        '{"battery":20,"voltage":3.7,"currentMa":120,"powerMw":444}',
+      );
+
+      expect(result, isNotNull);
+      expect(result!.percentage, 20);
+      expect(result.voltage, 3.7);
+      expect(result.currentMa, 120);
+      expect(result.powerMw, 444);
+    });
+
+    test('membatasi persentase baterai ke rentang valid', () {
+      expect(
+        SmartCaneBatteryData.tryParse('{"batteryPct":120}')!.percentage,
+        100,
+      );
+      expect(
+        SmartCaneBatteryData.tryParse('{"batteryPercent":-5}')!.percentage,
+        0,
+      );
+    });
+
+    test('menolak payload yang tidak berisi data baterai', () {
+      expect(SmartCaneBatteryData.tryParse('{"distance":35}'), isNull);
+      expect(SmartCaneBatteryData.tryParse('payload rusak'), isNull);
+    });
+  });
+
   group('SmartCaneSensorData.detectedObjectLabel', () {
     test('translates a direct model label to Indonesian', () {
       final data = SmartCaneSensorData.tryParse(

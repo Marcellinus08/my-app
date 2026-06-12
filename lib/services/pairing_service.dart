@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'realtime_live_tracking_service.dart';
+
 class PairingException implements Exception {
   final String message;
   final String code;
@@ -22,6 +24,8 @@ class PairingService {
   PairingService._internal();
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RealtimeLiveTrackingService _realtimeTracking =
+      RealtimeLiveTrackingService.instance;
 
   /// Generate unique pairing code
   /// Format: USER12345 (USER + 5 random digits)
@@ -370,6 +374,10 @@ class PairingService {
         fallbackPhone: data['familyPhone'] as String?,
       );
       await addPairedUser(familyUid, tunaNetraUid);
+      await _realtimeTracking.grantFamilyAccess(
+        userId: tunaNetraUid,
+        familyUid: familyUid,
+      );
 
       await requestRef.update({
         'status': 'accepted',
@@ -618,6 +626,10 @@ class PairingService {
       await _removeConnectedFamilyReference(
         familyUid: familyUid,
         tunaNetraUid: tunaNetraUid,
+      );
+      await _realtimeTracking.revokeFamilyAccess(
+        userId: tunaNetraUid,
+        familyUid: familyUid,
       );
 
       print('✅ Paired user removed successfully');

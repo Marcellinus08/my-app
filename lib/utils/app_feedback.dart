@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/tts_service.dart';
 import 'constants.dart';
 
 enum AppFeedbackType { success, error, warning, info }
@@ -138,6 +139,7 @@ class AppFeedback {
     String message, {
     String? actionLabel,
     VoidCallback? onAction,
+    bool announce = false,
   }) {
     show(
       context,
@@ -145,6 +147,7 @@ class AppFeedback {
       type: AppFeedbackType.success,
       actionLabel: actionLabel,
       onAction: onAction,
+      announce: announce,
     );
   }
 
@@ -152,11 +155,13 @@ class AppFeedback {
     BuildContext context,
     Object? error, {
     String fallback = 'Terjadi kendala. Silakan coba lagi.',
+    bool announce = false,
   }) {
     show(
       context,
       AppErrorMessage.from(error, fallback: fallback),
       type: AppFeedbackType.error,
+      announce: announce,
     );
   }
 
@@ -165,6 +170,7 @@ class AppFeedback {
     String message, {
     String? actionLabel,
     VoidCallback? onAction,
+    bool announce = false,
   }) {
     show(
       context,
@@ -172,11 +178,16 @@ class AppFeedback {
       type: AppFeedbackType.warning,
       actionLabel: actionLabel,
       onAction: onAction,
+      announce: announce,
     );
   }
 
-  static void info(BuildContext context, String message) {
-    show(context, message, type: AppFeedbackType.info);
+  static void info(
+    BuildContext context,
+    String message, {
+    bool announce = false,
+  }) {
+    show(context, message, type: AppFeedbackType.info, announce: announce);
   }
 
   static void show(
@@ -185,6 +196,7 @@ class AppFeedback {
     AppFeedbackType type = AppFeedbackType.info,
     String? actionLabel,
     VoidCallback? onAction,
+    bool announce = false,
   }) {
     final messenger = ScaffoldMessenger.of(context);
     final style = _styleFor(type);
@@ -193,23 +205,27 @@ class AppFeedback {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          content: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(style.icon, color: Colors.white, size: 21),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    height: 1.35,
-                    fontWeight: FontWeight.w600,
+          content: Semantics(
+            liveRegion: true,
+            label: message,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(style.icon, color: Colors.white, size: 21),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      height: 1.35,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           backgroundColor: style.color,
           behavior: SnackBarBehavior.floating,
@@ -229,6 +245,18 @@ class AppFeedback {
               : null,
         ),
       );
+
+    if (announce) {
+      unawaited(
+        TTSService().speak(
+          message,
+          priority: type == AppFeedbackType.error
+              ? TtsPriority.warning
+              : TtsPriority.normal,
+          deduplicationKey: 'feedback-${type.name}-$message',
+        ),
+      );
+    }
   }
 
   static ({Color color, IconData icon}) _styleFor(AppFeedbackType type) {

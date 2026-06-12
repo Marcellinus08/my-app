@@ -12,6 +12,7 @@ import 'package:latlong2/latlong.dart';
 import '../../services/analytics_service.dart';
 import '../../services/navigation_history_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/realtime_live_tracking_service.dart';
 import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../widgets/app_dialog.dart';
@@ -594,12 +595,10 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
           return StatefulBuilder(
             builder: (context, setModalState) {
               _modalSetState = setModalState;
-              return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              return StreamBuilder<Map<String, dynamic>?>(
                 stream: getLiveTrackingStream(pairedUid),
                 builder: (context, snapshot) {
-                  final hasLiveData =
-                      snapshot.hasData && snapshot.data?.exists == true;
-                  final liveData = hasLiveData ? snapshot.data!.data() : null;
+                  final liveData = snapshot.data;
 
                   final isNavigating =
                       liveData?['isNavigating'] as bool? ?? false;
@@ -617,7 +616,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                   final locationText = lat != null && lng != null
                       ? '${lat.toStringAsFixed(6)}, ${lng.toStringAsFixed(6)}'
                       : '-';
-                  final updatedAt = _parseTimestamp(liveData?['updatedAt']);
                   final isGpsActive = isGpsActiveTracking(liveData);
                   final isNavigationActive = isGpsActive && isNavigating;
                   final gpsStatusText = buildGpsStatusText(isGpsActive);
@@ -724,7 +722,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                                 child: Text(
-                                  isGpsActive ? 'Online' : 'Offline',
+                                  isGpsActive ? 'Aktif' : 'Tidak aktif',
                                   style: AppTextStyles.caption.copyWith(
                                     color: isGpsActive
                                         ? AppColors.success
@@ -784,13 +782,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                                 _buildDetailRow(
                                   'Tujuan',
                                   isNavigationActive ? destinationName : '-',
-                                ),
-                                _buildDetailDivider(),
-                                _buildDetailRow(
-                                  'Last update',
-                                  isNavigationActive
-                                      ? formatLastUpdate(updatedAt)
-                                      : '-',
                                 ),
                               ],
                             ),
@@ -933,7 +924,11 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   }
 
   Timestamp? _parseTimestamp(dynamic value) {
-    return value is Timestamp ? value : null;
+    if (value is Timestamp) return value;
+    if (value is num) {
+      return Timestamp.fromMillisecondsSinceEpoch(value.round());
+    }
+    return null;
   }
 
   Future<String?> getPairedUserUid() async {
@@ -973,10 +968,8 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     return null;
   }
 
-  Stream<DocumentSnapshot<Map<String, dynamic>>> getLiveTrackingStream(
-    String tunaNetraUid,
-  ) {
-    return _firestore.collection('live_tracking').doc(tunaNetraUid).snapshots();
+  Stream<Map<String, dynamic>?> getLiveTrackingStream(String tunaNetraUid) {
+    return RealtimeLiveTrackingService.instance.watch(tunaNetraUid);
   }
 
   bool isTrackingFresh(Timestamp? updatedAt) {
@@ -1296,7 +1289,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       iconColor: AppColors.success,
       cancelText: 'Batal',
       confirmText: 'Ya, Tandai',
-      confirmButtonColor: AppColors.success,
+      confirmButtonColor: AppColors.primaryDark,
     );
 
     if (confirmed == true) {
@@ -1512,7 +1505,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                     Text(
                       isGpsActive
                           ? 'Belum ada data lokasi'
-                          : 'Pengguna offline',
+                          : 'Pengguna tidak aktif',
                       style: AppTextStyles.bodySmall.copyWith(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w800,
@@ -1785,7 +1778,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       Text(
         isGpsActive
             ? 'Tahu posisi sekarang • Tahu kondisi user • Bisa respon cepat kalau ada masalah'
-            : 'User sedang offline. Data tidak tersedia.',
+            : 'Pengguna sedang tidak aktif. Data tidak tersedia.',
         style: AppTextStyles.bodySmall.copyWith(
           color: AppColors.textSecondary,
           height: 1.6,
@@ -1899,12 +1892,10 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
               );
             }
 
-            return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+            return StreamBuilder<Map<String, dynamic>?>(
               stream: getLiveTrackingStream(pairedUid),
               builder: (context, snapshot) {
-                final hasLiveData =
-                    snapshot.hasData && snapshot.data?.exists == true;
-                final liveData = hasLiveData ? snapshot.data!.data() : null;
+                final liveData = snapshot.data;
                 _cancelNavigationIfUserOffline(
                   userId: pairedUid,
                   liveData: liveData,
