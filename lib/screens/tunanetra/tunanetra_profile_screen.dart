@@ -387,7 +387,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             icon: Icons.email_rounded,
             label: 'Email',
             value: _user!.email,
-            color: AppColors.accent,
+            color: AppColors.primaryDark,
           ),
           const _ProfileDivider(),
           _buildInfoRow(
@@ -396,14 +396,14 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
             value: _user!.phoneNumber.isEmpty
                 ? 'Belum diatur'
                 : _user!.phoneNumber,
-            color: AppColors.success,
+            color: AppColors.primaryDark,
           ),
           const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.badge_rounded,
             label: 'Tipe',
             value: 'Pengguna',
-            color: AppColors.warning,
+            color: AppColors.primaryDark,
           ),
           const _ProfileDivider(),
           _buildInfoRow(

@@ -3256,8 +3256,8 @@ class _NavigationHistoryDetailScreenState
             ? _buildCombinedHistoryMarker(
                 point: destination,
                 icons: const [
-                  (Icons.location_on, Colors.red),
-                  (Icons.flag_rounded, Colors.deepPurple),
+                  (Icons.location_on, AppColors.success),
+                  (Icons.flag_rounded, AppColors.success),
                 ],
                 label: 'Sampai Tujuan',
                 width: 142,
@@ -3265,7 +3265,7 @@ class _NavigationHistoryDetailScreenState
             : _buildHistoryMarker(
                 point: point,
                 icon: Icons.location_on,
-                color: status == 'ongoing' ? AppColors.primary : Colors.green,
+                color: AppColors.primary,
                 label: status == 'ongoing' ? 'Posisi terakhir' : 'Titik rute',
               ),
       );
@@ -3291,8 +3291,8 @@ class _NavigationHistoryDetailScreenState
           _buildCombinedHistoryMarker(
             point: destination,
             icons: const [
-              (Icons.radio_button_checked, Colors.green),
-              (Icons.flag_rounded, Colors.deepPurple),
+              (Icons.radio_button_checked, AppColors.primary),
+              (Icons.flag_rounded, AppColors.success),
             ],
             label: 'Awal & Sampai Tujuan',
             width: 172,
@@ -3304,7 +3304,7 @@ class _NavigationHistoryDetailScreenState
           _buildHistoryMarker(
             point: start,
             icon: Icons.radio_button_checked,
-            color: Colors.green,
+            color: AppColors.primary,
             label: 'Awal',
           ),
         );
@@ -3312,8 +3312,8 @@ class _NavigationHistoryDetailScreenState
           _buildCombinedHistoryMarker(
             point: destination,
             icons: const [
-              (Icons.location_on, Colors.red),
-              (Icons.flag_rounded, Colors.deepPurple),
+              (Icons.location_on, AppColors.success),
+              (Icons.flag_rounded, AppColors.success),
             ],
             label: 'Sampai Tujuan',
             width: 142,
@@ -3331,7 +3331,7 @@ class _NavigationHistoryDetailScreenState
           _buildHistoryMarker(
             point: start,
             icon: Icons.radio_button_checked,
-            color: Colors.green,
+            color: AppColors.primary,
             label: 'Awal',
           ),
         );
@@ -3352,7 +3352,7 @@ class _NavigationHistoryDetailScreenState
         _buildHistoryMarker(
           point: destination,
           icon: Icons.flag_rounded,
-          color: Colors.deepPurple,
+          color: AppColors.success,
           label: 'Tujuan',
         ),
       );
@@ -3458,7 +3458,7 @@ class _NavigationHistoryDetailScreenState
               children: [
                 _buildCompactHistoryMarkerIcon(
                   icon: Icons.radio_button_checked,
-                  color: Colors.green,
+                  color: AppColors.primary,
                 ),
                 const SizedBox(width: 3),
                 _buildCompactHistoryMarkerIcon(
@@ -3714,6 +3714,7 @@ class _NavigationHistoryDetailScreenState
     final destinationName = _safeText(data['destinationName'], 'Tujuan');
     final totalDistance = formatDistance(data['totalDistanceMeters']);
     final statusText = formatStatusText(status);
+    final tripDate = formatTripDate(_toTimestamp(data['startTime']));
 
     return Container(
       width: double.infinity,
@@ -3730,83 +3731,116 @@ class _NavigationHistoryDetailScreenState
           ),
         ],
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: AppColors.infoLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.route_rounded,
+                  color: AppColors.primary,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  'Ringkasan Perjalanan',
+                  style: AppTextStyles.heading3.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE8EEF5)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              children: [
+                _buildSummaryInfoRow(label: 'Tanggal', value: tripDate),
+                _buildSummaryInfoRow(
+                  label: 'Tujuan',
+                  value: destinationName,
+                  valueMaxLines: 2,
+                ),
+                _buildSummaryInfoRow(
+                  label: 'Total jarak',
+                  value: totalDistance,
+                ),
+                _buildSummaryInfoRow(
+                  label: 'Status',
+                  value: statusText,
+                  valueColor: statusColor,
+                  showDivider: false,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryInfoRow({
+    required String label,
+    required String value,
+    Color? valueColor,
+    int valueMaxLines = 1,
+    bool showDivider = true,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      decoration: BoxDecoration(
+        border: showDivider
+            ? const Border(bottom: BorderSide(color: Color(0xFFE8EEF5)))
+            : null,
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(Icons.route_rounded, color: statusColor, size: 18),
-          ),
-          const SizedBox(width: 11),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildDetailRow(
-                  'Status',
-                  statusText,
-                  valueColor: statusColor,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Tujuan',
-                  style: AppTextStyles.caption.copyWith(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  destinationName,
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    height: 1.3,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 9),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.straighten_rounded,
-                      color: AppColors.primary,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Total jarak',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        totalDistance,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+            flex: 4,
+            child: Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 7,
+            child: Text(
+              value,
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: valueColor ?? AppColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                height: 1.3,
+              ),
+              textAlign: TextAlign.right,
+              maxLines: valueMaxLines,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ],
@@ -4042,6 +4076,7 @@ class _NavigationHistoryDetailScreenState
     required String label,
     required String value,
     int maxLines = 2,
+    VoidCallback? onCopy,
   }) {
     return Container(
       width: double.infinity,
@@ -4054,7 +4089,7 @@ class _NavigationHistoryDetailScreenState
         ),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
             width: 30,
@@ -4095,6 +4130,39 @@ class _NavigationHistoryDetailScreenState
               ],
             ),
           ),
+          if (onCopy != null) ...[
+            const SizedBox(width: 8),
+            Align(
+              alignment: Alignment.center,
+              child: Tooltip(
+                message: 'Salin koordinat',
+                child: Semantics(
+                  button: true,
+                  label: 'Salin $label',
+                  child: InkWell(
+                    onTap: onCopy,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppColors.infoLight,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.copy_rounded,
+                        color: AppColors.primary,
+                        size: 19,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -4104,92 +4172,13 @@ class _NavigationHistoryDetailScreenState
     final coordinateText = formatCoordinate(lat, lng);
     final isAvailable = coordinateText != '-';
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 9),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: const Color(0xFFE8EEF5).withValues(alpha: 0.9),
-          ),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: AppColors.warning.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  Icons.stop_circle_outlined,
-                  color: AppColors.warning,
-                  size: 17,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Titik berhenti pengguna',
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      coordinateText,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textPrimary,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w800,
-                        height: 1.35,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (isAvailable) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => copyEndCoordinate(lat, lng),
-                icon: const Icon(Icons.copy_rounded, size: 16),
-                label: const Text('Salin Koordinat'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.warning.withValues(alpha: 0.1),
-                  foregroundColor: AppColors.warning,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    side: BorderSide(
-                      color: AppColors.warning.withValues(alpha: 0.2),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
+    return _buildRouteInfoTile(
+      icon: Icons.stop_circle_outlined,
+      color: AppColors.error,
+      label: 'Titik berhenti pengguna',
+      value: coordinateText,
+      maxLines: 2,
+      onCopy: isAvailable ? () => copyEndCoordinate(lat, lng) : null,
     );
   }
 
@@ -4693,8 +4682,6 @@ class _NavigationHistoryDetailScreenState
           title: 'Informasi Perjalanan',
           icon: Icons.info_outline_rounded,
           children: [
-            _buildDetailRow('Tanggal', formatTripDate(startTime)),
-            const SizedBox(height: 14),
             _buildTripRouteTimeline(
               originName: originName,
               destinationName: destinationName,
@@ -4716,6 +4703,13 @@ class _NavigationHistoryDetailScreenState
               label: 'Koordinat awal',
               value: formatCoordinate(data['originLat'], data['originLng']),
               maxLines: 2,
+              onCopy:
+                  formatCoordinate(data['originLat'], data['originLng']) == '-'
+                  ? null
+                  : () => copyEndCoordinate(
+                      data['originLat'],
+                      data['originLng'],
+                    ),
             ),
             _buildRouteInfoTile(
               icon: Icons.flag_rounded,
@@ -4726,6 +4720,17 @@ class _NavigationHistoryDetailScreenState
                 data['destinationLng'],
               ),
               maxLines: 2,
+              onCopy:
+                  formatCoordinate(
+                        data['destinationLat'],
+                        data['destinationLng'],
+                      ) ==
+                      '-'
+                  ? null
+                  : () => copyEndCoordinate(
+                      data['destinationLat'],
+                      data['destinationLng'],
+                    ),
             ),
           ],
         ),

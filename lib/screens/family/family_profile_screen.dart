@@ -323,7 +323,7 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
             icon: Icons.email_rounded,
             label: 'Email',
             value: profile['email']?.toString() ?? '-',
-            color: AppColors.accent,
+            color: AppColors.primaryDark,
           ),
           const _ProfileDivider(),
           _buildInfoRow(
@@ -332,14 +332,14 @@ class _FamilyProfileScreenState extends State<FamilyProfileScreen> {
             value: profile['phoneNumber']?.toString().isEmpty ?? true
                 ? 'Belum diatur'
                 : profile['phoneNumber'].toString(),
-            color: AppColors.success,
+            color: AppColors.primaryDark,
           ),
           const _ProfileDivider(),
           _buildInfoRow(
             icon: Icons.badge_rounded,
             label: 'Tipe',
             value: _formatUserType(profile['userType']),
-            color: AppColors.warning,
+            color: AppColors.primaryDark,
           ),
           const _ProfileDivider(),
           _buildInfoRow(
