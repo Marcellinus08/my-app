@@ -299,7 +299,15 @@ class _NavigationScreenState extends State<NavigationScreen>
 
             _handleNavigationCommand(text);
           },
-          pauseFor: const Duration(seconds: 2),
+          onNoSpeechDetected: () {
+            if (!mounted) return;
+            unawaited(
+              speakSafe(
+                'Tidak ada suara terdeteksi. Tekan dan tahan tombol merah untuk mencoba lagi.',
+              ),
+            );
+          },
+          pauseFor: const Duration(seconds: 5),
           finalResultsOnly: true,
           onStatus: (status) {
             _navigationSttActive = status == 'listening';

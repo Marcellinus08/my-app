@@ -198,13 +198,23 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
 
         _handleHomeVoiceCommand(isHomePage: isHomePage);
       },
+      onNoSpeechDetected: () {
+        if (!mounted || _isHomeCommandSpeaking) return;
+        _isHomeCommandSpeaking = true;
+        _homeCommandTtsService
+            .speak(
+              'Tidak ada suara terdeteksi. Tekan tombol dan coba lagi.',
+              replacementKey: _screenTtsKey,
+            )
+            .whenComplete(() => _isHomeCommandSpeaking = false);
+      },
       onStatus: (status) {
         _homeCommandListenerActive = status == 'listening';
       },
       onError: (_) {
         _homeCommandListenerActive = false;
       },
-      pauseFor: const Duration(seconds: 2),
+      pauseFor: const Duration(seconds: 5),
       finalResultsOnly: true,
     );
     _isStartingHomeCommandListener = false;

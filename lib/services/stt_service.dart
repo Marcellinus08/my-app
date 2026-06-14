@@ -44,11 +44,12 @@ class STTService {
     Function(String) onResult, {
     SpeechErrorListener? onError,
     SpeechStatusListener? onStatus,
+    VoidCallback? onNoSpeechDetected,
     Duration pauseFor = const Duration(seconds: 30),
     bool finalResultsOnly = false,
   }) async {
     final ttsService = TTSService();
-    await ttsService.beginSttSession();
+    bool hadResult = false;
 
     try {
       final available = await init(
@@ -61,6 +62,9 @@ class STTService {
           isListening = status == 'listening';
           if (!_isStartingListening &&
               (status == 'done' || status == 'notListening')) {
+            if (!hadResult) {
+              onNoSpeechDetected?.call();
+            }
             ttsService.endSttSession();
           }
           onStatus?.call(status);
@@ -68,7 +72,6 @@ class STTService {
       );
 
       if (!available) {
-        ttsService.endSttSession();
         debugPrint('STT tidak tersedia');
         return;
       }
@@ -79,6 +82,13 @@ class STTService {
         isListening = false;
       }
 
+      // Beritahu pengguna bahwa mic akan segera aktif, lalu tunggu selesai
+      // agar tidak ada suara TTS yang tertangkap mikrofon.
+      await ttsService.speak(
+        'Silakan bicara',
+        priority: TtsPriority.critical,
+      );
+
       await ttsService.beginSttSession();
       isListening = true;
 
@@ -88,6 +98,7 @@ class STTService {
         pauseFor: pauseFor,
         onResult: (result) {
           if (finalResultsOnly && !result.finalResult) return;
+          hadResult = true;
           onResult(result.recognizedWords);
         },
       );

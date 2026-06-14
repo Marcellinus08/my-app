@@ -364,13 +364,19 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
             _handleCommand(text);
           },
+          onNoSpeechDetected: () {
+            if (!mounted) return;
+            unawaited(
+              speakSafe('Tidak ada suara terdeteksi. Tekan tombol dan coba lagi.'),
+            );
+          },
           onStatus: (status) {
             _homeSttActive = status == 'listening';
           },
           onError: (_) {
             _homeSttActive = false;
           },
-          pauseFor: const Duration(seconds: 2),
+          pauseFor: const Duration(seconds: 5),
           finalResultsOnly: true,
         )
         .whenComplete(() {
@@ -555,6 +561,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   Future<void> _handleSmartCaneButtonEvent(SmartCaneButtonEvent event) async {
     debugPrint('[SMARTCANE_BUTTON] Home menerima event: ${event.type}');
     if (!mounted) return;
+
+    // Jika halaman ini bukan route aktif (ada halaman lain di atas),
+    // abaikan event agar tidak bentrok dengan handler halaman yang sedang aktif.
+    if (ModalRoute.of(context)?.isCurrent != true) return;
 
     if (event.isVoiceAssistantStop) {
       debugPrint('[SMARTCANE_BUTTON] Home mematikan STT');
