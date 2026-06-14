@@ -24,6 +24,8 @@ class SmartCaneStatusNotificationService {
   final SmartCaneBleService _bleService;
   final TTSService _ttsService;
 
+  static const _hazardRepeatInterval = Duration(seconds: 5);
+
   Timer? _statusTimer;
   Timer? _startupTimeoutTimer;
   _SmartCaneRuntimeState? _lastState;
@@ -100,11 +102,7 @@ class SmartCaneStatusNotificationService {
     _lastState = null;
     _isStartupFlowActive = false;
     _hasAnnouncedConnecting = false;
-    _lastHazardLevel = _SmartCaneHazardLevel.safe;
-    _lastHazardAnnouncementAt = null;
-    _lastAnnouncedHazardObject = null;
-    _lastAnnouncedGuidanceDecision = null;
-    _safePathDetectedAt = null;
+    _fullResetHazardState();
     _wasNavigationHazardAnnouncementsEnabled = false;
     _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
   }
@@ -173,7 +171,7 @@ class SmartCaneStatusNotificationService {
         unawaited(_ttsService.cancelByReplacementKey('smart-cane-hazard'));
       }
       _wasNavigationHazardAnnouncementsEnabled = false;
-      _resetHazardState();
+      _fullResetHazardState();
       return;
     }
 
@@ -182,7 +180,7 @@ class SmartCaneStatusNotificationService {
     if (!_bleService.isConnected ||
         !_bleService.isSensorRunning ||
         sensorData == null) {
-      _resetHazardState();
+      _resetHazardLevel();
       return;
     }
 
@@ -201,21 +199,23 @@ class SmartCaneStatusNotificationService {
     final now = DateTime.now();
     final objectLabel = sensorData.detectedObjectLabel;
     final guidanceDecision = sensorData.guidanceDecisionText;
-    final levelChanged = currentLevel != _lastHazardLevel;
+
+    // Eskalasi (warning → danger) selalu diumumkan — prioritas keselamatan.
+    final isEscalation = currentLevel.index > _lastHazardLevel.index;
     final objectChanged =
         objectLabel != null && objectLabel != _lastAnnouncedHazardObject;
     final decisionChanged =
         guidanceDecision != null &&
         guidanceDecision != _lastAnnouncedGuidanceDecision;
-    final lastAnnouncementAt = _lastHazardAnnouncementAt;
-    final repeatIntervalElapsed =
-        lastAnnouncementAt == null ||
-        now.difference(lastAnnouncementAt) >= const Duration(seconds: 8);
+    final lastAt = _lastHazardAnnouncementAt;
+    final cooldownElapsed =
+        lastAt == null ||
+        now.difference(lastAt) >= _hazardRepeatInterval;
 
-    if (!levelChanged &&
-        !objectChanged &&
-        !decisionChanged &&
-        !repeatIntervalElapsed) {
+    // Suppres jika bukan eskalasi, tidak ada info baru, dan cooldown belum habis.
+    // Ini mencegah spam TTS saat sensor terus mendeteksi bahaya yang sama.
+    if (!isEscalation && !objectChanged && !decisionChanged && !cooldownElapsed) {
+      _lastHazardLevel = currentLevel;
       return;
     }
 
@@ -309,7 +309,9 @@ class SmartCaneStatusNotificationService {
       return;
     }
 
-    _resetHazardState();
+    // Jalur benar-benar bersih: reset penuh termasuk cooldown agar peringatan
+    // berikutnya (rintangan baru) tetap diumumkan.
+    _fullResetHazardState();
     _queueTts(
       'Jalur sudah aman. Silakan lanjutkan perjalanan.',
       priority: TtsPriority.warning,
@@ -317,7 +319,18 @@ class SmartCaneStatusNotificationService {
     );
   }
 
-  void _resetHazardState() {
+  // Reset level & konteks saja; cooldown (_lastHazardAnnouncementAt) tetap
+  // dijaga agar oscillasi safe/warning singkat tidak memicu spam TTS.
+  void _resetHazardLevel() {
+    _lastHazardLevel = _SmartCaneHazardLevel.safe;
+    _lastAnnouncedHazardObject = null;
+    _lastAnnouncedGuidanceDecision = null;
+    _safePathDetectedAt = null;
+  }
+
+  // Reset penuh termasuk cooldown — hanya dipanggil setelah jalur aman
+  // dikonfirmasi atau service dihentikan/dinonaktifkan.
+  void _fullResetHazardState() {
     _lastHazardLevel = _SmartCaneHazardLevel.safe;
     _lastHazardAnnouncementAt = null;
     _lastAnnouncedHazardObject = null;
