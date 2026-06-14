@@ -67,7 +67,10 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
     );
 
     if (!mounted) return;
-    startHomeVoiceCommandListener(onCommand: _handleSettingsVoiceCommand);
+    startHomeVoiceCommandListener(
+      openingAnnouncement: 'Kembali ke pengaturan',
+      onCommand: _handleSettingsVoiceCommand,
+    );
   }
 
   @override

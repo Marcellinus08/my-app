@@ -18,6 +18,10 @@ class TunaNetraVoiceCommands {
         text.contains('home');
   }
 
+  static bool isSettingsCommand(String command) {
+    return command.toLowerCase().contains('pengaturan');
+  }
+
   static bool isSosCommand(String command) {
     final text = command
         .toLowerCase()
@@ -70,6 +74,7 @@ class TunaNetraVoiceCommands {
 mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
   final STTService _homeCommandSttService = STTService();
   final TTSService _homeCommandTtsService = TTSService();
+  late final String _screenTtsKey = 'screen-tts-${identityHashCode(this)}';
   bool _isHomeCommandSpeaking = false;
   bool _hasHandledHomeCommand = false;
   bool _homeCommandListenerActive = false;
@@ -104,7 +109,10 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
   Future<void> _speakOpeningAnnouncement({String? openingAnnouncement}) async {
     if (openingAnnouncement != null && openingAnnouncement.isNotEmpty) {
       _isHomeCommandSpeaking = true;
-      await _homeCommandTtsService.speak(openingAnnouncement);
+      await _homeCommandTtsService.speak(
+        openingAnnouncement,
+        replacementKey: _screenTtsKey,
+      );
       _isHomeCommandSpeaking = false;
 
       if (!mounted) return;
@@ -209,7 +217,7 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
     await _homeCommandButtonSubscription?.cancel();
     _homeCommandButtonSubscription = null;
     await _homeCommandSttService.stopListening();
-    unawaited(_homeCommandTtsService.stop());
+    unawaited(_homeCommandTtsService.cancelByReplacementKey(_screenTtsKey));
     _hasHandledHomeCommand = false;
   }
 
@@ -224,13 +232,22 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
 
     try {
       _isHomeCommandSpeaking = true;
-      await _homeCommandTtsService.speak('Mengirim SOS darurat');
+      await _homeCommandTtsService.speak(
+        'Mengirim SOS darurat',
+        replacementKey: _screenTtsKey,
+      );
       final result = await SosService().sendSosAlert();
       await Future.delayed(const Duration(milliseconds: 600));
-      await _homeCommandTtsService.speak(result.spokenMessage);
+      await _homeCommandTtsService.speak(
+        result.spokenMessage,
+        replacementKey: _screenTtsKey,
+      );
     } catch (_) {
       await Future.delayed(const Duration(milliseconds: 600));
-      await _homeCommandTtsService.speak('Status SOS, gagal dikirim');
+      await _homeCommandTtsService.speak(
+        'Status SOS, gagal dikirim',
+        replacementKey: _screenTtsKey,
+      );
     } finally {
       _isHomeCommandSpeaking = false;
       _isSendingHardwareSos = false;
@@ -248,13 +265,17 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
     _isHomeCommandSpeaking = true;
     try {
       if (bleService.isConnected) {
-        await _homeCommandTtsService.speak('SmartCane sudah terhubung.');
+        await _homeCommandTtsService.speak(
+          'SmartCane sudah terhubung.',
+          replacementKey: _screenTtsKey,
+        );
         return;
       }
 
       if (bleService.isConnecting || bleService.isAutoConnecting) {
         await _homeCommandTtsService.speak(
           'SmartCane sedang dihubungkan. Mohon tunggu.',
+          replacementKey: _screenTtsKey,
         );
         return;
       }
@@ -263,12 +284,14 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
       if (rememberedCaneId == null) {
         await _homeCommandTtsService.speak(
           'Belum ada SmartCane tersimpan. Buka menu koneksi untuk menghubungkan SmartCane.',
+          replacementKey: _screenTtsKey,
         );
         return;
       }
 
       await _homeCommandTtsService.speak(
         'Mencoba menghubungkan ulang SmartCane.',
+        replacementKey: _screenTtsKey,
       );
       await bleService.initializeAutoReconnect(force: true, maxAttempts: 5);
 
@@ -276,6 +299,7 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
         bleService.isConnected
             ? 'SmartCane berhasil terhubung kembali.'
             : 'SmartCane belum dapat terhubung. Pastikan SmartCane menyala dan berada di dekat Anda.',
+        replacementKey: _screenTtsKey,
       );
     } finally {
       _isHomeCommandSpeaking = false;
@@ -293,6 +317,7 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
       isHomePage
           ? 'Kamu sudah berada di halaman utama'
           : 'Membuka halaman utama',
+      replacementKey: _screenTtsKey,
     );
     _isHomeCommandSpeaking = false;
 

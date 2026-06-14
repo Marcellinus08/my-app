@@ -40,7 +40,10 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     _emailController = TextEditingController();
     _phoneController = TextEditingController();
     _loadUserData();
-    startHomeVoiceCommandListener(openingAnnouncement: 'Halaman profil dibuka');
+    startHomeVoiceCommandListener(
+      openingAnnouncement: 'Halaman profil dibuka',
+      onCommand: _handleVoiceCommand,
+    );
   }
 
   Future<void> _loadUserData() async {
@@ -123,6 +126,16 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
         );
       }
     }
+  }
+
+  Future<bool> _handleVoiceCommand(String command) async {
+    if (TunaNetraVoiceCommands.isSettingsCommand(command)) {
+      await stopHomeVoiceCommandListener();
+      if (!mounted) return true;
+      Navigator.pop(context);
+      return true;
+    }
+    return false;
   }
 
   /// Generate random pairing code

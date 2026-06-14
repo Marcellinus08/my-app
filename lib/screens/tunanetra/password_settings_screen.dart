@@ -24,6 +24,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
     if (widget.enableVoice) {
       startHomeVoiceCommandListener(
         openingAnnouncement: 'Halaman kata sandi dibuka',
+        onCommand: _handleVoiceCommand,
       );
     }
   }
@@ -32,6 +33,16 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
   void dispose() {
     if (widget.enableVoice) stopHomeVoiceCommandListener();
     super.dispose();
+  }
+
+  Future<bool> _handleVoiceCommand(String command) async {
+    if (TunaNetraVoiceCommands.isSettingsCommand(command)) {
+      await stopHomeVoiceCommandListener();
+      if (!mounted) return true;
+      Navigator.pop(context);
+      return true;
+    }
+    return false;
   }
 
   Future<void> _showChangePasswordDialog() async {

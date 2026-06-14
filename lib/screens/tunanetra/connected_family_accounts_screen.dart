@@ -30,6 +30,7 @@ class _ConnectedFamilyAccountsScreenState
     _cleanupDuplicates();
     startHomeVoiceCommandListener(
       openingAnnouncement: 'Halaman akun keluarga dibuka',
+      onCommand: _handleVoiceCommand,
     );
   }
 
@@ -37,6 +38,16 @@ class _ConnectedFamilyAccountsScreenState
   void dispose() {
     stopHomeVoiceCommandListener();
     super.dispose();
+  }
+
+  Future<bool> _handleVoiceCommand(String command) async {
+    if (TunaNetraVoiceCommands.isSettingsCommand(command)) {
+      await stopHomeVoiceCommandListener();
+      if (!mounted) return true;
+      Navigator.pop(context);
+      return true;
+    }
+    return false;
   }
 
   @override
