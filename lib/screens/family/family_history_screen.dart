@@ -46,6 +46,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       DraggableScrollableController();
   StateSetter? _modalSetState;
   late final Future<String?> _pairedUserUidFuture;
+  late final Stream<QuerySnapshot<Map<String, dynamic>>> _activeSosStream;
   bool _hasCenteredMap = false;
   bool _hasFocusedInitialSos = false;
   bool _hideInitialSosFallback = false;
@@ -67,6 +68,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     AnalyticsService().logScreenView(screenName: 'FamilyHistory');
     _sheetController.addListener(_handleSheetSize);
     _pairedUserUidFuture = getPairedUserUid();
+    _activeSosStream = getActiveSosStream(_currentFamilyUid);
 
     // Timer untuk update status offline/online dan last update setiap 1 detik
     _realtimeUpdateTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -174,9 +176,16 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
     }
 
     debugPrint('[FamilyHistory] Back fallback to family home');
+    final sosData =
+        _hideSosCardAfterResolve ? null : widget.initialSosData;
     navigator.pushReplacementNamed(
       AppRoutes.familyHome,
-      arguments: {'targetUid': widget.targetUid, 'familyId': _currentFamilyUid},
+      arguments: {
+        'targetUid': widget.targetUid,
+        'familyId': _currentFamilyUid,
+        if (sosData != null) 'sosData': sosData,
+        if (sosData != null) 'fromSos': true,
+      },
     );
   }
 
@@ -1186,20 +1195,52 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
 
   Future<void> resolveSosAlert(String sosId, String familyUid) async {
     try {
-      final resolvedSosIds = await _resolveActiveSosAlerts(
-        familyUid: familyUid,
-        primarySosId: sosId,
-      );
+      final trimmedSosId = sosId.trim();
 
-      debugPrint(
-        '[FamilyHistory] SOS berhasil ditandai resolved: $resolvedSosIds',
-      );
+      if (trimmedSosId.isNotEmpty) {
+        // Direct update by document ID — reliable, same approach as home screen
+        await _firestore.collection('sos_alerts').doc(trimmedSosId).update({
+          'status': 'resolved',
+          'resolvedAt': FieldValue.serverTimestamp(),
+          'resolvedBy': _auth.currentUser?.uid ?? familyUid,
+        });
+      } else {
+        // Fallback: query active SOS for this family when sosId not available
+        if (familyUid.trim().isEmpty) {
+          throw Exception('Family UID kosong');
+        }
+        final snapshot = await _firestore
+            .collection('sos_alerts')
+            .where('familyUids', arrayContains: familyUid)
+            .limit(10)
+            .get();
+
+        final activeDocs = snapshot.docs
+            .where((doc) => doc.data()['status'] == 'active')
+            .toList();
+
+        if (activeDocs.isEmpty) {
+          throw Exception('SOS aktif tidak ditemukan');
+        }
+
+        final batch = _firestore.batch();
+        for (final doc in activeDocs) {
+          batch.update(doc.reference, {
+            'status': 'resolved',
+            'resolvedAt': FieldValue.serverTimestamp(),
+            'resolvedBy': _auth.currentUser?.uid ?? familyUid,
+          });
+        }
+        await batch.commit();
+      }
+
+      debugPrint('[FamilyHistory] SOS berhasil ditandai resolved: $sosId');
       NotificationService.instance.stopSosAlarmLoop();
       if (!mounted) return;
       setState(() {
         _hideInitialSosFallback = true;
         _hideSosCardAfterResolve = true;
-        _hiddenResolvedSosIds.addAll(resolvedSosIds);
+        if (trimmedSosId.isNotEmpty) _hiddenResolvedSosIds.add(trimmedSosId);
       });
       AppFeedback.success(context, 'SOS ditandai sudah ditangani.');
     } catch (error) {
@@ -1211,85 +1252,6 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
         fallback: 'Status SOS belum dapat diperbarui. Silakan coba lagi.',
       );
     }
-  }
-
-  Future<List<String>> _resolveActiveSosAlerts({
-    required String familyUid,
-    required String primarySosId,
-  }) async {
-    if (familyUid.trim().isEmpty) {
-      throw Exception('Family UID kosong');
-    }
-
-    final idsToResolve = <String>{};
-    final trimmedPrimarySosId = primarySosId.trim();
-    final userId =
-        _readSosString(widget.initialSosData?['userId']) ?? widget.targetUid;
-
-    if (trimmedPrimarySosId.isNotEmpty) {
-      final primarySnapshot = await _firestore
-          .collection('sos_alerts')
-          .doc(trimmedPrimarySosId)
-          .get();
-      final primaryData = primarySnapshot.data();
-      final familyUids = primaryData?['familyUids'];
-      final primaryUserId = _readSosString(primaryData?['userId']);
-      final canResolvePrimary =
-          primarySnapshot.exists &&
-          primaryData?['status'] == 'active' &&
-          (userId.trim().isEmpty || primaryUserId == userId.trim()) &&
-          familyUids is List &&
-          familyUids.map((value) => value.toString()).contains(familyUid);
-
-      if (canResolvePrimary) {
-        idsToResolve.add(trimmedPrimarySosId);
-      } else {
-        debugPrint(
-          '[FamilyHistory] primary SOS tidak cocok untuk resolve: '
-          '$trimmedPrimarySosId',
-        );
-      }
-    }
-
-    final snapshot = await _firestore
-        .collection('sos_alerts')
-        .where('familyUids', arrayContains: familyUid)
-        .limit(50)
-        .get();
-
-    final activeDocs =
-        snapshot.docs.where((doc) {
-          final data = doc.data();
-          final isActive = data['status'] == 'active';
-          final docUserId = _readSosString(data['userId']);
-          final sameUser = userId.trim().isEmpty || docUserId == userId.trim();
-          return isActive && sameUser;
-        }).toList()..sort((a, b) {
-          final aCreatedAt = _parseTimestamp(a.data()['createdAt']);
-          final bCreatedAt = _parseTimestamp(b.data()['createdAt']);
-          final aMillis = aCreatedAt?.toDate().millisecondsSinceEpoch ?? 0;
-          final bMillis = bCreatedAt?.toDate().millisecondsSinceEpoch ?? 0;
-          return bMillis.compareTo(aMillis);
-        });
-
-    idsToResolve.addAll(activeDocs.map((doc) => doc.id));
-
-    if (idsToResolve.isEmpty) {
-      throw Exception('SOS aktif tidak ditemukan');
-    }
-
-    final batch = _firestore.batch();
-    for (final sosId in idsToResolve) {
-      final docRef = _firestore.collection('sos_alerts').doc(sosId);
-      batch.update(docRef, {
-        'status': 'resolved',
-        'resolvedAt': FieldValue.serverTimestamp(),
-        'resolvedBy': _auth.currentUser?.uid ?? familyUid,
-      });
-    }
-    await batch.commit();
-
-    return idsToResolve.toList();
   }
 
   Future<void> _confirmResolveSosAlert(String sosId) async {
@@ -2070,7 +2032,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
                         bottom: false,
                         child:
                             StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                              stream: getActiveSosStream(_currentFamilyUid),
+                              stream: _activeSosStream,
                               builder: (context, sosSnapshot) {
                                 if (_hideSosCardAfterResolve) {
                                   return const SizedBox.shrink();

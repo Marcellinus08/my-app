@@ -2330,7 +2330,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       ..removeListener(_onLocationAnimationTick)
       ..dispose();
     unawaited(_liveTrackingService.stopNavigationTracking());
-    unawaited(_ttsService.cancelByReplacementKey('navigation-guidance'));
+    unawaited(_ttsService.stop());
     _stopNavigationStt();
     super.dispose();
   }

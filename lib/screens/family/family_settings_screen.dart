@@ -66,7 +66,7 @@ class _FamilySettingsScreenState extends State<FamilySettingsScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (context) =>
-                                  const PasswordSettingsScreen(),
+                                  const PasswordSettingsScreen(enableVoice: false),
                             ),
                           );
                         },

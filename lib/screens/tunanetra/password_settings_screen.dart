@@ -6,7 +6,9 @@ import '../../utils/constants.dart';
 import '../../widgets/app_dialog.dart';
 
 class PasswordSettingsScreen extends StatefulWidget {
-  const PasswordSettingsScreen({super.key});
+  const PasswordSettingsScreen({super.key, this.enableVoice = true});
+
+  final bool enableVoice;
 
   @override
   State<PasswordSettingsScreen> createState() => _PasswordSettingsScreenState();
@@ -19,14 +21,16 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
   @override
   void initState() {
     super.initState();
-    startHomeVoiceCommandListener(
-      openingAnnouncement: 'Halaman kata sandi dibuka',
-    );
+    if (widget.enableVoice) {
+      startHomeVoiceCommandListener(
+        openingAnnouncement: 'Halaman kata sandi dibuka',
+      );
+    }
   }
 
   @override
   void dispose() {
-    stopHomeVoiceCommandListener();
+    if (widget.enableVoice) stopHomeVoiceCommandListener();
     super.dispose();
   }
 
@@ -67,7 +71,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                 AppFeedback.success(
                   this.context,
                   'Kata sandi berhasil diubah.',
-                  announce: true,
+                  announce: widget.enableVoice,
                 );
               } catch (error) {
                 if (!mounted) return;
@@ -76,7 +80,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                   error,
                   fallback:
                       'Kata sandi belum dapat diubah. Periksa sandi lama lalu coba lagi.',
-                  announce: true,
+                  announce: widget.enableVoice,
                 );
               } finally {
                 if (!dialogWasClosed && context.mounted) {
@@ -333,7 +337,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
         context,
         'Email akun tidak ditemukan. Silakan masuk kembali.',
         type: AppFeedbackType.error,
-        announce: true,
+        announce: widget.enableVoice,
       );
       return;
     }
@@ -357,7 +361,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
       AppFeedback.success(
         context,
         'Tautan atur ulang kata sandi dikirim ke $email.',
-        announce: true,
+        announce: widget.enableVoice,
       );
     } catch (error) {
       if (!mounted) return;
@@ -366,7 +370,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
         error,
         fallback:
             'Tautan atur ulang belum dapat dikirim. Silakan coba lagi nanti.',
-        announce: true,
+        announce: widget.enableVoice,
       );
     }
   }

@@ -302,6 +302,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   @override
   void didPushNext() {
     _stopHomeStt();
+    unawaited(_ttsService.stop());
   }
 
   void _handleCommand(String command) async {

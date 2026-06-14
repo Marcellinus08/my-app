@@ -4,13 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../services/notification_service.dart';
+import '../../utils/app_feedback.dart';
 import '../../utils/constants.dart';
 import '../../widgets/app_dialog.dart';
 
-class EmergencySosScreen extends StatelessWidget {
+class EmergencySosScreen extends StatefulWidget {
   final Map<String, dynamic> sosData;
 
   const EmergencySosScreen({super.key, required this.sosData});
+
+  @override
+  State<EmergencySosScreen> createState() => _EmergencySosScreenState();
+}
+
+class _EmergencySosScreenState extends State<EmergencySosScreen> {
+  bool _isResolving = false;
 
   @override
   Widget build(BuildContext context) {
@@ -55,10 +63,11 @@ class EmergencySosScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   _EmergencyActions(
-                    onOpenLocation: () => _openMonitoring(context),
-                    onCopyCoordinates: () => _copyCoordinates(context),
-                    onSilence: () => _silenceAlarm(context),
-                    onResolve: () => _confirmResolve(context),
+                    isResolving: _isResolving,
+                    onOpenLocation: _openMonitoring,
+                    onCopyCoordinates: _copyCoordinates,
+                    onSilence: _silenceAlarm,
+                    onResolve: _confirmResolve,
                   ),
                 ],
               ),
@@ -70,7 +79,7 @@ class EmergencySosScreen extends StatelessWidget {
   }
 
   String? _readString(String key) {
-    final value = sosData[key];
+    final value = widget.sosData[key];
     if (value == null) return null;
     final text = value.toString().trim();
     return text.isEmpty ? null : text;
@@ -97,7 +106,9 @@ class EmergencySosScreen extends StatelessWidget {
   }
 
   String? _sentAtTextFromPayload() {
-    final text = _formatSentAt(sosData['createdAt'] ?? sosData['timestamp']);
+    final text = _formatSentAt(
+      widget.sosData['createdAt'] ?? widget.sosData['timestamp'],
+    );
     return text == 'Belum tersedia' ? null : text;
   }
 
@@ -165,21 +176,22 @@ class EmergencySosScreen extends StatelessWidget {
       'currentTripId': _readString('currentTripId'),
       'userName': _readString('userName') ?? 'Pengguna',
       'sosId': _readString('sosId'),
-      'sosData': sosData,
+      'sosData': widget.sosData,
     };
   }
 
-  void _openMonitoring(BuildContext context) {
+  void _openMonitoring() {
     Navigator.of(context).pushReplacementNamed(
       AppRoutes.familyMonitoring,
       arguments: _monitoringArgs(),
     );
   }
 
-  Future<void> _copyCoordinates(BuildContext context) async {
+  Future<void> _copyCoordinates() async {
     final lat = _readString('lat');
     final lng = _readString('lng');
     if (lat == null || lng == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Koordinat belum tersedia')));
@@ -187,7 +199,7 @@ class EmergencySosScreen extends StatelessWidget {
     }
 
     await Clipboard.setData(ClipboardData(text: '$lat, $lng'));
-    if (!context.mounted) return;
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
@@ -204,14 +216,14 @@ class EmergencySosScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _silenceAlarm(BuildContext context) async {
+  Future<void> _silenceAlarm() async {
     final hasActiveSos = await _hasActiveMatchingSos();
     await NotificationService.instance.silenceSosNotification(
-      sosData,
+      widget.sosData,
       sosResolved: !hasActiveSos,
     );
 
-    if (!context.mounted) return;
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text(
@@ -230,7 +242,9 @@ class EmergencySosScreen extends StatelessWidget {
     SystemNavigator.pop();
   }
 
-  Future<void> _confirmResolve(BuildContext context) async {
+  Future<void> _confirmResolve() async {
+    if (_isResolving) return;
+
     final confirmed = await showAppConfirmDialog(
       context: context,
       title: 'Tandai SOS ditangani?',
@@ -242,52 +256,82 @@ class EmergencySosScreen extends StatelessWidget {
       confirmButtonColor: AppColors.primaryDark,
     );
 
-    if (confirmed != true || !context.mounted) return;
-    await _resolveSos(context);
+    if (confirmed != true || !mounted) return;
+    await _resolveSos();
   }
 
-  Future<void> _resolveSos(BuildContext context) async {
-    final currentFamilyUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final resolvedIds = await _resolveMatchingSosAlerts(currentFamilyUid);
-    if (resolvedIds.isEmpty) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Tidak ada SOS aktif yang ditemukan',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          backgroundColor: Colors.orange,
-          elevation: 2,
-        ),
+  Future<void> _resolveSos() async {
+    if (_isResolving) return;
+    setState(() => _isResolving = true);
+
+    try {
+      final sosId = (_readString('sosId') ?? '').trim();
+      final familyUid =
+          (_readString('familyUid') ?? '').trim();
+      final userId = (_readString('userId') ?? '').trim();
+      final resolvedBy =
+          FirebaseAuth.instance.currentUser?.uid ?? familyUid;
+
+      final firestore = FirebaseFirestore.instance;
+
+      if (sosId.isNotEmpty) {
+        // Update langsung by dokumen ID — pendekatan sama dengan FamilyHistoryScreen
+        await firestore.collection('sos_alerts').doc(sosId).update({
+          'status': 'resolved',
+          'resolvedAt': FieldValue.serverTimestamp(),
+          'resolvedBy': resolvedBy,
+        });
+      } else {
+        // Fallback: query SOS aktif untuk keluarga ini
+        if (familyUid.isEmpty) {
+          throw Exception('SOS ID dan Family UID tidak ditemukan');
+        }
+
+        final snapshot = await firestore
+            .collection('sos_alerts')
+            .where('familyUids', arrayContains: familyUid)
+            .limit(10)
+            .get();
+
+        final activeDocs = snapshot.docs.where((doc) {
+          if (doc.data()['status'] != 'active') return false;
+          if (userId.isEmpty) return true;
+          return doc.data()['userId']?.toString() == userId;
+        }).toList();
+
+        if (activeDocs.isEmpty) {
+          throw Exception('SOS aktif tidak ditemukan');
+        }
+
+        final batch = firestore.batch();
+        for (final doc in activeDocs) {
+          batch.update(doc.reference, {
+            'status': 'resolved',
+            'resolvedAt': FieldValue.serverTimestamp(),
+            'resolvedBy': resolvedBy,
+          });
+        }
+        await batch.commit();
+      }
+
+      debugPrint('[EmergencySosScreen] SOS berhasil ditandai resolved: $sosId');
+      NotificationService.instance.stopSosAlarmLoop();
+
+      if (!mounted) return;
+      AppFeedback.success(context, 'SOS ditandai sudah ditangani.');
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      SystemNavigator.pop();
+    } catch (e) {
+      debugPrint('[EmergencySosScreen] error resolve SOS: $e');
+      if (!mounted) return;
+      AppFeedback.error(
+        context,
+        e,
+        fallback: 'Status SOS belum dapat diperbarui. Silakan coba lagi.',
       );
-      return;
+    } finally {
+      if (mounted) setState(() => _isResolving = false);
     }
-
-    debugPrint('SOS resolved');
-    NotificationService.instance.stopSosAlarmLoop();
-
-    if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'SOS ditandai sebagai ditangani',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        backgroundColor: Colors.green,
-        elevation: 2,
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    SystemNavigator.pop();
   }
 
   Future<bool> _hasActiveMatchingSos() async {
@@ -303,8 +347,10 @@ class EmergencySosScreen extends StatelessWidget {
       return status == 'active';
     }
 
-    final currentFamilyUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-    final familyUid = _readString('familyUid') ?? currentFamilyUid;
+    final familyUid =
+        _readString('familyUid') ??
+        FirebaseAuth.instance.currentUser?.uid ??
+        '';
     if (familyUid.isEmpty) return false;
 
     final userId = _readString('userId');
@@ -312,58 +358,13 @@ class EmergencySosScreen extends StatelessWidget {
         .collection('sos_alerts')
         .where('familyUids', arrayContains: familyUid)
         .where('status', isEqualTo: 'active')
-        .limit(50)
+        .limit(10)
         .get();
 
     return snapshot.docs.any((doc) {
       if (userId == null) return true;
       return doc.data()['userId']?.toString() == userId;
     });
-  }
-
-  Future<List<String>> _resolveMatchingSosAlerts(
-    String currentFamilyUid,
-  ) async {
-    final firestore = FirebaseFirestore.instance;
-    final idsToResolve = <String>{};
-    final directSosId = _readString('sosId');
-
-    if (directSosId != null) {
-      idsToResolve.add(directSosId);
-    }
-
-    final familyUid = _readString('familyUid') ?? currentFamilyUid;
-    final userId = _readString('userId');
-
-    if (familyUid.isNotEmpty) {
-      final snapshot = await firestore
-          .collection('sos_alerts')
-          .where('familyUids', arrayContains: familyUid)
-          .where('status', isEqualTo: 'active')
-          .limit(50)
-          .get();
-
-      final matchingDocs = snapshot.docs.where((doc) {
-        if (userId == null) return true;
-        return doc.data()['userId']?.toString() == userId;
-      });
-
-      idsToResolve.addAll(matchingDocs.map((doc) => doc.id));
-    }
-
-    if (idsToResolve.isEmpty) return const [];
-
-    final batch = firestore.batch();
-    for (final sosId in idsToResolve) {
-      batch.update(firestore.collection('sos_alerts').doc(sosId), {
-        'status': 'resolved',
-        'resolvedAt': FieldValue.serverTimestamp(),
-        'resolvedBy': currentFamilyUid,
-      });
-    }
-    await batch.commit();
-
-    return idsToResolve.toList();
   }
 }
 
@@ -616,12 +617,14 @@ class _EmergencyInfoPanel extends StatelessWidget {
 }
 
 class _EmergencyActions extends StatelessWidget {
+  final bool isResolving;
   final VoidCallback onOpenLocation;
   final VoidCallback onCopyCoordinates;
   final VoidCallback onSilence;
   final VoidCallback onResolve;
 
   const _EmergencyActions({
+    required this.isResolving,
     required this.onOpenLocation,
     required this.onCopyCoordinates,
     required this.onSilence,
@@ -709,12 +712,14 @@ class _EmergencyActions extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: _EmergencyButton(
-                  icon: Icons.check_circle_rounded,
-                  label: 'Ditangani',
+                  icon: isResolving
+                      ? Icons.hourglass_empty_rounded
+                      : Icons.check_circle_rounded,
+                  label: isResolving ? 'Menandai...' : 'Ditangani',
                   backgroundColor: AppColors.primaryDark,
                   foregroundColor: Colors.white,
                   borderColor: AppColors.primaryDark,
-                  onPressed: onResolve,
+                  onPressed: isResolving ? null : onResolve,
                   compact: true,
                 ),
               ),
@@ -732,7 +737,7 @@ class _EmergencyButton extends StatelessWidget {
   final Color backgroundColor;
   final Color foregroundColor;
   final Color borderColor;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool compact;
 
   const _EmergencyButton({
@@ -747,39 +752,43 @@ class _EmergencyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDisabled = onPressed == null;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onPressed,
         borderRadius: BorderRadius.circular(12),
-        child: Container(
-          height: compact ? 44 : 48,
-          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
-          decoration: BoxDecoration(
-            color: backgroundColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: borderColor, width: 1.1),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: compact ? 17 : 19, color: foregroundColor),
-              const SizedBox(width: 8),
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    style: AppTextStyles.bodyMedium.copyWith(
-                      color: foregroundColor,
-                      fontSize: compact ? 13 : 15,
-                      fontWeight: FontWeight.w800,
+        child: Opacity(
+          opacity: isDisabled ? 0.6 : 1.0,
+          child: Container(
+            height: compact ? 44 : 48,
+            padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: borderColor, width: 1.1),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: compact ? 17 : 19, color: foregroundColor),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: foregroundColor,
+                        fontSize: compact ? 13 : 15,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

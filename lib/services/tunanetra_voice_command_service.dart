@@ -209,6 +209,7 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
     await _homeCommandButtonSubscription?.cancel();
     _homeCommandButtonSubscription = null;
     await _homeCommandSttService.stopListening();
+    unawaited(_homeCommandTtsService.stop());
     _hasHandledHomeCommand = false;
   }
 

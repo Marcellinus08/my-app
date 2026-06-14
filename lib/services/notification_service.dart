@@ -735,24 +735,28 @@ class NotificationService {
             const Expanded(child: Text('SOS Darurat')),
           ],
         ),
-        content: Text('$userName membutuhkan bantuan'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Tutup'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              foregroundColor: Colors.white,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$userName membutuhkan bantuan'),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  navigateToFamilyMonitoringFromSos(message);
+                },
+                child: const Text('Lihat Lokasi'),
+              ),
             ),
-            onPressed: () {
-              Navigator.of(dialogContext).pop();
-              navigateToFamilyMonitoringFromSos(message);
-            },
-            child: const Text('Lihat Lokasi'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

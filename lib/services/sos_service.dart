@@ -28,17 +28,17 @@ class SosSendResult {
       return 'SOS berhasil dikirim ke keluarga.';
     }
     if (deliveredToAnyFamily) {
-      return 'Pengguna terjatuh. SOS berhasil dikirim ke keluarga. (User fell. SOS sent successfully).';
+      return 'SOS berhasil terkirim ke keluarga.';
     }
     return 'SOS tersimpan, tetapi notifikasi keluarga belum terkirim. Coba kembali segera.';
   }
 
   String get spokenMessage {
     if (deliveredToAllFamilies) {
-      return 'Status SOS, berhasil dikirim ke keluarga.';
+      return 'SOS berhasil terkirim ke keluarga.';
     }
     if (deliveredToAnyFamily) {
-      return 'Status SOS, terkirim ke sebagian keluarga.';
+      return 'SOS berhasil terkirim ke keluarga.';
     }
     return 'Status SOS, tersimpan tetapi notifikasi keluarga gagal dikirim. Coba kembali segera.';
   }
@@ -109,6 +109,10 @@ class SosService {
         throw Exception('Belum ada keluarga terhubung');
       }
 
+      debugPrint(
+        '[SosService] Mengirim SOS ke ${familyUids.length} keluarga: $familyUids',
+      );
+
       final sosId = await saveSosAlert(
         userId: uid,
         userName: userName,
@@ -128,62 +132,29 @@ class SosService {
         );
       }
 
+      // Kirim notifikasi ke semua keluarga secara paralel
+      final deliveryResults = await Future.wait(
+        familyUids.map(
+          (familyUid) => _sendNotificationToFamily(
+            idToken: idToken,
+            familyUid: familyUid,
+            userId: uid,
+            userName: userName,
+            lat: lat,
+            lng: lng,
+            batteryLevel: batteryLevel,
+            smartCaneBatteryLevel: smartCaneBatteryLevel,
+            currentTripId: currentTripId,
+            sosId: sosId,
+          ),
+        ),
+      );
+
       var successCount = 0;
       var failedCount = 0;
-
-      for (final familyUid in familyUids) {
-        try {
-          debugPrint('[SosService] Mengirim SOS dengan authorization header');
-          final response = await _httpClient
-              .post(
-                Uri.parse(workerSendSosUrl),
-                headers: {
-                  'Authorization': 'Bearer $idToken',
-                  'Content-Type': 'application/json',
-                },
-                body: jsonEncode({
-                  'userId': uid,
-                  'familyUid': familyUid,
-                  'userName': userName,
-                  'lat': lat,
-                  'lng': lng,
-                  'batteryLevel': batteryLevel,
-                  'smartCaneBatteryLevel': smartCaneBatteryLevel,
-                  'currentTripId': currentTripId,
-                  'sosId': sosId,
-                }),
-              )
-              .timeout(const Duration(seconds: 15));
-
-          debugPrint(
-            '[SosService] Worker response status: ${response.statusCode}',
-          );
-          debugPrint('[SosService] Worker response body: ${response.body}');
-
-          final responseBody = _decodeJsonObject(response.body);
-          final success =
-              response.statusCode == 200 && responseBody?['success'] == true;
-          final workerSentCount = _readInt(responseBody?['sentCount']);
-          final workerFailedCount = _readInt(responseBody?['failedCount']);
-
-          if (success) {
-            successCount += workerSentCount ?? 1;
-            failedCount += workerFailedCount ?? 0;
-            debugPrint(
-              '[SosService] SOS sent to familyUid: $familyUid '
-              'sent=${workerSentCount ?? 1} failed=${workerFailedCount ?? 0}',
-            );
-          } else {
-            failedCount += workerFailedCount ?? 1;
-            debugPrint(
-              '[SosService] SOS failed for familyUid=$familyUid '
-              'status=${response.statusCode} body=${response.body}',
-            );
-          }
-        } catch (e) {
-          failedCount += 1;
-          debugPrint('[SosService] SOS error for familyUid=$familyUid: $e');
-        }
+      for (final result in deliveryResults) {
+        successCount += result[0];
+        failedCount += result[1];
       }
 
       debugPrint(
@@ -209,66 +180,156 @@ class SosService {
     }
   }
 
+  // Mengirim notifikasi push ke satu keluarga. Mengembalikan [sentCount, failedCount].
+  Future<List<int>> _sendNotificationToFamily({
+    required String idToken,
+    required String familyUid,
+    required String userId,
+    required String userName,
+    required double? lat,
+    required double? lng,
+    required int? batteryLevel,
+    required int? smartCaneBatteryLevel,
+    required String currentTripId,
+    required String sosId,
+  }) async {
+    try {
+      debugPrint('[SosService] Mengirim SOS ke familyUid: $familyUid');
+      final response = await _httpClient
+          .post(
+            Uri.parse(workerSendSosUrl),
+            headers: {
+              'Authorization': 'Bearer $idToken',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'userId': userId,
+              'familyUid': familyUid,
+              'userName': userName,
+              'lat': lat,
+              'lng': lng,
+              'batteryLevel': batteryLevel,
+              'smartCaneBatteryLevel': smartCaneBatteryLevel,
+              'currentTripId': currentTripId,
+              'sosId': sosId,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      debugPrint(
+        '[SosService] Worker response for $familyUid: ${response.statusCode}',
+      );
+
+      final responseBody = _decodeJsonObject(response.body);
+      final success =
+          response.statusCode == 200 && responseBody?['success'] == true;
+      final workerSentCount = _readInt(responseBody?['sentCount']);
+      final workerFailedCount = _readInt(responseBody?['failedCount']);
+
+      if (success) {
+        debugPrint(
+          '[SosService] SOS sent to familyUid: $familyUid '
+          'sent=${workerSentCount ?? 1} failed=${workerFailedCount ?? 0}',
+        );
+        return [workerSentCount ?? 1, workerFailedCount ?? 0];
+      } else {
+        debugPrint(
+          '[SosService] SOS failed for familyUid=$familyUid '
+          'status=${response.statusCode} body=${response.body}',
+        );
+        return [0, workerFailedCount ?? 1];
+      }
+    } catch (e) {
+      debugPrint('[SosService] SOS error for familyUid=$familyUid: $e');
+      return [0, 1];
+    }
+  }
+
+  /// Mengumpulkan semua family UID yang terhubung dengan tunaNetra user.
+  /// Membaca dari beberapa sumber secara resilient — satu sumber gagal tidak
+  /// memblokir sumber lainnya.
   Future<List<String>> getConnectedFamilyUids(String tunaNetraUid) async {
     final familyUids = <String>{};
 
-    final tunaDoc = await _firestore
-        .collection('users')
-        .doc(tunaNetraUid)
-        .get();
-    final tunaData = tunaDoc.data() ?? {};
+    // Sumber 1: connectedFamilies array di dokumen tunaNetra
+    try {
+      final tunaDoc = await _firestore
+          .collection('users')
+          .doc(tunaNetraUid)
+          .get();
+      final tunaData = tunaDoc.data() ?? {};
 
-    final connectedFamilies = tunaData['connectedFamilies'];
-    if (connectedFamilies is List) {
-      for (final family in connectedFamilies) {
-        if (family is Map) {
-          final uid = _readString(family['uid']);
-          if (uid != null) {
-            familyUids.add(uid);
+      final connectedFamilies = tunaData['connectedFamilies'];
+      if (connectedFamilies is List) {
+        for (final family in connectedFamilies) {
+          if (family is Map) {
+            final uid = _readString(family['uid']);
+            if (uid != null) familyUids.add(uid);
           }
         }
       }
+    } catch (e) {
+      debugPrint('[SosService] getConnectedFamilyUids source1 error: $e');
     }
 
-    final familyMembersSnapshot = await _firestore
-        .collection('users')
-        .doc(tunaNetraUid)
-        .collection('family_members')
-        .get();
-
-    for (final doc in familyMembersSnapshot.docs) {
-      final uid = _readString(doc.data()['uid']) ?? doc.id;
-      if (uid.isNotEmpty) {
-        familyUids.add(uid);
+    // Sumber 2: family_members subcollection di dokumen tunaNetra
+    try {
+      final familyMembersSnapshot = await _firestore
+          .collection('users')
+          .doc(tunaNetraUid)
+          .collection('family_members')
+          .get();
+      for (final doc in familyMembersSnapshot.docs) {
+        final uid = _readString(doc.data()['uid']) ?? doc.id;
+        if (uid.isNotEmpty) familyUids.add(uid);
       }
+    } catch (e) {
+      debugPrint('[SosService] getConnectedFamilyUids source2 error: $e');
     }
 
-    final pairedArraySnapshot = await _firestore
-        .collection('users')
-        .where('userType', whereIn: ['family', 'UserType.family'])
-        .where('pairedUserUids', arrayContains: tunaNetraUid)
-        .get();
+    // Sumber 3 & 4: reverse lookup pada family users — dijalankan paralel
+    await Future.wait([
+      // Sumber 3: pairedUserUids array di dokumen keluarga
+      _firestore
+          .collection('users')
+          .where('userType', whereIn: ['family', 'UserType.family'])
+          .where('pairedUserUids', arrayContains: tunaNetraUid)
+          .get()
+          .then((snapshot) {
+            for (final doc in snapshot.docs) {
+              final uid = _readString(doc.data()['uid']) ?? doc.id;
+              if (uid.isNotEmpty) familyUids.add(uid);
+            }
+          })
+          .catchError((Object e) {
+            debugPrint(
+              '[SosService] getConnectedFamilyUids source3 error: $e',
+            );
+          }),
 
-    for (final doc in pairedArraySnapshot.docs) {
-      final uid = _readString(doc.data()['uid']) ?? doc.id;
-      if (uid.isNotEmpty) {
-        familyUids.add(uid);
-      }
-    }
+      // Sumber 4: pairedUserUid (legacy, single) di dokumen keluarga
+      _firestore
+          .collection('users')
+          .where('userType', whereIn: ['family', 'UserType.family'])
+          .where('pairedUserUid', isEqualTo: tunaNetraUid)
+          .get()
+          .then((snapshot) {
+            for (final doc in snapshot.docs) {
+              final uid = _readString(doc.data()['uid']) ?? doc.id;
+              if (uid.isNotEmpty) familyUids.add(uid);
+            }
+          })
+          .catchError((Object e) {
+            debugPrint(
+              '[SosService] getConnectedFamilyUids source4 error: $e',
+            );
+          }),
+    ]);
 
-    final legacySnapshot = await _firestore
-        .collection('users')
-        .where('userType', whereIn: ['family', 'UserType.family'])
-        .where('pairedUserUid', isEqualTo: tunaNetraUid)
-        .get();
-
-    for (final doc in legacySnapshot.docs) {
-      final uid = _readString(doc.data()['uid']) ?? doc.id;
-      if (uid.isNotEmpty) {
-        familyUids.add(uid);
-      }
-    }
-
+    debugPrint(
+      '[SosService] Connected family UIDs ditemukan: '
+      '${familyUids.length} → $familyUids',
+    );
     return familyUids.toList();
   }
 

@@ -759,8 +759,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     final didResolveSos = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (ctx) =>
-            FamilyHistoryScreen(targetUid: userId, familyId: _resolvedFamilyId),
+        builder: (ctx) => FamilyHistoryScreen(
+          targetUid: userId,
+          familyId: _resolvedFamilyId,
+          initialSosData: _activeSosData,
+        ),
       ),
     );
 
