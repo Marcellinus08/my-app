@@ -272,9 +272,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   void _subscribeToActiveSos() {
-    final familyId = widget.familyId.trim().isNotEmpty
-        ? widget.familyId.trim()
-        : (AuthService().currentUserId ?? '');
+    final familyId = _currentFamilyId();
 
     if (familyId.isEmpty) {
       debugPrint('[FamilyHome] Skip SOS listener, familyId empty');
@@ -286,18 +284,14 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     _activeSosSubscription = _firestore
         .collection('sos_alerts')
         .where('familyUids', arrayContains: familyId)
-        .where('status', isEqualTo: 'active')
-        .orderBy('createdAt', descending: true)
-        .limit(1)
         .snapshots()
         .listen(
           (snapshot) {
             if (!mounted) return;
-            DocumentSnapshot<Map<String, dynamic>>? activeDoc;
+            final activeDoc = _latestActiveSosDoc(snapshot.docs);
             Map<String, dynamic>? activeData;
 
-            if (snapshot.docs.isNotEmpty) {
-              activeDoc = snapshot.docs.first;
+            if (activeDoc != null) {
               final docData = activeDoc.data();
               if (docData != null) {
                 activeData = {
@@ -325,6 +319,35 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             debugPrint('[FamilyHome] Active SOS listener error: $error');
           },
         );
+  }
+
+  String _currentFamilyId() {
+    final authFamilyId = AuthService().currentUserId?.trim() ?? '';
+    if (authFamilyId.isNotEmpty) return authFamilyId;
+
+    final resolvedFamilyId = _resolvedFamilyId.trim();
+    if (resolvedFamilyId.isNotEmpty) return resolvedFamilyId;
+
+    return widget.familyId.trim();
+  }
+
+  DocumentSnapshot<Map<String, dynamic>>? _latestActiveSosDoc(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final activeDocs = docs.where((doc) => doc.data()['status'] == 'active');
+    DocumentSnapshot<Map<String, dynamic>>? latestDoc;
+    var latestMillis = -1;
+
+    for (final doc in activeDocs) {
+      final createdAt = _parseTimestamp(doc.data()['createdAt']);
+      final millis = createdAt?.toDate().millisecondsSinceEpoch ?? 0;
+      if (latestDoc == null || millis > latestMillis) {
+        latestDoc = doc;
+        latestMillis = millis;
+      }
+    }
+
+    return latestDoc;
   }
 
   void _notifyActiveSos(String sosId, Map<String, dynamic> data) {
@@ -753,11 +776,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Future<void> _refreshActiveSosOnce() async {
-    final familyId = _resolvedFamilyId.isNotEmpty
-        ? _resolvedFamilyId
-        : (widget.familyId.trim().isNotEmpty
-              ? widget.familyId.trim()
-              : (AuthService().currentUserId ?? ''));
+    final familyId = _currentFamilyId();
 
     if (familyId.isEmpty) return;
 
@@ -765,14 +784,12 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       final snapshot = await _firestore
           .collection('sos_alerts')
           .where('familyUids', arrayContains: familyId)
-          .where('status', isEqualTo: 'active')
-          .orderBy('createdAt', descending: true)
-          .limit(1)
           .get(const GetOptions(source: Source.server));
 
       if (!mounted) return;
 
-      if (snapshot.docs.isEmpty) {
+      final activeDoc = _latestActiveSosDoc(snapshot.docs);
+      if (activeDoc == null) {
         setState(() {
           _activeSosDoc = null;
           _activeSosData = null;
@@ -780,9 +797,13 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         return;
       }
 
-      final activeDoc = snapshot.docs.first;
+      final docData = activeDoc.data();
+      if (docData == null) {
+        return;
+      }
+
       final activeData = {
-        ...activeDoc.data(),
+        ...docData,
         'type': 'sos',
         'sosId': activeDoc.id,
         'familyUid': familyId,
@@ -853,32 +874,26 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Future<void> _resolveLatestSosAlertFallback() async {
-    final familyId = _resolvedFamilyId.isNotEmpty
-        ? _resolvedFamilyId
-        : (AuthService().currentUserId ?? '');
+    final familyId = _currentFamilyId();
     if (familyId.isEmpty) {
       throw Exception('Family UID kosong');
     }
 
     final userId = _readString(_activeSosData?['userId']);
-    var query = _firestore
+    final snapshot = await _firestore
         .collection('sos_alerts')
         .where('familyUids', arrayContains: familyId)
-        .where('status', isEqualTo: 'active');
-
-    if (userId != null) {
-      query = query.where('userId', isEqualTo: userId);
-    }
-
-    final snapshot = await query
-        .orderBy('createdAt', descending: true)
-        .limit(1)
         .get();
-    if (snapshot.docs.isEmpty) {
+
+    final docs = userId == null
+        ? snapshot.docs
+        : snapshot.docs.where((doc) => doc.data()['userId'] == userId).toList();
+    final activeDoc = _latestActiveSosDoc(docs);
+    if (activeDoc == null) {
       throw Exception('SOS aktif tidak ditemukan');
     }
 
-    await snapshot.docs.first.reference.update({
+    await activeDoc.reference.update({
       'status': 'resolved',
       'resolvedAt': FieldValue.serverTimestamp(),
     });

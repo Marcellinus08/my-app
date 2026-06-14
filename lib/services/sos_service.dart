@@ -28,7 +28,7 @@ class SosSendResult {
       return 'SOS berhasil dikirim ke keluarga.';
     }
     if (deliveredToAnyFamily) {
-      return 'SOS terkirim ke sebagian keluarga. Beberapa notifikasi belum berhasil dikirim.';
+      return 'Pengguna terjatuh. SOS berhasil dikirim ke keluarga. (User fell. SOS sent successfully).';
     }
     return 'SOS tersimpan, tetapi notifikasi keluarga belum terkirim. Coba kembali segera.';
   }
@@ -163,12 +163,18 @@ class SosService {
           final responseBody = _decodeJsonObject(response.body);
           final success =
               response.statusCode == 200 && responseBody?['success'] == true;
+          final workerSentCount = _readInt(responseBody?['sentCount']);
+          final workerFailedCount = _readInt(responseBody?['failedCount']);
 
           if (success) {
-            successCount += 1;
-            debugPrint('[SosService] SOS sent to familyUid: $familyUid');
+            successCount += workerSentCount ?? 1;
+            failedCount += workerFailedCount ?? 0;
+            debugPrint(
+              '[SosService] SOS sent to familyUid: $familyUid '
+              'sent=${workerSentCount ?? 1} failed=${workerFailedCount ?? 0}',
+            );
           } else {
-            failedCount += 1;
+            failedCount += workerFailedCount ?? 1;
             debugPrint(
               '[SosService] SOS failed for familyUid=$familyUid '
               'status=${response.statusCode} body=${response.body}',

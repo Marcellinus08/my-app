@@ -27,6 +27,9 @@
       }
     ]
   },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "database": {
     "rules": "database.rules.json"
   }

@@ -147,7 +147,6 @@ class _MyAppState extends State<MyApp> {
   _smartCaneStatusNotificationService;
   StreamSubscription<User?>? _authStateSubscription;
   Timer? _bleAutoReconnectDelayTimer;
-  bool _hasStartedBleAutoReconnect = false;
   bool _isStartingBleAutoReconnect = false;
 
   @override
@@ -162,6 +161,7 @@ class _MyAppState extends State<MyApp> {
     );
     _onTunaNetraHomeReady = () {
       _startSmartCaneStatusNotifications();
+      unawaited(_startBleAutoReconnect());
       unawaited(_smartCaneStatusNotificationService.beginStartupFlow());
     };
     _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
@@ -170,7 +170,6 @@ class _MyAppState extends State<MyApp> {
       if (user == null) {
         _bleAutoReconnectDelayTimer?.cancel();
         _bleAutoReconnectDelayTimer = null;
-        _hasStartedBleAutoReconnect = false;
         _isStartingBleAutoReconnect = false;
         _smartCaneStatusNotificationService.stop();
         return;
@@ -208,7 +207,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _startBleAutoReconnect() async {
-    if (_hasStartedBleAutoReconnect || _isStartingBleAutoReconnect) return;
+    if (_isStartingBleAutoReconnect) return;
     _isStartingBleAutoReconnect = true;
 
     try {
@@ -219,8 +218,14 @@ class _MyAppState extends State<MyApp> {
         return;
       }
 
+      final rememberedCaneId = await SmartCaneBleService.instance
+          .getRememberedCaneRemoteId();
+      if (rememberedCaneId == null) {
+        debugPrint('[MAIN] BLE auto reconnect dilewati: belum ada tongkat');
+        return;
+      }
+
       _startSmartCaneStatusNotifications();
-      _hasStartedBleAutoReconnect = true;
       unawaited(
         SmartCaneBleService.instance.initializeAutoReconnect(
           maxAttempts: 5,

@@ -252,32 +252,37 @@ class NotificationService {
   Future<void> initializeForFamilyUser() async {
     debugPrint('[NotificationService] initializeForFamilyUser() started');
 
-    final user = _auth.currentUser;
-    if (user == null) {
-      debugPrint('[NotificationService] currentUser null, skip FCM setup');
-      return;
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        debugPrint('[NotificationService] currentUser null, skip FCM setup');
+        return;
+      }
+
+      final isFamily = await _isCurrentUserFamily(user.uid);
+      if (!isFamily) {
+        debugPrint(
+          '[NotificationService] User ${user.uid} bukan family, token tidak disimpan',
+        );
+        return;
+      }
+
+      await createSosEmergencyChannel();
+      await requestNotificationPermission();
+
+      final token = await _messaging.getToken();
+      if (token == null || token.isEmpty) {
+        debugPrint('[NotificationService] FCM token null/kosong');
+        return;
+      }
+
+      debugPrint('[NotificationService] FCM token berhasil didapat: $token');
+      await saveFcmToken(token);
+      listenTokenRefresh();
+    } catch (e, stackTrace) {
+      debugPrint('[NotificationService] FCM setup gagal: $e');
+      debugPrint('$stackTrace');
     }
-
-    final isFamily = await _isCurrentUserFamily(user.uid);
-    if (!isFamily) {
-      debugPrint(
-        '[NotificationService] User ${user.uid} bukan family, token tidak disimpan',
-      );
-      return;
-    }
-
-    await createSosEmergencyChannel();
-    await requestNotificationPermission();
-
-    final token = await _messaging.getToken();
-    if (token == null || token.isEmpty) {
-      debugPrint('[NotificationService] FCM token null/kosong');
-      return;
-    }
-
-    debugPrint('[NotificationService] FCM token berhasil didapat: $token');
-    await saveFcmToken(token);
-    listenTokenRefresh();
   }
 
   Future<void> requestNotificationPermission() async {
@@ -1104,7 +1109,7 @@ class NotificationService {
 
   static String _sosNotificationBody(Map<String, dynamic> data) {
     final userName = _readStringFromMap(data, 'userName') ?? 'Pengguna';
-    return '$userName membutuhkan bantuan segera';
+    return '$userName membutuhkan bantuan segera karena terjatuh. ($userName needs immediate assistance due to a fall)';
   }
 
   String get _platformName {

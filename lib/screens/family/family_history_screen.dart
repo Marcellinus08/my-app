@@ -125,9 +125,12 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
   }
 
   String get _currentFamilyUid {
+    final authUid = _auth.currentUser?.uid.trim() ?? '';
+    if (authUid.isNotEmpty) return authUid;
+
     final familyId = widget.familyId.trim();
     if (familyId.isNotEmpty) return familyId;
-    return _auth.currentUser?.uid ?? '';
+    return '';
   }
 
   Map<String, dynamic>? get _initialSosFallbackData {
@@ -1220,12 +1223,34 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
 
     final idsToResolve = <String>{};
     final trimmedPrimarySosId = primarySosId.trim();
-    if (trimmedPrimarySosId.isNotEmpty) {
-      idsToResolve.add(trimmedPrimarySosId);
-    }
-
     final userId =
         _readSosString(widget.initialSosData?['userId']) ?? widget.targetUid;
+
+    if (trimmedPrimarySosId.isNotEmpty) {
+      final primarySnapshot = await _firestore
+          .collection('sos_alerts')
+          .doc(trimmedPrimarySosId)
+          .get();
+      final primaryData = primarySnapshot.data();
+      final familyUids = primaryData?['familyUids'];
+      final primaryUserId = _readSosString(primaryData?['userId']);
+      final canResolvePrimary =
+          primarySnapshot.exists &&
+          primaryData?['status'] == 'active' &&
+          (userId.trim().isEmpty || primaryUserId == userId.trim()) &&
+          familyUids is List &&
+          familyUids.map((value) => value.toString()).contains(familyUid);
+
+      if (canResolvePrimary) {
+        idsToResolve.add(trimmedPrimarySosId);
+      } else {
+        debugPrint(
+          '[FamilyHistory] primary SOS tidak cocok untuk resolve: '
+          '$trimmedPrimarySosId',
+        );
+      }
+    }
+
     final snapshot = await _firestore
         .collection('sos_alerts')
         .where('familyUids', arrayContains: familyUid)
@@ -1259,7 +1284,7 @@ class _FamilyHistoryScreenState extends State<FamilyHistoryScreen> {
       batch.update(docRef, {
         'status': 'resolved',
         'resolvedAt': FieldValue.serverTimestamp(),
-        'resolvedBy': familyUid,
+        'resolvedBy': _auth.currentUser?.uid ?? familyUid,
       });
     }
     await batch.commit();
@@ -4706,10 +4731,8 @@ class _NavigationHistoryDetailScreenState
               onCopy:
                   formatCoordinate(data['originLat'], data['originLng']) == '-'
                   ? null
-                  : () => copyEndCoordinate(
-                      data['originLat'],
-                      data['originLng'],
-                    ),
+                  : () =>
+                        copyEndCoordinate(data['originLat'], data['originLng']),
             ),
             _buildRouteInfoTile(
               icon: Icons.flag_rounded,

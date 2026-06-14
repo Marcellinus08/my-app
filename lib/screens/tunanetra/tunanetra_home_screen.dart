@@ -740,7 +740,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   }
 
   Future<void> _handleHomeConnectionTap() async {
-    if (_isHomeBleScanning || _isHomePairingCane || _bleService.isConnecting) {
+    if (_isHomeBleScanning ||
+        _isHomePairingCane ||
+        _bleService.isConnecting ||
+        _bleService.isAutoConnecting) {
       return;
     }
 
@@ -749,7 +752,56 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       return;
     }
 
+    final rememberedCaneId = await _bleService.getRememberedCaneRemoteId();
+    if (rememberedCaneId != null) {
+      await _connectRememberedHomeCaneDirect();
+      return;
+    }
+
     await _scanAndShowHomeBleDevices();
+  }
+
+  Future<void> _connectRememberedHomeCaneDirect() async {
+    if (!mounted) return;
+    setState(() {
+      _isHomePairingCane = true;
+      _homeBleStatus = 'Menghubungkan ulang tongkat...';
+    });
+
+    try {
+      await _bleService.initializeAutoReconnect(
+        force: true,
+        maxAttempts: 5,
+        log: (message) => debugPrint(message),
+        updateStatus: _updateHomeBleStatus,
+      );
+      _syncHomeBleServiceState();
+
+      if (_bleService.isConnected) {
+        final bleName = _bleService.connectedBleName ?? 'Smart Cane';
+        if (mounted) {
+          setState(() => _homeBleStatus = 'Terhubung ke $bleName');
+        }
+        _showHomeBleSnackBar('Tongkat berhasil terhubung kembali.');
+        return;
+      }
+
+      _showHomeBleSnackBar(
+        'SmartCane tersimpan belum dapat dihubungkan. Pastikan tongkat menyala dan berada di dekat Anda.',
+        isError: true,
+      );
+    } catch (error) {
+      _updateHomeBleStatus('Gagal menghubungkan ulang');
+      _showHomeBleSnackBar(
+        'SmartCane tersimpan belum dapat dihubungkan. Pastikan tongkat menyala dan berada di dekat Anda.',
+        isError: true,
+      );
+      debugPrint(
+        '[HOME-BLE] Reconnect langsung perangkat tersimpan gagal: $error',
+      );
+    } finally {
+      if (mounted) setState(() => _isHomePairingCane = false);
+    }
   }
 
   Future<void> _checkHomeBluetoothStatus() async {
@@ -1239,11 +1291,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       }
 
       try {
-        await _saveHomeCanePairingToFirestore(
-          caneCode: caneCode,
-          bleName: bleName,
-          remoteId: selectedResult.device.remoteId.toString(),
-        );
         await _bleService.saveRememberedCane(
           caneCode: caneCode,
           bleName: bleName,
@@ -1251,7 +1298,19 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         );
       } catch (error) {
         debugPrint(
-          '[HOME-BLE] Koneksi berhasil, penyimpanan pairing gagal: $error',
+          '[HOME-BLE] Koneksi berhasil, penyimpanan lokal gagal: $error',
+        );
+      }
+
+      try {
+        await _saveHomeCanePairingToFirestore(
+          caneCode: caneCode,
+          bleName: bleName,
+          remoteId: selectedResult.device.remoteId.toString(),
+        );
+      } catch (error) {
+        debugPrint(
+          '[HOME-BLE] Koneksi berhasil, penyimpanan Firestore gagal: $error',
         );
       }
 
@@ -1261,6 +1320,17 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     } catch (error) {
       if (_bleService.isConnected) {
         final bleName = _bleService.connectedBleName ?? 'Smart Cane';
+        try {
+          await _bleService.saveRememberedCane(
+            caneCode: caneCode,
+            bleName: bleName,
+            remoteId: selectedResult.device.remoteId.toString(),
+          );
+        } catch (saveError) {
+          debugPrint(
+            '[HOME-BLE] Koneksi berhasil, penyimpanan lokal gagal: $saveError',
+          );
+        }
         if (mounted) {
           setState(() => _homeBleStatus = 'Terhubung ke $bleName');
         }
@@ -1295,7 +1365,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       log: (message) => debugPrint(message),
       updateStatus: _updateHomeBleStatus,
     );
-    await _bleService.clearRememberedCane();
     _syncHomeBleServiceState();
     _showHomeBleSnackBar('Koneksi tongkat diputus.');
   }

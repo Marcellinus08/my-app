@@ -1,4 +1,4 @@
-rules_version = 2;
+rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -60,6 +60,19 @@ service cloud.firestore {
 
       match /family_members/{familyUid} {
         allow read, write: if request.auth != null;
+      }
+
+      match /fcmTokens/{tokenId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+
+        allow create, update: if request.auth != null &&
+          request.auth.uid == uid &&
+          request.resource.data.userId == uid &&
+          request.resource.data.userType == 'family' &&
+          request.resource.data.token is string &&
+          request.resource.data.token.size() > 0;
+
+        allow delete: if request.auth != null && request.auth.uid == uid;
       }
       
       // No delete for safety
@@ -135,6 +148,81 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    match /sos_alerts/{sosId} {
+      allow read: if isSignedIn() &&
+        (
+          request.auth.uid == resource.data.userId ||
+          (
+            resource.data.familyUids is list &&
+            request.auth.uid in resource.data.familyUids
+          )
+        );
+
+      allow create: if isSignedIn() &&
+        request.auth.uid == request.resource.data.userId &&
+        request.resource.data.familyUids is list &&
+        request.resource.data.familyUids.size() > 0 &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.keys().hasAll([
+          'userId',
+          'userName',
+          'familyUids',
+          'status',
+          'createdAt',
+          'resolvedAt'
+        ]);
+
+      allow update: if isSignedIn() &&
+        resource.data.familyUids is list &&
+        request.auth.uid in resource.data.familyUids &&
+        resource.data.status == 'active' &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.familyUids == resource.data.familyUids &&
+        request.resource.data.status == 'resolved' &&
+        (
+          !('resolvedBy' in request.resource.data) ||
+          request.resource.data.resolvedBy == request.auth.uid
+        ) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'resolvedAt',
+          'resolvedBy'
+        ]);
+
+      allow delete: if false;
+    }
+
+    match /places/{placeId} {
+      allow read: if isSignedIn() &&
+        (
+          resource.data.visibility == 'public' ||
+          !('visibility' in resource.data) ||
+          resource.data.ownerUid == request.auth.uid ||
+          resource.data.createdBy == request.auth.uid ||
+          (
+            resource.data.ownerUid is string &&
+            isPairedFamily(resource.data.ownerUid)
+          )
+        );
+
+      allow create: if isSignedIn() &&
+        (
+          (
+            request.resource.data.visibility == 'private' &&
+            request.resource.data.ownerUid is string &&
+            request.resource.data.createdBy == request.auth.uid &&
+            (
+              request.resource.data.ownerUid == request.auth.uid ||
+              isPairedFamily(request.resource.data.ownerUid)
+            )
+          ) ||
+          request.resource.data.visibility == 'public'
+        );
+
+      allow update, delete: if isSignedIn() &&
+        resource.data.createdBy == request.auth.uid;
+    }
+
     match /navigation_history/{tripId} {
       allow read: if isSignedIn() &&
         (
@@ -172,14 +260,24 @@ service cloud.firestore {
           );
 
         allow create: if isSignedIn() &&
-          request.resource.data.type == 'navigation_cancelled' &&
           (
-            request.auth.uid ==
-              get(/databases/$(database)/documents/navigation_history/$(tripId))
-                .data.userId ||
-            isPairedFamily(
-              get(/databases/$(database)/documents/navigation_history/$(tripId))
-                .data.userId
+            (
+              request.resource.data.type == 'navigation_cancelled' &&
+              (
+                request.auth.uid ==
+                  get(/databases/$(database)/documents/navigation_history/$(tripId))
+                    .data.userId ||
+                isPairedFamily(
+                  get(/databases/$(database)/documents/navigation_history/$(tripId))
+                    .data.userId
+                )
+              )
+            ) ||
+            (
+              request.resource.data.type == 'sos_pressed' &&
+              request.auth.uid ==
+                get(/databases/$(database)/documents/navigation_history/$(tripId))
+                  .data.userId
             )
           );
 
