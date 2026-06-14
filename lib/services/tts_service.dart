@@ -62,11 +62,6 @@ class TTSService {
       duplicateWindow: duplicateWindow,
     );
 
-    if (_isSttActive && !_isSafetyPriority(priority)) {
-      request.complete();
-      return request.done;
-    }
-
     _discardExpiredRequests();
     _removeReplacedRequests(request);
 
@@ -127,13 +122,6 @@ class TTSService {
         )) {
       _queue.add(currentRequest.copyForRetry(sequence: _requestSequence++));
     }
-
-    for (final request in _queue.where(
-      (request) => !_isSafetyPriority(request.priority),
-    )) {
-      request.complete();
-    }
-    _queue.removeWhere((request) => !_isSafetyPriority(request.priority));
 
     await _interruptCurrentSpeech();
   }

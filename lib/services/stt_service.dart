@@ -50,47 +50,54 @@ class STTService {
     final ttsService = TTSService();
     await ttsService.beginSttSession();
 
-    final available = await init(
-      onError: (error) {
-        ttsService.endSttSession();
-        onError?.call(error);
-      },
-      onStatus: (status) {
-        isListening = status == 'listening';
-        if (!_isStartingListening &&
-            (status == 'done' || status == 'notListening')) {
-          ttsService.endSttSession();
-        }
-        onStatus?.call(status);
-      },
-    );
-
-    if (available) {
-      _isStartingListening = true;
-      try {
-        if (isListening) {
-          await _stt.cancel();
+    try {
+      final available = await init(
+        onError: (error) {
           isListening = false;
-        }
+          ttsService.endSttSession();
+          onError?.call(error);
+        },
+        onStatus: (status) {
+          isListening = status == 'listening';
+          if (!_isStartingListening &&
+              (status == 'done' || status == 'notListening')) {
+            ttsService.endSttSession();
+          }
+          onStatus?.call(status);
+        },
+      );
 
-        await ttsService.beginSttSession();
-        isListening = true;
-
-        await _stt.listen(
-          localeId: "id_ID",
-          listenFor: const Duration(minutes: 5),
-          pauseFor: pauseFor,
-          onResult: (result) {
-            if (finalResultsOnly && !result.finalResult) return;
-            onResult(result.recognizedWords);
-          },
-        );
-      } finally {
-        _isStartingListening = false;
+      if (!available) {
+        ttsService.endSttSession();
+        debugPrint('STT tidak tersedia');
+        return;
       }
-    } else {
+
+      _isStartingListening = true;
+      if (_stt.isListening || isListening) {
+        await _stt.cancel();
+        isListening = false;
+      }
+
+      await ttsService.beginSttSession();
+      isListening = true;
+
+      await _stt.listen(
+        localeId: "id_ID",
+        listenFor: const Duration(minutes: 5),
+        pauseFor: pauseFor,
+        onResult: (result) {
+          if (finalResultsOnly && !result.finalResult) return;
+          onResult(result.recognizedWords);
+        },
+      );
+    } catch (error, stackTrace) {
+      isListening = false;
       ttsService.endSttSession();
-      debugPrint('STT tidak tersedia');
+      debugPrint('Gagal memulai STT: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    } finally {
+      _isStartingListening = false;
     }
   }
 

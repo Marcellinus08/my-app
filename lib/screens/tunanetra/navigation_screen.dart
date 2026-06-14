@@ -196,6 +196,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       duration: const Duration(milliseconds: 300),
     )..addListener(_onLocationAnimationTick);
     _latestSmartCaneSensorData = _smartCaneBleService.latestSensorData;
+    _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
     _smartCaneSensorSubscription = _smartCaneBleService.sensorDataStream.listen(
       (data) {
         if (!mounted) return;
@@ -2885,6 +2886,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       );
     } catch (error) {
       print('[ROUTING] ❌ Error loading route: $error');
+      if (!wasNavigating) {
+        _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
+      }
       if (mounted) {
         final userFriendlyMsg = AppErrorMessage.from(
           error,

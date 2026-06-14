@@ -62,7 +62,6 @@ class SmartCaneStatusNotificationService {
 
     if (_lastState == _SmartCaneRuntimeState.ready) {
       _finishStartupFlow();
-      _announceReady();
       return;
     }
 
@@ -143,13 +142,18 @@ class SmartCaneStatusNotificationService {
     }
 
     if (currentState == _SmartCaneRuntimeState.waiting) {
-      _announceConnected();
+      if (_isStartupFlowActive) {
+        _announceConnected();
+      }
       return;
     }
 
     if (currentState == _SmartCaneRuntimeState.ready) {
+      final shouldAnnounceReady = _isStartupFlowActive;
       _finishStartupFlow();
-      _announceReady();
+      if (shouldAnnounceReady) {
+        _announceReady();
+      }
       return;
     }
 
@@ -164,7 +168,7 @@ class SmartCaneStatusNotificationService {
   void _evaluateHazardAlert() {
     final announcementsEnabled =
         _bleService.navigationHazardAnnouncementsEnabled;
-    if (!announcementsEnabled) {
+    if (!announcementsEnabled || !_bleService.isSmartCaneReady) {
       if (_wasNavigationHazardAnnouncementsEnabled) {
         unawaited(_ttsService.cancelByReplacementKey('smart-cane-hazard'));
       }
