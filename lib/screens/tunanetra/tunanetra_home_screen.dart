@@ -1303,6 +1303,11 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         );
       }
 
+      // Trigger urutan TTS/snackbar (terhubung → siap → baterai) seperti auto-reconnect.
+      // ChangeNotifier listener di SmartCaneStatusNotificationService sudah menangani
+      // ini secara reaktif; notifikasi ini sebagai safety net untuk edge case.
+      notifySmartCaneManuallyPaired();
+
       try {
         await _saveHomeCanePairingToFirestore(
           caneCode: caneCode,
@@ -1317,7 +1322,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
       if (!mounted) return;
       setState(() => _homeBleStatus = 'Terhubung ke $bleName');
-      _showHomeBleSnackBar('Perangkat berhasil terhubung.');
     } catch (error) {
       if (_bleService.isConnected) {
         final bleName = _bleService.connectedBleName ?? 'Smart Cane';
@@ -1332,10 +1336,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
             '[HOME-BLE] Koneksi berhasil, penyimpanan lokal gagal: $saveError',
           );
         }
+        notifySmartCaneManuallyPaired();
         if (mounted) {
           setState(() => _homeBleStatus = 'Terhubung ke $bleName');
         }
-        _showHomeBleSnackBar('Perangkat berhasil terhubung.');
         debugPrint('[HOME-BLE] Koneksi berhasil dengan catatan: $error');
         return;
       }

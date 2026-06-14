@@ -114,6 +114,23 @@ class SmartCaneStatusNotificationService {
     _isPermissionsReady = true;
   }
 
+  /// Safety net untuk manual BLE pairing pertama kali. ChangeNotifier listener
+  /// di start() sudah menangani transisi state secara reaktif, tapi metode ini
+  /// memastikan sequence tetap ter-trigger di edge case.
+  ///
+  /// Aman dipanggil berulang — jika listener sudah menangkap transisi
+  /// (_lastState == _currentState), metode ini langsung return tanpa efek.
+  void forceBeginStartupFlowIfNeeded() {
+    if (!_isStarted || !_isPermissionsReady) return;
+    if (_isStartupFlowActive) return;
+    final current = _currentState;
+    if (current == _SmartCaneRuntimeState.disconnected) return;
+    // Jika _lastState sudah sama dengan _currentState, listener sudah
+    // memproses transisi ini — tidak perlu trigger ulang.
+    if (_lastState == current) return;
+    unawaited(beginStartupFlow());
+  }
+
   void stop() {
     if (!_isStarted) return;
     _isStarted = false;

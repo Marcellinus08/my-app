@@ -26,9 +26,16 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 final GlobalKey<ScaffoldMessengerState> appScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
 VoidCallback? _onTunaNetraHomeReady;
+VoidCallback? _onSmartCaneManuallyPaired;
 
 void notifyTunaNetraHomeReady() {
   _onTunaNetraHomeReady?.call();
+}
+
+/// Dipanggil setelah pairing SmartCane manual (input kode + PIN) berhasil.
+/// Memicu sequence TTS/snackbar yang sama dengan auto-reconnect.
+void notifySmartCaneManuallyPaired() {
+  _onSmartCaneManuallyPaired?.call();
 }
 
 final RouteObserver<ModalRoute<void>> routeObserver =
@@ -165,6 +172,9 @@ class _MyAppState extends State<MyApp> {
       unawaited(_startBleAutoReconnect());
       unawaited(_smartCaneStatusNotificationService.beginStartupFlow());
     };
+    _onSmartCaneManuallyPaired = () {
+      _smartCaneStatusNotificationService.forceBeginStartupFlowIfNeeded();
+    };
     _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
       user,
     ) {
@@ -196,6 +206,7 @@ class _MyAppState extends State<MyApp> {
     _bleAutoReconnectDelayTimer?.cancel();
     _smartCaneStatusNotificationService.stop();
     _onTunaNetraHomeReady = null;
+    _onSmartCaneManuallyPaired = null;
     super.dispose();
   }
 
