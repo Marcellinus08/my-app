@@ -118,7 +118,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         .batteryDataStream
         .listen(_handleSmartCaneBatteryData);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      notifyTunaNetraHomeReady();
       await CorePermissionService().ensureTunaNetraCorePermissions(
         onLocationPermissionHandled: (_) async {
           if (!mounted) return;
@@ -127,6 +126,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       );
       if (!mounted) return;
       _initialPermissionFlowDone = true;
+      notifyTunaNetraHomeReady();
       _speakIfReady();
     });
   }
@@ -1367,7 +1367,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       updateStatus: _updateHomeBleStatus,
     );
     _syncHomeBleServiceState();
-    _showHomeBleSnackBar('Koneksi tongkat diputus.');
   }
 
   Future<bool> _sendHomePairingPin({

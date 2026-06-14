@@ -28,6 +28,8 @@ class SmartCaneStatusNotificationService {
 
   Timer? _statusTimer;
   Timer? _startupTimeoutTimer;
+  Timer? _waitingSnackBarTimer;
+  final List<String> _pendingStartupAnnouncements = [];
   _SmartCaneRuntimeState? _lastState;
   Future<void> _announcementQueue = Future<void>.value();
   int _announcementGeneration = 0;
@@ -64,6 +66,16 @@ class SmartCaneStatusNotificationService {
 
     if (_lastState == _SmartCaneRuntimeState.ready) {
       _finishStartupFlow();
+      // Queue full sequence so battery-interruption requeue can replay all three.
+      _showSnackBar(
+        message: 'SmartCane berhasil terhubung.',
+        color: AppColors.primary,
+        icon: Icons.bluetooth_connected_rounded,
+        duration: const Duration(seconds: 3),
+      );
+      _queueStartupTts('SmartCane berhasil terhubung.');
+      _queueStartupTts('Menunggu sistem siap.');
+      _announceReady();
       return;
     }
 
@@ -98,6 +110,9 @@ class SmartCaneStatusNotificationService {
     _statusTimer = null;
     _startupTimeoutTimer?.cancel();
     _startupTimeoutTimer = null;
+    _waitingSnackBarTimer?.cancel();
+    _waitingSnackBarTimer = null;
+    _pendingStartupAnnouncements.clear();
     _bleService.removeListener(_evaluateStatus);
     _lastState = null;
     _isStartupFlowActive = false;
@@ -274,6 +289,7 @@ class SmartCaneStatusNotificationService {
       priority: isCritical ? TtsPriority.critical : TtsPriority.warning,
       replacementKey: 'smart-cane-battery',
     );
+    _requeuePendingStartupAnnouncements();
   }
 
   String _hazardAnnouncement(
@@ -364,13 +380,26 @@ class SmartCaneStatusNotificationService {
   }
 
   void _announceConnected() {
-    const message = 'SmartCane terhubung. Menunggu sistem siap.';
     _showSnackBar(
-      message: message,
+      message: 'SmartCane berhasil terhubung.',
       color: AppColors.primary,
       icon: Icons.bluetooth_connected_rounded,
+      duration: const Duration(seconds: 3),
     );
-    _queueTts(message);
+    _queueStartupTts('SmartCane berhasil terhubung.');
+
+    _waitingSnackBarTimer?.cancel();
+    _waitingSnackBarTimer = Timer(const Duration(seconds: 3), () {
+      _waitingSnackBarTimer = null;
+      if (_isStarted && _currentState == _SmartCaneRuntimeState.waiting) {
+        _showSnackBar(
+          message: 'Menunggu sistem siap.',
+          color: AppColors.primary,
+          icon: Icons.hourglass_empty_rounded,
+        );
+      }
+    });
+    _queueStartupTts('Menunggu sistem siap.');
   }
 
   void _announceReady() {
@@ -380,12 +409,11 @@ class SmartCaneStatusNotificationService {
       color: AppColors.success,
       icon: Icons.check_circle_rounded,
     );
-    _queueTts(message);
+    _queueStartupTts(message);
   }
 
   void _announceDisconnected() {
-    const message =
-        'Koneksi SmartCane terputus. Ucapkan hubungkan ulang SmartCane untuk mencoba kembali.';
+    const message = 'Koneksi SmartCane terputus.';
     _showSnackBar(
       message: message,
       color: AppColors.error,
@@ -401,6 +429,7 @@ class SmartCaneStatusNotificationService {
       return;
     }
 
+    _pendingStartupAnnouncements.clear();
     _finishStartupFlow();
 
     final isConnected = _bleService.isConnected;
@@ -420,6 +449,58 @@ class SmartCaneStatusNotificationService {
     _isStartupFlowActive = false;
     _startupTimeoutTimer?.cancel();
     _startupTimeoutTimer = null;
+    _waitingSnackBarTimer?.cancel();
+    _waitingSnackBarTimer = null;
+  }
+
+  // Antrian TTS khusus startup: melacak pesan yang belum diucapkan agar bisa
+  // di-replay jika diinterupsi oleh TTS prioritas tinggi (mis. baterai rendah).
+  //
+  // Pesan baru dihapus dari pending SETELAH speak selesai dan hanya jika
+  // generation masih sama — sehingga pesan yang sedang diucapkan saat diinterupsi
+  // tetap tersimpan di pending dan ikut di-replay oleh
+  // _requeuePendingStartupAnnouncements().
+  void _queueStartupTts(String message) {
+    _pendingStartupAnnouncements.add(message);
+    final generation = _announcementGeneration;
+    _announcementQueue = _announcementQueue
+        .then((_) async {
+          if (generation != _announcementGeneration) {
+            // Diinterupsi sebelum mulai — tetap di pending.
+            return;
+          }
+          await _ttsService.speak(message);
+          // Hanya hapus dari pending jika tidak diinterupsi selama speak.
+          if (generation == _announcementGeneration) {
+            _pendingStartupAnnouncements.remove(message);
+          }
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[SMARTCANE-STATUS] TTS startup gagal: $error');
+        });
+  }
+
+  // Dipanggil setelah TTS prioritas tinggi di-queue (mis. baterai) agar
+  // pesan startup yang terdrop tetap terucap sesudahnya.
+  void _requeuePendingStartupAnnouncements() {
+    if (_pendingStartupAnnouncements.isEmpty) return;
+    final pending = List<String>.from(_pendingStartupAnnouncements);
+    for (final msg in pending) {
+      final generation = _announcementGeneration;
+      _announcementQueue = _announcementQueue
+          .then((_) async {
+            if (generation != _announcementGeneration) {
+              return;
+            }
+            await _ttsService.speak(msg);
+            if (generation == _announcementGeneration) {
+              _pendingStartupAnnouncements.remove(msg);
+            }
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            debugPrint('[SMARTCANE-STATUS] TTS startup replay gagal: $error');
+          });
+    }
   }
 
   void _queueTts(
@@ -453,6 +534,7 @@ class SmartCaneStatusNotificationService {
     required String message,
     required Color color,
     required IconData icon,
+    Duration duration = const Duration(seconds: 4),
   }) {
     final messenger = scaffoldMessengerKey.currentState;
     if (messenger == null) return;
@@ -474,7 +556,7 @@ class SmartCaneStatusNotificationService {
             ],
           ),
           backgroundColor: color,
-          duration: const Duration(seconds: 4),
+          duration: duration,
         ),
       );
   }
