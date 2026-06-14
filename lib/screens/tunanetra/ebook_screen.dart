@@ -32,271 +32,210 @@ class _GuideTopic {
 const List<_GuideTopic> _guides = [
   _GuideTopic(
     title: 'Mengenal Sistem',
-    description:
-        'Mengenal fungsi aplikasi, Smart Cane, dan cara keduanya bekerja bersama.',
+    description: 'Fungsi Teman Arah dan Smart Cane.',
     icon: Icons.accessibility_new_rounded,
     sections: [
       _GuideSection('Teman Arah', [
-        'Teman Arah adalah aplikasi pendamping pada telepon pengguna tunanetra.',
-        'Aplikasi menyediakan navigasi suara, informasi Smart Cane, perintah suara, dan SOS darurat.',
-        'Teman Arah juga mengirim lokasi perjalanan dan kondisi SOS kepada keluarga yang sudah terhubung.',
+        'Aplikasi di telepon untuk navigasi suara dan pemantauan oleh keluarga.',
+        'Mendukung perintah suara, informasi Smart Cane, dan SOS darurat.',
       ]),
       _GuideSection('Smart Cane', [
-        'Smart Cane adalah tongkat bantu yang membaca kondisi di sekitar pengguna.',
-        'Tiga sensor membaca jarak hambatan pada sisi kiri, tengah, dan kanan.',
-        'Kamera dan model deteksi membantu mengenali objek di sekitar pengguna.',
-        'Tombol pada Smart Cane dapat digunakan untuk mengaktifkan perintah suara dan mengirim SOS.',
-      ]),
-      _GuideSection('Cara keduanya bekerja bersama', [
-        'Smart Cane mengirim data sensor, hasil deteksi objek, baterai, dan event tombol ke aplikasi melalui Bluetooth.',
-        'Teman Arah mengolah data tersebut menjadi informasi visual dan suara yang lebih mudah dipahami.',
-        'Alat dapat mengirim status aman, hati-hati, atau bahaya.',
-        'Model dapat mengirim nama objek dan saran maju, kiri, kanan, atau berhenti.',
-        'Saat navigasi aktif, Teman Arah memberikan panduan rute sementara Smart Cane membantu memeriksa kondisi jalan secara langsung.',
+        'Tongkat bantu dengan tiga sensor jarak di sisi kiri, tengah, dan kanan.',
+        'Memiliki kamera untuk mengenali objek dan dua tombol: daya dan asisten suara.',
+        'Mengirim data sensor dan event tombol ke Teman Arah melalui Bluetooth.',
       ]),
     ],
     safetyNote:
-        'Teman Arah dan Smart Cane merupakan alat bantu. Pengguna tetap perlu meraba jalur dan memperhatikan kondisi lingkungan.',
+        'Teman Arah dan Smart Cane adalah alat bantu, bukan pengganti kewaspadaan.',
   ),
   _GuideTopic(
     title: 'Persiapan',
-    description:
-        'Menyiapkan Smart Cane, aplikasi Teman Arah, telepon, dan koneksi keluarga.',
+    description: 'Yang perlu disiapkan sebelum berangkat.',
     icon: Icons.checklist_rounded,
     sections: [
-      _GuideSection('Pemeriksaan awal', [
+      _GuideSection('Pemeriksaan', [
         'Pastikan baterai Smart Cane dan telepon mencukupi.',
-        'Nyalakan Smart Cane, telepon, Bluetooth, GPS, dan koneksi internet.',
-        'Buka Teman Arah dan tunggu proses izin serta layanan awal selesai.',
+        'Aktifkan Bluetooth, GPS, dan koneksi internet.',
         'Pastikan volume media telepon dapat terdengar.',
-        'Pastikan akun pengguna sudah terhubung dengan akun keluarga.',
-      ]),
-      _GuideSection('Izin aplikasi', [
-        'Berikan izin lokasi untuk navigasi dan pemantauan keluarga.',
-        'Berikan izin Bluetooth untuk menghubungkan Smart Cane.',
-        'Berikan izin mikrofon untuk menggunakan perintah suara.',
-        'Berikan izin notifikasi untuk menerima informasi penting.',
+        'Berikan izin lokasi, Bluetooth, mikrofon, dan notifikasi saat diminta.',
       ]),
     ],
   ),
   _GuideTopic(
     title: 'Menghubungkan Smart Cane',
-    description:
-        'Menghubungkan alat ke aplikasi dan mendengarkan tanda sistem siap.',
+    description: 'Sambungkan Smart Cane ke Teman Arah melalui Bluetooth.',
     icon: Icons.bluetooth_rounded,
     sections: [
-      _GuideSection('Koneksi pertama', [
-        'Nyalakan Smart Cane dan dekatkan dengan telepon.',
-        'Aktifkan Bluetooth, buka Teman Arah, lalu pilih bagian koneksi Smart Cane.',
-        'Mulai pencarian dan pilih perangkat Smart Cane yang tersedia.',
-        'Teman Arah akan menerima data alat setelah koneksi berhasil.',
+      _GuideSection('Cara menghubungkan', [
+        'Nyalakan Smart Cane dan dekatkan ke telepon.',
+        'Buka Teman Arah, pilih menu koneksi, lalu mulai pencarian.',
+        'Pilih Smart Cane yang tersedia dan tunggu konfirmasi koneksi.',
+        'Teman Arah akan berkata "SmartCane siap digunakan" jika berhasil.',
       ]),
-      _GuideSection('Koneksi ulang', [
-        'Aplikasi akan mencoba menyambungkan kembali perangkat yang pernah disimpan.',
-        'Jika gagal, pastikan alat menyala, dekatkan ke telepon, lalu buka menu koneksi.',
-        'Matikan dan nyalakan Bluetooth jika perangkat tetap tidak ditemukan.',
-      ]),
-      _GuideSection('Tanda alat siap', [
-        'Suara "SmartCane terhubung. Menunggu sistem siap" berarti koneksi Bluetooth berhasil dan sistem alat sedang dipersiapkan.',
-        'Smart Cane siap dipakai setelah aplikasi mengatakan "SmartCane siap digunakan".',
+      _GuideSection('Jika koneksi gagal', [
+        'Pastikan Smart Cane menyala dan berada di dekat telepon.',
+        'Matikan dan nyalakan Bluetooth, lalu coba sambungkan ulang.',
       ]),
     ],
   ),
   _GuideTopic(
     title: 'Memahami Data Sensor',
-    description:
-        'Memahami data Smart Cane yang ditampilkan dan dibacakan oleh aplikasi.',
+    description: 'Status dan peringatan yang diberikan Smart Cane.',
     icon: Icons.sensors_rounded,
     sections: [
-      _GuideSection('Tiga sensor jarak', [
-        'Smart Cane membaca jarak hambatan pada sisi kiri, tengah, dan kanan.',
-        'Kiri menunjukkan jarak hambatan pada sisi kiri, tengah menunjukkan bagian depan, dan kanan menunjukkan sisi kanan.',
-        'Teman Arah menerima data tersebut melalui Bluetooth.',
-      ]),
-      _GuideSection('Status dan keputusan', [
-        'Smart Cane menentukan status berdasarkan data sensor dan model.',
-        'Teman Arah menyampaikan status aman, hati-hati, atau bahaya melalui tampilan dan suara.',
-        'Jika model mengenali objek saat ada hambatan, nama objek seperti orang, kursi, atau kendaraan ikut disebutkan dalam peringatan.',
-        'Keputusan arah ikut dibacakan sebagai maju, pindah ke kiri, pindah ke kanan, atau berhenti.',
-        'Setelah peringatan hati-hati atau bahaya, Teman Arah mengatakan "Jalur sudah aman. Silakan lanjutkan perjalanan." ketika kondisi kembali aman dan stabil.',
-      ]),
-      _GuideSection('Deteksi objek', [
-        'Kamera Smart Cane dapat mengenali objek seperti orang, kendaraan, dan benda lain.',
-        'Teman Arah menampilkan atau membacakan nama objek bersama peringatan jika tersedia.',
+      _GuideSection('Status perjalanan', [
+        'Smart Cane membaca hambatan di sisi kiri, tengah, dan kanan.',
+        'Teman Arah menyampaikan status aman, hati-hati, atau bahaya.',
+        'Jika ada objek, nama seperti orang atau kendaraan ikut disebutkan.',
+        'Arah yang disarankan dibacakan: maju, kiri, kanan, atau berhenti.',
       ]),
     ],
-    safetyNote:
-        'Selalu konfirmasi kondisi nyata menggunakan tongkat sebelum bergerak atau berbelok.',
+    safetyNote: 'Konfirmasi kondisi nyata menggunakan tongkat sebelum bergerak.',
   ),
   _GuideTopic(
-    title: 'Menghidupkan Smart Cane dan Fungsi Tombol',
-    description:
-        'Menghidupkan alat, menggunakan asisten suara, dan mengirim SOS.',
+    title: 'Tombol Smart Cane',
+    description: 'Cara menggunakan tombol daya, asisten suara, dan SOS.',
     icon: Icons.touch_app_rounded,
     sections: [
-      _GuideSection('Tombol hitam untuk daya', [
-        'Tekan tombol hitam satu kali untuk menghidupkan Smart Cane.',
-        'Tunggu Smart Cane menyala dan Teman Arah mulai melakukan proses koneksi.',
-        'Setelah selesai digunakan, tekan tombol hitam satu kali lagi untuk mematikan Smart Cane.',
+      _GuideSection('Tombol hitam - daya', [
+        'Tekan sekali untuk menghidupkan Smart Cane.',
+        'Tekan sekali lagi untuk mematikan setelah selesai.',
       ]),
-      _GuideSection('Tombol merah untuk asisten suara', [
-        'Pastikan Smart Cane sudah terhubung dan Teman Arah telah mengatakan bahwa alat siap digunakan.',
-        'Tekan dan tahan tombol merah untuk mengaktifkan STT.',
-        'Smart Cane mengirim event mulai mendengarkan kepada Teman Arah.',
-        'Tetap tahan tombol merah, lalu ucapkan satu perintah dengan singkat dan jelas.',
-        'Lepaskan tombol merah setelah selesai berbicara agar Teman Arah berhenti mendengarkan dan memproses ucapan.',
-        'Dengarkan respons Teman Arah sampai selesai sebelum memberikan perintah berikutnya.',
-        'Jika perintah tidak dikenali, kurangi kebisingan, tahan kembali tombol merah, lalu ulangi perintah.',
+      _GuideSection('Tombol merah - asisten suara', [
+        'Tekan dan tahan untuk mulai berbicara.',
+        'Ucapkan satu perintah dengan singkat dan jelas.',
+        'Lepaskan tombol dan tunggu respons Teman Arah.',
       ]),
-      _GuideSection('Tombol SOS', [
-        'Tekan tombol merah sebanyak lima kali dengan cepat untuk mengirim SOS.',
-        'Smart Cane mengirim event SOS kepada Teman Arah.',
-        'Teman Arah mengirim lokasi dan data pendukung kepada keluarga jika tersedia.',
-        'Dengarkan konfirmasi Teman Arah apakah SOS berhasil atau gagal dikirim.',
-        'Gunakan SOS hanya ketika keadaan darurat dan membutuhkan bantuan segera.',
+      _GuideSection('Tombol merah - SOS', [
+        'Tekan tombol merah lima kali dengan cepat untuk mengirim SOS.',
+        'Dengarkan konfirmasi pengiriman dari Teman Arah.',
       ]),
     ],
   ),
   _GuideTopic(
-    title: 'Memeriksa Status Sistem',
-    description:
-        'Mengetahui kondisi Smart Cane dan Teman Arah dari satu halaman.',
+    title: 'Memeriksa Status',
+    description: 'Cek kondisi sistem sebelum dan selama perjalanan.',
     icon: Icons.home_rounded,
     sections: [
-      _GuideSection('Informasi yang tersedia', [
-        'Teman Arah menampilkan status GPS, koneksi Smart Cane, sensor, dan model.',
-        'Aplikasi menerima baterai alat dari Smart Cane dan baterai telepon dari sistem telepon.',
-        'Gunakan perintah "Cek SmartCane", "Cek koneksi", "Cek baterai", atau "Cek GPS" untuk mendapatkan informasi status.',
-        'Mulai perjalanan setelah Teman Arah menyatakan Smart Cane siap digunakan.',
-      ]),
-      _GuideSection('Menu utama', [
-        'Mulai Navigasi digunakan untuk memilih tujuan dan menjalankan rute.',
-        'Kirim SOS digunakan untuk meminta bantuan keluarga.',
-        'Buku Panduan berisi petunjuk penggunaan sistem.',
-        'Pengaturan digunakan untuk profil, koneksi keluarga, dan pengaturan akun.',
+      _GuideSection('Perintah cek', [
+        '"Cek SmartCane" untuk mengetahui kesiapan alat.',
+        '"Cek baterai" untuk memeriksa baterai Smart Cane.',
+        '"Cek koneksi" untuk status Bluetooth.',
+        '"Cek GPS" untuk status lokasi.',
       ]),
     ],
   ),
   _GuideTopic(
     title: 'Perintah Suara',
-    description: 'Daftar kalimat suara yang dapat dijalankan oleh Teman Arah.',
+    description: 'Daftar perintah suara yang dapat digunakan.',
     icon: Icons.mic_rounded,
     sections: [
       _GuideSection('Perintah global', [
-        '"Halaman utama", "Beranda", atau "Home" untuk kembali ke halaman utama.',
-        '"SOS", "Darurat", "Tolong", "Bantuan", atau "Butuh bantuan" untuk mengirim SOS.',
+        '"Halaman utama" atau "Beranda" untuk kembali ke halaman utama.',
+        '"SOS", "Tolong", atau "Bantuan" untuk mengirim SOS.',
       ]),
-      _GuideSection('Perintah halaman utama', [
+      _GuideSection('Di halaman utama', [
         '"Navigasi" untuk membuka halaman navigasi.',
-        '"Buku panduan" atau "Ebook" untuk membuka Buku Panduan.',
-        '"Pengaturan" untuk membuka halaman pengaturan.',
-        '"Hubungkan SmartCane", "Hubungkan tongkat", atau "Bluetooth" untuk membuka koneksi alat.',
-        '"Cek koneksi" untuk membacakan status koneksi Smart Cane.',
-        '"Cek baterai" untuk membacakan baterai Smart Cane.',
-        '"Cek SmartCane" atau "Cek tongkat" untuk membacakan kesiapan alat.',
-        '"Cek GPS" untuk membacakan status GPS.',
+        '"Buku panduan" untuk membuka Buku Panduan.',
+        '"Pengaturan" untuk membuka pengaturan.',
+        '"Hubungkan SmartCane" untuk membuka menu koneksi.',
         '"Cek cuaca" untuk membacakan informasi cuaca.',
       ]),
-      _GuideSection('Perintah halaman navigasi', [
-        'Ucapkan nama, kategori, atau alamat tempat untuk memilih tujuan.',
-        '"Cek jarak" untuk membacakan sisa jarak ke tujuan.',
-        '"Cek waktu" untuk membacakan estimasi waktu perjalanan.',
-        '"Hentikan navigasi" untuk mengakhiri navigasi.',
-        '"Halaman utama" untuk kembali ke beranda.',
-        '"SOS" atau "Butuh bantuan" untuk mengirim SOS selama navigasi.',
+      _GuideSection('Di halaman navigasi', [
+        'Ucapkan nama atau alamat tujuan untuk memilih destinasi.',
+        '"Cek jarak" untuk sisa jarak ke tujuan.',
+        '"Cek waktu" untuk estimasi waktu perjalanan.',
+        '"Hentikan navigasi" untuk mengakhiri rute.',
       ]),
     ],
   ),
   _GuideTopic(
     title: 'Navigasi',
-    description:
-        'Mengikuti rute aplikasi sambil memeriksa jalan menggunakan alat.',
+    description: 'Memulai dan mengikuti rute perjalanan.',
     icon: Icons.navigation_rounded,
     sections: [
-      _GuideSection('Memulai navigasi', [
-        'Pastikan Smart Cane sudah terhubung dan Teman Arah menyatakan alat siap digunakan.',
-        'Buka Navigasi, lalu pilih tujuan melalui layar atau tombol STT pada Smart Cane.',
-        'Pastikan nama dan alamat tujuan benar.',
-        'Tunggu GPS aktif dan rute berhasil ditemukan.',
+      _GuideSection('Memulai', [
+        'Pastikan Smart Cane sudah terhubung dan siap.',
+        'Buka Navigasi, ucapkan atau pilih tujuan, lalu tunggu rute ditemukan.',
         'Dengarkan instruksi awal sebelum mulai berjalan.',
       ]),
-      _GuideSection('Informasi perjalanan', [
-        'Teman Arah memberi informasi arah pada jarak sekitar 30, 20, dan 10 meter.',
-        'Pada jarak sekitar 5 meter, Teman Arah memberi tahu bahwa pengguna memasuki area belok.',
+      _GuideSection('Selama perjalanan', [
+        'Teman Arah memberi instruksi belokan pada jarak 30, 20, dan 10 meter.',
         'Gunakan Smart Cane untuk meraba batas jalan dan menemukan bukaan belokan.',
-        'Sensor Smart Cane tetap memberikan informasi hambatan selama pengguna mengikuti rute.',
-        'Teman Arah memberi konfirmasi setelah arah gerak menunjukkan belokan berhasil.',
-      ]),
-      _GuideSection('Keluar rute dan tiba', [
-        'Jika keluar rute, kurangi kecepatan dan tunggu aplikasi menghitung rute baru.',
-        'Periksa lingkungan menggunakan tongkat sebelum melanjutkan.',
-        'Navigasi selesai setelah posisi tiba dikonfirmasi GPS atau pengguna menghentikannya.',
+        'Jika keluar rute, berhenti dan tunggu Teman Arah menghitung ulang.',
       ]),
     ],
     safetyNote:
-        'Posisi GPS dan data peta dapat bergeser. Utamakan kondisi nyata dan hasil rabaan Smart Cane.',
+        'Posisi GPS dapat bergeser. Utamakan kondisi nyata dan hasil rabaan tongkat.',
   ),
   _GuideTopic(
     title: 'SOS',
-    description:
-        'Mengirim bantuan dari alat atau aplikasi serta memantau respons keluarga.',
+    description: 'Mengirim permintaan bantuan darurat.',
     icon: Icons.sos_rounded,
     sections: [
       _GuideSection('Cara mengirim SOS', [
-        'Tekan tombol merah pada Smart Cane sebanyak lima kali dengan cepat atau gunakan tombol Kirim SOS di Teman Arah.',
-        'SOS juga dapat dikirim dengan perintah "SOS", "Darurat", "Tolong", atau "Bantuan".',
-        'Dengarkan konfirmasi pengiriman dan tetap berada di tempat aman jika memungkinkan.',
-      ]),
-      _GuideSection('Data untuk keluarga', [
-        'Keluarga dapat menerima nama pengguna, waktu SOS, dan koordinat lokasi.',
-        'Teman Arah menyertakan baterai telepon dan data baterai dari Smart Cane jika tersedia.',
-        'Keluarga dapat melihat perjalanan, membuka lokasi SOS, dan menandainya sebagai ditangani.',
-      ]),
-      _GuideSection('Jika SOS gagal', [
-        'Periksa koneksi internet dan izin lokasi dan coba kirim kembali.',
+        'Tekan tombol merah Smart Cane lima kali dengan cepat.',
+        'Atau gunakan tombol Kirim SOS di aplikasi Teman Arah.',
+        'Atau ucapkan "SOS", "Tolong", atau "Bantuan".',
+        'Keluarga akan menerima lokasi dan data pengguna.',
       ]),
     ],
     safetyNote:
-        'Gunakan SOS ketika tersesat, terluka, terancam, atau membutuhkan bantuan segera.',
+        'Gunakan SOS hanya saat tersesat, terluka, atau membutuhkan bantuan segera.',
   ),
   _GuideTopic(
-    title: 'Pemecahan Masalah dan Keselamatan',
-    description:
-        'Mengatasi kendala Smart Cane, Teman Arah, dan koneksi di antara keduanya.',
+    title: 'Pemecahan Masalah',
+    description: 'Mengatasi kendala umum saat menggunakan sistem.',
     icon: Icons.build_circle_rounded,
     sections: [
-      _GuideSection('Kendala Smart Cane', [
-        'Jika alat tidak ditemukan, pastikan alat menyala, Bluetooth aktif, dan jaraknya dekat.',
-        'Jika sensor belum aktif, tunggu proses alat selesai atau sambungkan ulang.',
-        'Jika model belum aktif, pastikan kamera tidak tertutup dan sistem alat sudah siap.',
-        'Jika baterai belum terbaca, tunggu data berikutnya atau sambungkan ulang.',
+      _GuideSection('Kendala umum', [
+        'Smart Cane tidak ditemukan: pastikan alat menyala dan Bluetooth aktif.',
+        'Suara tidak terdengar: periksa volume media telepon.',
+        'Perintah suara gagal: periksa izin mikrofon dan kurangi kebisingan.',
+        'GPS tidak akurat: pindah ke area terbuka dan tunggu posisi stabil.',
+        'Rute tidak ditemukan: periksa GPS, internet, dan ketepatan tujuan.',
       ]),
-      _GuideSection('Kendala aplikasi', [
-        'Jika GPS tidak akurat, berpindah ke area terbuka dan tunggu posisi stabil.',
-        'Jika suara tidak terdengar, periksa volume media dan perangkat audio.',
-        'Jika perintah suara gagal, periksa izin mikrofon dan kurangi kebisingan.',
-        'Jika rute tidak ditemukan, periksa GPS, internet, dan tujuan.',
-      ]),
-      _GuideSection('Keselamatan perjalanan', [
-        'Pastikan baterai telepon dan Smart Cane mencukupi.',
-        'Gunakan speaker atau headset satu sisi agar lingkungan tetap terdengar.',
-        'Berhenti di tempat aman sebelum memeriksa layar telepon.',
-        'Jangan hanya bergantung pada GPS atau hasil deteksi kamera.',
-        'Berhenti jika panduan aplikasi berbeda dengan kondisi nyata.',
-      ]),
-      _GuideSection('Setelah selesai digunakan', [
-        'Pastikan navigasi sudah dihentikan dan kembali ke halaman utama.',
-        'Putuskan koneksi jika Smart Cane tidak akan digunakan lagi.',
-        'Matikan Smart Cane, lalu isi daya alat dan telepon jika diperlukan.',
-        'Simpan Smart Cane di tempat yang aman dan kering.',
+      _GuideSection('Setelah selesai', [
+        'Hentikan navigasi dan kembali ke halaman utama.',
+        'Matikan Smart Cane dan isi daya jika diperlukan.',
       ]),
     ],
     safetyNote:
-        'Teman Arah dan Smart Cane adalah alat bantu, bukan pengganti kewaspadaan serta teknik orientasi dan mobilitas.',
+        'Teman Arah dan Smart Cane adalah alat bantu, bukan pengganti kewaspadaan.',
   ),
 ];
 
+// Display order: Mengenal Sistem, Persiapan, Tombol, Menghubungkan,
+//   Memeriksa Status, Sensor, Perintah Suara, Navigasi, SOS, Pemecahan Masalah
 const List<int> _guideDisplayOrder = [0, 1, 4, 2, 5, 3, 6, 7, 8, 9];
+
+bool _matchesTopicKeyword(String text, int displayIndex) {
+  switch (displayIndex) {
+    case 0:
+      return text.contains('mengenal');
+    case 1:
+      return text.contains('persiapan');
+    case 2:
+      return text.contains('tombol') || text.contains('menghidupkan');
+    case 3:
+      return text.contains('menghubungkan') || text.contains('sambungkan');
+    case 4:
+      return text.contains('memeriksa') || text.contains('status sistem');
+    case 5:
+      return text.contains('sensor') || text.contains('memahami data');
+    case 6:
+      return text.contains('perintah suara') || text.contains('daftar perintah');
+    case 7:
+      return text.contains('navigasi');
+    case 8:
+      // Skip SOS keyword to avoid conflict with global SOS command
+      return false;
+    case 9:
+      return text.contains('pemecahan') || text.contains('masalah');
+    default:
+      return false;
+  }
+}
 
 class EbookScreen extends StatefulWidget {
   const EbookScreen({super.key});
@@ -314,7 +253,9 @@ class _EbookScreenState extends State<EbookScreen>
   void initState() {
     super.initState();
     startHomeVoiceCommandListener(
-      openingAnnouncement: 'Halaman buku panduan dibuka',
+      openingAnnouncement:
+          'Buku Panduan. Sepuluh topik tersedia. Ucapkan Topik 1 hingga Topik 10 untuk membuka topik.',
+      onCommand: _handleVoiceCommand,
     );
   }
 
@@ -322,6 +263,62 @@ class _EbookScreenState extends State<EbookScreen>
   void dispose() {
     stopHomeVoiceCommandListener();
     super.dispose();
+  }
+
+  Future<bool> _handleVoiceCommand(String text) async {
+    final index = _getTopicDisplayIndex(text);
+    if (index != null) {
+      await _navigateToGuide(_guides[_guideDisplayOrder[index]]);
+      return true;
+    }
+    return false;
+  }
+
+  int? _getTopicDisplayIndex(String text) {
+    const numberWords = [
+      'satu',
+      'dua',
+      'tiga',
+      'empat',
+      'lima',
+      'enam',
+      'tujuh',
+      'delapan',
+      'sembilan',
+      'sepuluh',
+    ];
+
+    for (var i = 0; i < numberWords.length; i++) {
+      if (text.contains('topik ${i + 1}') ||
+          text.contains('topik ${numberWords[i]}')) {
+        return i;
+      }
+    }
+
+    for (var i = 0; i < _guideDisplayOrder.length; i++) {
+      if (_matchesTopicKeyword(text, i)) return i;
+    }
+
+    return null;
+  }
+
+  Future<void> _navigateToGuide(_GuideTopic guide) async {
+    await stopHomeVoiceCommandListener();
+    if (!mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => _GuideDetailScreen(guide: guide),
+      ),
+    );
+
+    if (mounted) {
+      startHomeVoiceCommandListener(
+        openingAnnouncement: 'Kembali ke daftar topik.',
+        onCommand: _handleVoiceCommand,
+      );
+    }
   }
 
   @override
@@ -336,10 +333,13 @@ class _EbookScreenState extends State<EbookScreen>
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
                 children: [
-                  _buildInfoCard(),
+                  _buildVoiceHintCard(),
                   const SizedBox(height: 11),
-                  ..._guideDisplayOrder.map(
-                    (index) => _buildGuideItem(_guides[index]),
+                  ..._guideDisplayOrder.asMap().entries.map(
+                    (entry) => _buildGuideItem(
+                      entry.key + 1,
+                      _guides[entry.value],
+                    ),
                   ),
                 ],
               ),
@@ -416,7 +416,7 @@ class _EbookScreenState extends State<EbookScreen>
     );
   }
 
-  Widget _buildInfoCard() {
+  Widget _buildVoiceHintCard() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
@@ -426,15 +426,11 @@ class _EbookScreenState extends State<EbookScreen>
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.info_outline_rounded,
-            color: AppColors.primaryDark,
-            size: 22,
-          ),
+          const Icon(Icons.mic_rounded, color: AppColors.primaryDark, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Ikuti panduan dari persiapan Smart Cane hingga penggunaan aplikasi.',
+              'Ucapkan "Topik 1" hingga "Topik 10" untuk membuka topik.',
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textPrimary,
                 fontSize: 13,
@@ -448,32 +444,18 @@ class _EbookScreenState extends State<EbookScreen>
     );
   }
 
-  Widget _buildGuideItem(_GuideTopic guide) {
+  Widget _buildGuideItem(int number, _GuideTopic guide) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Semantics(
         button: true,
-        label: guide.title,
+        label: 'Topik $number. ${guide.title}',
         hint: guide.description,
         child: ExcludeSemantics(
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () async {
-                await stopHomeVoiceCommandListener();
-                if (!mounted) return;
-
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute<void>(
-                    builder: (_) => _GuideDetailScreen(guide: guide),
-                  ),
-                );
-
-                if (mounted) {
-                  startHomeVoiceCommandListener();
-                }
-              },
+              onTap: () => _navigateToGuide(guide),
               borderRadius: BorderRadius.circular(14),
               child: Ink(
                 padding: const EdgeInsets.symmetric(
@@ -494,10 +476,38 @@ class _EbookScreenState extends State<EbookScreen>
                         color: AppColors.infoLight.withValues(alpha: 0.62),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(
-                        guide.icon,
-                        color: AppColors.primaryDark,
-                        size: 21,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Icon(
+                            guide.icon,
+                            color: AppColors.primaryDark,
+                            size: 20,
+                          ),
+                          Positioned(
+                            right: 2,
+                            bottom: 2,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 1,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primaryDark,
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: Text(
+                                '$number',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -513,7 +523,7 @@ class _EbookScreenState extends State<EbookScreen>
                               height: 1.22,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 3),
                           Text(
                             guide.description,
                             maxLines: 2,
@@ -553,7 +563,8 @@ class _GuideDetailScreen extends StatefulWidget {
   State<_GuideDetailScreen> createState() => _GuideDetailScreenState();
 }
 
-class _GuideDetailScreenState extends State<_GuideDetailScreen> {
+class _GuideDetailScreenState extends State<_GuideDetailScreen>
+    with TunaNetraHomeVoiceCommandMixin {
   static const Color _pageBackground = Color(0xFFF7FAFD);
   static const Color _cardBorder = Color(0xFFE2E8F0);
 
@@ -564,14 +575,52 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
     final parts = <String>[widget.guide.title, widget.guide.description];
     for (final section in widget.guide.sections) {
       parts.add(section.title);
-      for (var index = 0; index < section.points.length; index++) {
-        parts.add('Langkah ${index + 1}. ${section.points[index]}');
+      for (var i = 0; i < section.points.length; i++) {
+        parts.add('${i + 1}. ${section.points[i]}');
       }
     }
     if (widget.guide.safetyNote != null) {
       parts.add('Catatan keselamatan. ${widget.guide.safetyNote}');
     }
     return parts.join('. ');
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    startHomeVoiceCommandListener(
+      openingAnnouncement:
+          '${widget.guide.title}. Ucapkan Dengarkan untuk mendengarkan panduan ini.',
+      onCommand: _handleVoiceCommand,
+    );
+  }
+
+  @override
+  void dispose() {
+    stopHomeVoiceCommandListener();
+    unawaited(_ttsService.cancelByReplacementKey('ebook-guide'));
+    super.dispose();
+  }
+
+  Future<bool> _handleVoiceCommand(String text) async {
+    if (text.contains('dengarkan') ||
+        text.contains('bacakan') ||
+        text.contains('baca panduan')) {
+      if (!_isSpeaking) await _toggleSpeech();
+      return true;
+    }
+    if (text.contains('berhenti') ||
+        text.contains('hentikan') ||
+        text.contains('stop')) {
+      if (_isSpeaking) await _toggleSpeech();
+      return true;
+    }
+    if (text.contains('kembali')) {
+      if (!mounted) return true;
+      Navigator.pop(context);
+      return true;
+    }
+    return false;
   }
 
   Future<void> _toggleSpeech() async {
@@ -595,12 +644,6 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
   }
 
   @override
-  void dispose() {
-    unawaited(_ttsService.cancelByReplacementKey('ebook-guide'));
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _pageBackground,
@@ -612,8 +655,10 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 2, 20, 24),
                 children: [
+                  _buildVoiceHintCard(),
+                  const SizedBox(height: 10),
                   _buildIntroduction(),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   for (final section in widget.guide.sections) ...[
                     _buildSection(section),
                     const SizedBox(height: 10),
@@ -677,9 +722,36 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
     );
   }
 
+  Widget _buildVoiceHintCard() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: AppColors.infoLight.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.infoLight),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.mic_rounded, color: AppColors.primaryDark, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '"Dengarkan" · "Berhenti" · "Kembali"',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.primaryDark,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildIntroduction() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.infoLight.withValues(alpha: 0.42),
         borderRadius: BorderRadius.circular(14),
@@ -688,15 +760,15 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(widget.guide.icon, color: AppColors.primaryDark, size: 26),
-          const SizedBox(width: 12),
+          Icon(widget.guide.icon, color: AppColors.primaryDark, size: 24),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               widget.guide.description,
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textPrimary,
                 fontSize: 14,
-                height: 1.45,
+                height: 1.4,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -708,7 +780,7 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
 
   Widget _buildSection(_GuideSection section) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -720,15 +792,15 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
           Text(
             section.title,
             style: AppTextStyles.bodyLarge.copyWith(
-              fontSize: 17,
+              fontSize: 15,
               fontWeight: FontWeight.w800,
               height: 1.25,
             ),
           ),
-          const SizedBox(height: 13),
-          for (var index = 0; index < section.points.length; index++) ...[
-            _buildStep(index + 1, section.points[index]),
-            if (index != section.points.length - 1) const SizedBox(height: 12),
+          const SizedBox(height: 10),
+          for (var i = 0; i < section.points.length; i++) ...[
+            _buildStep(i + 1, section.points[i]),
+            if (i != section.points.length - 1) const SizedBox(height: 10),
           ],
         ],
       ),
@@ -740,30 +812,30 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: 27,
-          height: 27,
+          width: 26,
+          height: 26,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: AppColors.infoLight,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(7),
           ),
           child: Text(
             '$number',
             style: const TextStyle(
               color: AppColors.primaryDark,
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
           ),
         ),
-        const SizedBox(width: 11),
+        const SizedBox(width: 10),
         Expanded(
           child: Text(
             text,
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textPrimary,
               fontSize: 14,
-              height: 1.45,
+              height: 1.4,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -774,7 +846,7 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
 
   Widget _buildSafetyNote() {
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.warningLight.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(14),
@@ -786,9 +858,9 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
           const Icon(
             Icons.health_and_safety_rounded,
             color: Color(0xFFB45309),
-            size: 23,
+            size: 22,
           ),
-          const SizedBox(width: 11),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -797,17 +869,17 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
                   'Catatan Keselamatan',
                   style: TextStyle(
                     color: Color(0xFF92400E),
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 5),
+                const SizedBox(height: 4),
                 Text(
                   widget.guide.safetyNote!,
                   style: const TextStyle(
                     color: Color(0xFF78350F),
                     fontSize: 13.5,
-                    height: 1.42,
+                    height: 1.4,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -834,9 +906,8 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
           child: FilledButton.icon(
             onPressed: _toggleSpeech,
             style: FilledButton.styleFrom(
-              backgroundColor: _isSpeaking
-                  ? AppColors.error
-                  : AppColors.primaryDark,
+              backgroundColor:
+                  _isSpeaking ? AppColors.error : AppColors.primaryDark,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -844,7 +915,7 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen> {
             ),
             icon: Icon(
               _isSpeaking ? Icons.stop_rounded : Icons.volume_up_rounded,
-              size: 23,
+              size: 22,
             ),
             label: Text(
               _isSpeaking ? 'Hentikan Panduan' : 'Dengarkan Panduan',
