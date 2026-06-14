@@ -45,6 +45,7 @@ class SmartCaneStatusNotificationService {
   _SmartCaneBatteryLevel _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
   bool _isPermissionsReady = false;
   bool _batteryCheckPending = false;
+  bool _hasCompletedStartupAnnouncement = false;
 
   void start() {
     if (_isStarted) return;
@@ -68,18 +69,23 @@ class SmartCaneStatusNotificationService {
 
     if (_lastState == _SmartCaneRuntimeState.ready) {
       _finishStartupFlow();
-      _queueStartupTts(
-        'SmartCane berhasil terhubung.',
-        onBeforeSpeak: () => _showSnackBar(
-          message: 'SmartCane berhasil terhubung.',
-          color: AppColors.primary,
-          icon: Icons.bluetooth_connected_rounded,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-      // Tidak perlu "Menunggu sistem siap." karena sudah langsung ready.
-      // Baterai diumumkan di _announceReady() setelah "siap digunakan".
-      _announceReady();
+      // Jika sudah pernah announce sebelumnya (misal: kembali ke home via
+      // perintah suara), skip — SmartCane belum disconnect/reconnect,
+      // tidak ada event koneksi baru yang perlu diumumkan.
+      if (!_hasCompletedStartupAnnouncement) {
+        _queueStartupTts(
+          'SmartCane berhasil terhubung.',
+          onBeforeSpeak: () => _showSnackBar(
+            message: 'SmartCane berhasil terhubung.',
+            color: AppColors.primary,
+            icon: Icons.bluetooth_connected_rounded,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        // Tidak perlu "Menunggu sistem siap." karena sudah langsung ready.
+        // Baterai diumumkan di _announceReady() setelah "siap digunakan".
+        _announceReady();
+      }
       return;
     }
 
@@ -147,6 +153,7 @@ class SmartCaneStatusNotificationService {
     _isStartupFlowActive = false;
     _wentThroughConnecting = false;
     _batteryCheckPending = false;
+    _hasCompletedStartupAnnouncement = false;
     _fullResetHazardState();
     _wasNavigationHazardAnnouncementsEnabled = false;
     _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
@@ -640,6 +647,7 @@ class SmartCaneStatusNotificationService {
   }
 
   void _announceReady() {
+    _hasCompletedStartupAnnouncement = true;
     const message = 'SmartCane siap digunakan.';
     _queueStartupTts(
       message,
