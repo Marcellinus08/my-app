@@ -40,6 +40,9 @@ class SmartCaneBleService extends ChangeNotifier {
   bool _isAutoConnecting = false;
   bool _navigationHazardAnnouncementsEnabled = false;
   String _sensorPayloadBuffer = '';
+  // True setelah koneksi penuh berhasil (sensor subscribe). Diset false saat
+  // user memutus koneksi secara sengaja agar auto-reconnect tidak terpicu.
+  bool _shouldAutoReconnectOnDisconnect = false;
 
   BluetoothDevice? get connectedDevice => _connectedDevice;
   String? get connectedBleName => _connectedBleName;
@@ -112,6 +115,8 @@ class SmartCaneBleService extends ChangeNotifier {
           notifyListeners();
         } else if (state == BluetoothConnectionState.disconnected &&
             _connectedDevice?.remoteId == device.remoteId) {
+          final shouldReconnect =
+              _shouldAutoReconnectOnDisconnect && !_isAutoConnecting;
           _sensorSubscription?.cancel();
           _sensorSubscription = null;
           _connectedDevice = null;
@@ -120,8 +125,19 @@ class SmartCaneBleService extends ChangeNotifier {
           _latestSensorData = null;
           _latestSensorReceivedAt = null;
           _sensorPayloadBuffer = '';
+          _shouldAutoReconnectOnDisconnect = false;
           updateStatus('Belum terhubung');
           notifyListeners();
+
+          if (shouldReconnect) {
+            unawaited(
+              initializeAutoReconnect(
+                force: true,
+                maxAttempts: 3,
+                log: debugPrint,
+              ),
+            );
+          }
         }
       });
 
@@ -181,6 +197,7 @@ class SmartCaneBleService extends ChangeNotifier {
 
     await sensorCharacteristic.setNotifyValue(true);
     log('[SMARTCANE_BLE] ultrasonic notify subscribed');
+    _shouldAutoReconnectOnDisconnect = true;
   }
 
   BluetoothCharacteristic? _findCharacteristic({

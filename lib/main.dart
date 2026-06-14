@@ -161,6 +161,7 @@ class _MyAppState extends State<MyApp> {
     );
     _onTunaNetraHomeReady = () {
       _startSmartCaneStatusNotifications();
+      _smartCaneStatusNotificationService.markPermissionsReady();
       unawaited(_startBleAutoReconnect());
       unawaited(_smartCaneStatusNotificationService.beginStartupFlow());
     };

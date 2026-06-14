@@ -35,7 +35,7 @@ class SmartCaneStatusNotificationService {
   int _announcementGeneration = 0;
   bool _isStarted = false;
   bool _isStartupFlowActive = false;
-  bool _hasAnnouncedConnecting = false;
+  bool _wentThroughConnecting = false;
   _SmartCaneHazardLevel _lastHazardLevel = _SmartCaneHazardLevel.safe;
   DateTime? _lastHazardAnnouncementAt;
   String? _lastAnnouncedHazardObject;
@@ -43,6 +43,8 @@ class SmartCaneStatusNotificationService {
   DateTime? _safePathDetectedAt;
   bool _wasNavigationHazardAnnouncementsEnabled = false;
   _SmartCaneBatteryLevel _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
+  bool _isPermissionsReady = false;
+  bool _batteryCheckPending = false;
 
   void start() {
     if (_isStarted) return;
@@ -61,20 +63,22 @@ class SmartCaneStatusNotificationService {
     if (!_isStarted || _isStartupFlowActive) return;
 
     _isStartupFlowActive = true;
-    _hasAnnouncedConnecting = false;
+    _wentThroughConnecting = false;
     _lastState = _currentState;
 
     if (_lastState == _SmartCaneRuntimeState.ready) {
       _finishStartupFlow();
-      // Queue full sequence so battery-interruption requeue can replay all three.
-      _showSnackBar(
-        message: 'SmartCane berhasil terhubung.',
-        color: AppColors.primary,
-        icon: Icons.bluetooth_connected_rounded,
-        duration: const Duration(seconds: 3),
+      _queueStartupTts(
+        'SmartCane berhasil terhubung.',
+        onBeforeSpeak: () => _showSnackBar(
+          message: 'SmartCane berhasil terhubung.',
+          color: AppColors.primary,
+          icon: Icons.bluetooth_connected_rounded,
+          duration: const Duration(seconds: 3),
+        ),
       );
-      _queueStartupTts('SmartCane berhasil terhubung.');
-      _queueStartupTts('Menunggu sistem siap.');
+      // Tidak perlu "Menunggu sistem siap." karena sudah langsung ready.
+      // Baterai diumumkan di _announceReady() setelah "siap digunakan".
       _announceReady();
       return;
     }
@@ -103,9 +107,17 @@ class SmartCaneStatusNotificationService {
     }
   }
 
+  /// Dipanggil setelah semua permission (mic, GPS, dll.) diberikan oleh pengguna.
+  /// Sebelum ini dipanggil, notifikasi baterai (snackbar + TTS) tidak akan muncul
+  /// agar tidak mengganggu alur permintaan izin di home screen.
+  void markPermissionsReady() {
+    _isPermissionsReady = true;
+  }
+
   void stop() {
     if (!_isStarted) return;
     _isStarted = false;
+    _isPermissionsReady = false;
     _statusTimer?.cancel();
     _statusTimer = null;
     _startupTimeoutTimer?.cancel();
@@ -116,7 +128,8 @@ class SmartCaneStatusNotificationService {
     _bleService.removeListener(_evaluateStatus);
     _lastState = null;
     _isStartupFlowActive = false;
-    _hasAnnouncedConnecting = false;
+    _wentThroughConnecting = false;
+    _batteryCheckPending = false;
     _fullResetHazardState();
     _wasNavigationHazardAnnouncementsEnabled = false;
     _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
@@ -147,7 +160,17 @@ class SmartCaneStatusNotificationService {
 
     _lastState = currentState;
 
+    // Semua announcement (snackbar + TTS) ditahan sampai permission flow selesai.
+    // State tetap ditracking di atas agar tidak ada missed transition setelah
+    // markPermissionsReady() dipanggil.
+    if (!_isPermissionsReady) return;
+
     if (currentState == _SmartCaneRuntimeState.connecting) {
+      // Reconnect setelah disconnect — aktifkan startup flow baru.
+      if (!_isStartupFlowActive &&
+          previousState == _SmartCaneRuntimeState.disconnected) {
+        _activateReconnectFlow();
+      }
       if (_isStartupFlowActive) {
         _announceConnecting();
       }
@@ -155,6 +178,12 @@ class SmartCaneStatusNotificationService {
     }
 
     if (currentState == _SmartCaneRuntimeState.waiting) {
+      // Langsung ke waiting tanpa melalui connecting (atau startup belum aktif).
+      if (!_isStartupFlowActive &&
+          (previousState == _SmartCaneRuntimeState.disconnected ||
+              previousState == _SmartCaneRuntimeState.connecting)) {
+        _activateReconnectFlow();
+      }
       if (_isStartupFlowActive) {
         _announceConnected();
       }
@@ -162,6 +191,43 @@ class SmartCaneStatusNotificationService {
     }
 
     if (currentState == _SmartCaneRuntimeState.ready) {
+      // Langsung ready tanpa melalui waiting — announce sequence penuh.
+      if (!_isStartupFlowActive &&
+          (previousState == _SmartCaneRuntimeState.disconnected ||
+              previousState == _SmartCaneRuntimeState.connecting ||
+              previousState == _SmartCaneRuntimeState.waiting)) {
+        _activateReconnectFlow();
+        _finishStartupFlow();
+        if (_wentThroughConnecting) {
+          _wentThroughConnecting = false;
+          final connectingGeneration = _announcementGeneration;
+          _announcementQueue = _announcementQueue
+              .then((_) async {
+                if (connectingGeneration != _announcementGeneration) return;
+                if (_currentState == _SmartCaneRuntimeState.ready) return;
+                _showSnackBar(
+                  message: 'Menghubungkan ulang ke SmartCane...',
+                  color: AppColors.primary,
+                  icon: Icons.bluetooth_searching_rounded,
+                );
+                await _ttsService.speak('Menghubungkan ulang ke SmartCane.');
+              })
+              .catchError((Object error, StackTrace stackTrace) {
+                debugPrint('[SMARTCANE-STATUS] TTS connecting gagal: $error');
+              });
+        }
+        _queueStartupTts(
+          'SmartCane berhasil terhubung.',
+          onBeforeSpeak: () => _showSnackBar(
+            message: 'SmartCane berhasil terhubung.',
+            color: AppColors.primary,
+            icon: Icons.bluetooth_connected_rounded,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        _announceReady();
+        return;
+      }
       final shouldAnnounceReady = _isStartupFlowActive;
       _finishStartupFlow();
       if (shouldAnnounceReady) {
@@ -176,6 +242,16 @@ class SmartCaneStatusNotificationService {
         previousState != _SmartCaneRuntimeState.connecting) {
       _announceDisconnected();
     }
+  }
+
+  void _activateReconnectFlow() {
+    _isStartupFlowActive = true;
+    _wentThroughConnecting = false;
+    _startupTimeoutTimer?.cancel();
+    _startupTimeoutTimer = Timer(
+      const Duration(seconds: 30),
+      _handleStartupTimeout,
+    );
   }
 
   void _evaluateHazardAlert() {
@@ -248,7 +324,124 @@ class SmartCaneStatusNotificationService {
     );
   }
 
+  // Dipanggil dari _announceReady() agar informasi baterai muncul SETELAH
+  // "SmartCane berhasil terhubung." dan "SmartCane siap digunakan."
+  //
+  // Menggunakan chain biasa (tanpa reset queue) sehingga TTS baterai mengantri
+  // setelah pesan startup yang sudah ada di queue. Flag _batteryCheckPending
+  // menahan _evaluateBatteryAlert() (timer) agar tidak mendahului antrian ini.
+  void _checkAndQueueBatteryOnConnect() {
+    if (!_isPermissionsReady) return;
+    final batteryData = _bleService.latestBatteryData;
+    if (batteryData == null) {
+      // Data baterai belum diterima — tunggu maks. 3 detik dalam antrian.
+      _batteryCheckPending = true;
+      final generation = _announcementGeneration;
+      _announcementQueue = _announcementQueue
+          .then((_) async {
+            // Clear flag di awal agar selalu ter-release walau chain dibatalkan.
+            _batteryCheckPending = false;
+            if (generation != _announcementGeneration) return;
+            SmartCaneBatteryData? received;
+            try {
+              received = await _bleService.batteryDataStream
+                  .first
+                  .timeout(const Duration(seconds: 3));
+            } catch (_) {
+              return;
+            }
+            if (generation != _announcementGeneration) return;
+
+            final pct = received.percentage;
+            final level = pct <= 10
+                ? _SmartCaneBatteryLevel.critical
+                : pct <= 20
+                ? _SmartCaneBatteryLevel.low
+                : _SmartCaneBatteryLevel.normal;
+
+            if (level == _SmartCaneBatteryLevel.normal) return;
+            if (level.index <= _lastBatteryLevel.index) return;
+
+            _lastBatteryLevel = level;
+
+            final isCritical = level == _SmartCaneBatteryLevel.critical;
+            final msg = isCritical
+                ? 'Baterai SmartCane tersisa $pct persen. Segera lakukan pengisian daya.'
+                : 'Baterai SmartCane rendah, tersisa $pct persen. Segera lakukan pengisian daya.';
+
+            _showSnackBar(
+              message: msg,
+              color: isCritical ? AppColors.error : AppColors.warning,
+              icon: isCritical
+                  ? Icons.battery_alert_rounded
+                  : Icons.battery_2_bar_rounded,
+            );
+            await _ttsService.speak(
+              msg,
+              priority: isCritical ? TtsPriority.critical : TtsPriority.warning,
+              replacementKey: 'smart-cane-battery',
+            );
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            _batteryCheckPending = false;
+            debugPrint(
+              '[SMARTCANE-STATUS] Battery wait on connect gagal: $error',
+            );
+          });
+      return;
+    }
+
+    final percentage = batteryData.percentage;
+    final currentLevel = percentage <= 10
+        ? _SmartCaneBatteryLevel.critical
+        : percentage <= 20
+        ? _SmartCaneBatteryLevel.low
+        : _SmartCaneBatteryLevel.normal;
+
+    if (currentLevel == _SmartCaneBatteryLevel.normal) return;
+    if (currentLevel.index <= _lastBatteryLevel.index) return;
+
+    // Set level segera agar _evaluateBatteryAlert() tidak fire duplikat
+    // seandainya flag di-clear lebih awal karena chain dibatalkan.
+    _lastBatteryLevel = currentLevel;
+    _batteryCheckPending = true;
+
+    final isCritical = currentLevel == _SmartCaneBatteryLevel.critical;
+    final message = isCritical
+        ? 'Baterai SmartCane tersisa $percentage persen. Segera lakukan pengisian daya.'
+        : 'Baterai SmartCane rendah, tersisa $percentage persen. Segera lakukan pengisian daya.';
+
+    // Chain langsung ke queue tanpa reset — baterai berbunyi setelah "siap digunakan".
+    final generation = _announcementGeneration;
+    _announcementQueue = _announcementQueue
+        .then((_) async {
+          // Clear flag di awal agar selalu ter-release walau chain dibatalkan.
+          _batteryCheckPending = false;
+          if (generation != _announcementGeneration) return;
+          _showSnackBar(
+            message: message,
+            color: isCritical ? AppColors.error : AppColors.warning,
+            icon: isCritical
+                ? Icons.battery_alert_rounded
+                : Icons.battery_2_bar_rounded,
+          );
+          await _ttsService.speak(
+            message,
+            priority: isCritical ? TtsPriority.critical : TtsPriority.warning,
+            replacementKey: 'smart-cane-battery',
+          );
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          _batteryCheckPending = false;
+          debugPrint('[SMARTCANE-STATUS] Battery on-connect TTS gagal: $error');
+        });
+  }
+
   void _evaluateBatteryAlert() {
+    if (!_isPermissionsReady) return;
+    // Tahan selama _checkAndQueueBatteryOnConnect() masih antri di queue agar
+    // timer tidak mendahului urutan "siap digunakan" → baterai.
+    if (_batteryCheckPending) return;
     final batteryData = _bleService.latestBatteryData;
     if (!_bleService.isConnected || batteryData == null) {
       _lastBatteryLevel = _SmartCaneBatteryLevel.normal;
@@ -277,17 +470,17 @@ class SmartCaneStatusNotificationService {
         ? 'Baterai SmartCane tersisa $percentage persen. Segera lakukan pengisian daya.'
         : 'Baterai SmartCane rendah, tersisa $percentage persen. Segera lakukan pengisian daya.';
 
-    _showSnackBar(
-      message: message,
-      color: isCritical ? AppColors.error : AppColors.warning,
-      icon: isCritical
-          ? Icons.battery_alert_rounded
-          : Icons.battery_2_bar_rounded,
-    );
     _queueTts(
       message,
       priority: isCritical ? TtsPriority.critical : TtsPriority.warning,
       replacementKey: 'smart-cane-battery',
+      onBeforeSpeak: () => _showSnackBar(
+        message: message,
+        color: isCritical ? AppColors.error : AppColors.warning,
+        icon: isCritical
+            ? Icons.battery_alert_rounded
+            : Icons.battery_2_bar_rounded,
+      ),
     );
     _requeuePendingStartupAnnouncements();
   }
@@ -357,36 +550,57 @@ class SmartCaneStatusNotificationService {
   void _announceNoRememberedCane() {
     const message =
         'SmartCane belum terhubung. Buka menu Koneksi untuk menghubungkan SmartCane.';
-    _showSnackBar(
-      message:
-          'SmartCane belum terhubung. Buka menu Koneksi untuk menghubungkan SmartCane.',
-      color: AppColors.warning,
-      icon: Icons.bluetooth_disabled_rounded,
+    _queueTts(
+      message,
+      onBeforeSpeak: () => _showSnackBar(
+        message: message,
+        color: AppColors.warning,
+        icon: Icons.bluetooth_disabled_rounded,
+      ),
     );
-    _queueTts(message);
   }
 
   void _announceConnecting() {
-    if (_hasAnnouncedConnecting) return;
-    _hasAnnouncedConnecting = true;
-
-    const message = 'Menghubungkan ulang ke SmartCane.';
-    _showSnackBar(
-      message: 'Menghubungkan ulang ke SmartCane...',
-      color: AppColors.primary,
-      icon: Icons.bluetooth_searching_rounded,
-    );
-    _queueTts(message);
+    if (_wentThroughConnecting) return;
+    _wentThroughConnecting = true;
+    // Koneksi berjalan di background — tidak ada snackbar/TTS saat ini.
+    // Pesan "Menghubungkan ulang" akan diputar di _announceConnected()
+    // tepat sebelum "SmartCane berhasil terhubung." jika koneksi berhasil.
   }
 
   void _announceConnected() {
-    _showSnackBar(
-      message: 'SmartCane berhasil terhubung.',
-      color: AppColors.primary,
-      icon: Icons.bluetooth_connected_rounded,
-      duration: const Duration(seconds: 3),
+    // Jika sebelumnya melewati state connecting (proses berlangsung di
+    // background), munculkan snackbar+TTS "menghubungkan" tepat sebelum
+    // "berhasil terhubung" — hanya jika saat giliran queue tiba SmartCane
+    // belum ready (kondisi sama seperti "Menunggu sistem siap.").
+    if (_wentThroughConnecting) {
+      _wentThroughConnecting = false;
+      final connectingGeneration = _announcementGeneration;
+      _announcementQueue = _announcementQueue
+          .then((_) async {
+            if (connectingGeneration != _announcementGeneration) return;
+            if (_currentState == _SmartCaneRuntimeState.ready) return;
+            _showSnackBar(
+              message: 'Menghubungkan ulang ke SmartCane...',
+              color: AppColors.primary,
+              icon: Icons.bluetooth_searching_rounded,
+            );
+            await _ttsService.speak('Menghubungkan ulang ke SmartCane.');
+          })
+          .catchError((Object error, StackTrace stackTrace) {
+            debugPrint('[SMARTCANE-STATUS] TTS connecting gagal: $error');
+          });
+    }
+
+    _queueStartupTts(
+      'SmartCane berhasil terhubung.',
+      onBeforeSpeak: () => _showSnackBar(
+        message: 'SmartCane berhasil terhubung.',
+        color: AppColors.primary,
+        icon: Icons.bluetooth_connected_rounded,
+        duration: const Duration(seconds: 3),
+      ),
     );
-    _queueStartupTts('SmartCane berhasil terhubung.');
 
     _waitingSnackBarTimer?.cancel();
     _waitingSnackBarTimer = Timer(const Duration(seconds: 3), () {
@@ -399,27 +613,39 @@ class SmartCaneStatusNotificationService {
         );
       }
     });
-    _queueStartupTts('Menunggu sistem siap.');
+    // Hanya ucapkan "Menunggu sistem siap." jika saat giliran TTS tiba
+    // sistem belum ready — jika sudah ready, _announceReady() akan langsung
+    // diucapkan sesudah "berhasil terhubung." tanpa pesan tunggu ini.
+    _queueStartupTtsIf(
+      'Menunggu sistem siap.',
+      condition: () => _currentState == _SmartCaneRuntimeState.waiting,
+    );
   }
 
   void _announceReady() {
     const message = 'SmartCane siap digunakan.';
-    _showSnackBar(
-      message: message,
-      color: AppColors.success,
-      icon: Icons.check_circle_rounded,
+    _queueStartupTts(
+      message,
+      onBeforeSpeak: () => _showSnackBar(
+        message: message,
+        color: AppColors.success,
+        icon: Icons.check_circle_rounded,
+      ),
     );
-    _queueStartupTts(message);
+    // Informasi baterai diumumkan setelah "siap digunakan" agar urutan jelas.
+    _checkAndQueueBatteryOnConnect();
   }
 
   void _announceDisconnected() {
     const message = 'Koneksi SmartCane terputus.';
-    _showSnackBar(
-      message: message,
-      color: AppColors.error,
-      icon: Icons.bluetooth_disabled_rounded,
+    _queueTts(
+      message,
+      onBeforeSpeak: () => _showSnackBar(
+        message: message,
+        color: AppColors.error,
+        icon: Icons.bluetooth_disabled_rounded,
+      ),
     );
-    _queueTts(message);
   }
 
   void _handleStartupTimeout() {
@@ -437,12 +663,14 @@ class SmartCaneStatusNotificationService {
         ? 'SmartCane belum siap. Pastikan sensor dan model berjalan.'
         : 'SmartCane belum terhubung. Pastikan tongkat aktif dan berada di dekat Anda.';
 
-    _showSnackBar(
-      message: message,
-      color: AppColors.warning,
-      icon: Icons.warning_amber_rounded,
+    _queueTts(
+      message,
+      onBeforeSpeak: () => _showSnackBar(
+        message: message,
+        color: AppColors.warning,
+        icon: Icons.warning_amber_rounded,
+      ),
     );
-    _queueTts(message);
   }
 
   void _finishStartupFlow() {
@@ -460,7 +688,10 @@ class SmartCaneStatusNotificationService {
   // generation masih sama — sehingga pesan yang sedang diucapkan saat diinterupsi
   // tetap tersimpan di pending dan ikut di-replay oleh
   // _requeuePendingStartupAnnouncements().
-  void _queueStartupTts(String message) {
+  //
+  // onBeforeSpeak dipanggil tepat sebelum speak — dipakai untuk menampilkan
+  // snackbar agar sinkron dengan TTS, bukan lebih awal.
+  void _queueStartupTts(String message, {VoidCallback? onBeforeSpeak}) {
     _pendingStartupAnnouncements.add(message);
     final generation = _announcementGeneration;
     _announcementQueue = _announcementQueue
@@ -469,6 +700,7 @@ class SmartCaneStatusNotificationService {
             // Diinterupsi sebelum mulai — tetap di pending.
             return;
           }
+          onBeforeSpeak?.call();
           await _ttsService.speak(message);
           // Hanya hapus dari pending jika tidak diinterupsi selama speak.
           if (generation == _announcementGeneration) {
@@ -477,6 +709,22 @@ class SmartCaneStatusNotificationService {
         })
         .catchError((Object error, StackTrace stackTrace) {
           debugPrint('[SMARTCANE-STATUS] TTS startup gagal: $error');
+        });
+  }
+
+  // Varian _queueStartupTts dengan kondisi: pesan hanya diucapkan jika
+  // condition() == true saat giliran TTS tiba. Tidak ditambahkan ke pending
+  // karena bersifat opsional (tidak perlu di-replay).
+  void _queueStartupTtsIf(String message, {required bool Function() condition}) {
+    final generation = _announcementGeneration;
+    _announcementQueue = _announcementQueue
+        .then((_) async {
+          if (generation != _announcementGeneration) return;
+          if (!condition()) return;
+          await _ttsService.speak(message);
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          debugPrint('[SMARTCANE-STATUS] TTS startup kondisional gagal: $error');
         });
   }
 
@@ -503,10 +751,13 @@ class SmartCaneStatusNotificationService {
     }
   }
 
+  // onBeforeSpeak dipanggil tepat sebelum speak — dipakai untuk menampilkan
+  // snackbar agar sinkron dengan TTS, bukan lebih awal.
   void _queueTts(
     String message, {
     TtsPriority priority = TtsPriority.normal,
     String? replacementKey,
+    VoidCallback? onBeforeSpeak,
   }) {
     if (priority == TtsPriority.warning || priority == TtsPriority.critical) {
       _announcementGeneration++;
@@ -519,6 +770,7 @@ class SmartCaneStatusNotificationService {
           if (generation != _announcementGeneration) {
             return Future<void>.value();
           }
+          onBeforeSpeak?.call();
           return _ttsService.speak(
             message,
             priority: priority,
