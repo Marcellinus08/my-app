@@ -58,7 +58,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   StreamSubscription<bool>? _homeScanStateSubscription;
   StreamSubscription<BluetoothAdapterState>? _homeAdapterStateSubscription;
   Timer? _weatherRefreshTimer;
-  Timer? _smartCaneStatusRefreshTimer;
   final Set<String> _shownPairingRequestIds = {};
   bool _isPairingDialogOpen = false;
   final TTSService _ttsService = TTSService();
@@ -84,7 +83,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   SmartCaneBatteryData? _latestSmartCaneBatteryData;
 
   late AnimationController _fadeController;
-  late AnimationController _rotationController;
   late Animation<double> _fadeAnimation;
   late Stream<String> _userNameStream;
   late FirebaseFirestore _firestore;
@@ -98,7 +96,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _setupUserNameStream();
     _subscribeToPairingRequests();
     _bleService.addListener(_syncHomeBleServiceState);
-    _startSmartCaneStatusRefreshTimer();
     _homeAdapterStateSubscription = FlutterBluePlus.adapterState.listen((
       state,
     ) {
@@ -154,15 +151,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     _weatherRefreshTimer?.cancel();
     _weatherRefreshTimer = Timer.periodic(const Duration(minutes: 10), (_) {
       _loadWeather(speakWhenReady: false);
-    });
-  }
-
-  void _startSmartCaneStatusRefreshTimer() {
-    _smartCaneStatusRefreshTimer?.cancel();
-    _smartCaneStatusRefreshTimer = Timer.periodic(const Duration(seconds: 3), (
-      _,
-    ) {
-      if (mounted) setState(() {});
     });
   }
 
@@ -709,11 +697,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-
-    _rotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 25),
-    )..repeat();
 
     _fadeAnimation = Tween<double>(
       begin: 0.0,
@@ -2045,7 +2028,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     WidgetsBinding.instance.removeObserver(this);
     _liveTrackingService.stopHomeLocationTracking();
     _weatherRefreshTimer?.cancel();
-    _smartCaneStatusRefreshTimer?.cancel();
     _homeCaneCodeController.dispose();
     _homeCanePinController.dispose();
     _homeScanSubscription?.cancel();
@@ -2060,7 +2042,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     routeObserver.unsubscribe(this);
     _pairingRequestSub?.cancel();
     _fadeController.dispose();
-    _rotationController.dispose();
     super.dispose();
   }
 }

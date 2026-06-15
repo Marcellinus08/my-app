@@ -602,11 +602,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         throw Exception('Kode pairing tidak valid atau sudah tidak tersedia');
       }
 
-      final targetName =
-          verifiedPairingInfo['name'] ??
-          pairedUserInfo['name'] ??
-          'pengguna TunaNetra';
-
       final familyName = _familyNameController2.text.trim();
       final familyPhone = _familyPhoneController2.text.trim();
 

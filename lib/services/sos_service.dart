@@ -28,7 +28,7 @@ class SosSendResult {
       return 'SOS berhasil dikirim ke keluarga.';
     }
     if (deliveredToAnyFamily) {
-      return 'SOS berhasil terkirim ke keluarga.';
+      return 'SOS berhasil terkirim ke sebagian keluarga.';
     }
     return 'SOS tersimpan, tetapi notifikasi keluarga belum terkirim. Coba kembali segera.';
   }

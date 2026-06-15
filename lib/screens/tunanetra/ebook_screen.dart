@@ -726,33 +726,6 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen>
     );
   }
 
-  Widget _buildVoiceHintCard() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      decoration: BoxDecoration(
-        color: AppColors.infoLight.withValues(alpha: 0.35),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.infoLight),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.mic_rounded, color: AppColors.primaryDark, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '"Dengarkan" · "Berhenti" · "Kembali"',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.primaryDark,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildIntroduction() {
     return Container(
       padding: const EdgeInsets.all(14),

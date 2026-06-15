@@ -181,7 +181,7 @@ class RoutingService {
         'foot_duration': footDuration,
         'foot_duration_minutes': (footDuration as num) / 60,
         'car_duration': carDuration,
-        'car_duration_minutes': (carDuration as num) / 60,
+        'car_duration_minutes': carDuration / 60,
         'distance': footInfo['distance'],
         'distance_km': footInfo['distance_km'],
       };

@@ -48,7 +48,7 @@ class FamilyLocationService {
               'timestamp': Timestamp.fromDate(loc.timestamp),
             });
           }
-        } catch (e, st) {
+        } catch (_) {
           // ignore parse errors
         }
       }

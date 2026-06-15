@@ -62,8 +62,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   bool _isSubmittingPairingRequest = false;
   String _resolvedFamilyId = '';
 
-  String? _debugPairingCode;
-  String? _debugErrorMessage;
   Timer? _liveTrackingFreshnessTimer;
   DateTime _liveTrackingNow = DateTime.now();
   late Animation<double> _fadeAnimation;
@@ -148,11 +146,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
           _monitoredUsers = users;
           _isLoadingUsers = false;
 
-          // Set debug info
-          _debugPairingCode = 'Method: pairedUserUid';
-          _debugErrorMessage = users.isEmpty
-              ? 'Tidak ada TunaNetra user yang terhubung'
-              : null;
         });
       }
 
@@ -169,7 +162,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       if (mounted) {
         setState(() {
           _isLoadingUsers = false;
-          _debugErrorMessage = 'Data pengguna belum dapat dimuat';
         });
       }
     }

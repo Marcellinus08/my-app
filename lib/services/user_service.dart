@@ -248,7 +248,7 @@ class UserService {
       final userDoc = await userRef.get();
       if (!userDoc.exists) continue;
 
-      final userData = userDoc.data() as Map<String, dynamic>?;
+      final userData = userDoc.data();
       final connectedFamiliesRaw = userData?['connectedFamilies'];
       if (connectedFamiliesRaw is! List) continue;
 
@@ -256,7 +256,7 @@ class UserService {
       final updatedFamilies = connectedFamiliesRaw.map((family) {
         if (family is! Map) return family;
 
-        final familyMap = Map<String, dynamic>.from(family as Map);
+        final familyMap = Map<String, dynamic>.from(family);
         final isTargetFamily = familyMap['uid']?.toString().trim() == familyUid;
         if (!isTargetFamily) return familyMap;
 

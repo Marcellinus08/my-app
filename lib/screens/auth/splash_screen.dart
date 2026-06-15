@@ -59,34 +59,33 @@ class _SplashScreenState extends State<SplashScreen>
 
     // Check authentication status and navigate accordingly after 3.5 seconds
     Timer(const Duration(milliseconds: 3500), () async {
-      if (mounted) {
-        final authService = AuthService();
-        final pendingRegistration = await PendingRegistrationService().load();
+      if (!mounted) return;
+      final authService = AuthService();
+      final pendingRegistration = await PendingRegistrationService().load();
 
-        // Check if user is already logged in
-        if (authService.isAuthenticated) {
-          if (pendingRegistration != null) {
-            Navigator.pushReplacementNamed(context, AppRoutes.register);
-            return;
-          }
+      if (!mounted) return;
+      if (authService.isAuthenticated) {
+        if (pendingRegistration != null) {
+          Navigator.pushReplacementNamed(context, AppRoutes.register);
+          return;
+        }
 
-          // Get user type
-          final userType = await authService.getUserType();
+        final userType = await authService.getUserType();
 
-          if (userType == UserType.tunanetra) {
-            Navigator.pushReplacementNamed(context, AppRoutes.tunaNetraHome);
-          } else if (userType == UserType.family) {
-            Navigator.pushReplacementNamed(
-              context,
-              AppRoutes.familyHome,
-              arguments: {'familyId': authService.currentUserId ?? ''},
-            );
-          } else {
-            Navigator.pushReplacementNamed(context, AppRoutes.login);
-          }
+        if (!mounted) return;
+        if (userType == UserType.tunanetra) {
+          Navigator.pushReplacementNamed(context, AppRoutes.tunaNetraHome);
+        } else if (userType == UserType.family) {
+          Navigator.pushReplacementNamed(
+            context,
+            AppRoutes.familyHome,
+            arguments: {'familyId': authService.currentUserId ?? ''},
+          );
         } else {
           Navigator.pushReplacementNamed(context, AppRoutes.login);
         }
+      } else {
+        Navigator.pushReplacementNamed(context, AppRoutes.login);
       }
     });
   }
