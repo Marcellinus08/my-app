@@ -66,6 +66,28 @@ class TunaNetraVoiceCommands {
     return text.contains('status halaman') || text.contains('halaman apa');
   }
 
+  static bool isPairingCodeCommand(String command) {
+    final text = command.toLowerCase();
+    return text.contains('kode penghubung') ||
+        text.contains('cek kode penghubung') ||
+        text.contains('kode pairing');
+  }
+
+  static bool isAcceptCommand(String command) {
+    final text = command.toLowerCase();
+    return text.contains('terima') ||
+        text.contains('setuju') ||
+        text.contains('iya') ||
+        text == 'ya';
+  }
+
+  static bool isRejectCommand(String command) {
+    final text = command.toLowerCase();
+    return text.contains('tolak') ||
+        text.contains('tidak') ||
+        text.contains('batal');
+  }
+
   static bool claimSosTrigger({
     Duration cooldown = const Duration(seconds: 5),
   }) {
@@ -248,6 +270,17 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
       finalResultsOnly: true,
     );
     _isStartingHomeCommandListener = false;
+  }
+
+  Future<void> speakHomeCommandResponse(String text) async {
+    _hasHandledHomeCommand = true;
+    _homeCommandListenerActive = false;
+    await _homeCommandSttService.stopListening();
+
+    _isHomeCommandSpeaking = true;
+    await _homeCommandTtsService.speak(text, replacementKey: _screenTtsKey);
+    _isHomeCommandSpeaking = false;
+    _hasHandledHomeCommand = false;
   }
 
   Future<void> stopHomeVoiceCommandListener() async {

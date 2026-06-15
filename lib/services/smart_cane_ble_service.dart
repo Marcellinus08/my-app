@@ -678,6 +678,38 @@ class SmartCaneBatteryData {
 }
 
 @immutable
+class SmartCaneDetection {
+  const SmartCaneDetection({
+    required this.label,
+    required this.position,
+    required this.confidence,
+  });
+
+  final String label;
+  final String position;   // "kiri" | "tengah" | "kanan"
+  final double confidence;
+
+  /// Label dalam Bahasa Indonesia untuk ditampilkan di UI.
+  String get localizedLabel => SmartCaneSensorData._translateObjectLabel(label);
+
+  static SmartCaneDetection? tryParse(dynamic raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final label = raw['label']?.toString().trim();
+    final pos   = (raw['pos'] ?? raw['position'])?.toString().trim();
+    final conf  = SmartCaneSensorData._readDouble(raw['conf'] ?? raw['confidence']);
+    if (label == null || label.isEmpty) return null;
+    return SmartCaneDetection(
+      label:      label,
+      position:   pos ?? 'tengah',
+      confidence: conf ?? 0.0,
+    );
+  }
+
+  @override
+  String toString() => 'SmartCaneDetection($label @ $position, conf=$confidence)';
+}
+
+@immutable
 class SmartCaneSensorData {
   const SmartCaneSensorData({
     required this.distanceCm,
@@ -690,6 +722,7 @@ class SmartCaneSensorData {
     this.centerCm,
     this.rightCm,
     this.decision,
+    this.detections = const [],
   });
 
   final double? distanceCm;
@@ -703,6 +736,10 @@ class SmartCaneSensorData {
   final double? rightCm;
   final String? decision;
 
+  /// Semua objek yang terdeteksi ML di frame ini, urutan prioritas bahaya.
+  /// Field baru dari payload RPi: array "detections".
+  final List<SmartCaneDetection> detections;
+
   bool get isDanger => status.toLowerCase() == 'danger';
   bool get isWarning => status.toLowerCase() == 'warning';
   bool get hasSensorOutput =>
@@ -713,11 +750,25 @@ class SmartCaneSensorData {
 
   bool get hasModelOutput {
     final modelDecision = decision?.trim();
-    final objectLabel = mlLabel?.trim();
+    final objectLabel   = mlLabel?.trim();
     return (modelDecision != null && modelDecision.isNotEmpty) ||
         (objectLabel != null && objectLabel.isNotEmpty) ||
-        mlConfidence != null;
+        mlConfidence != null ||
+        detections.isNotEmpty;
   }
+
+  /// Deteksi paling berbahaya (index 0 = prioritas tertinggi dari RPi).
+  SmartCaneDetection? get primaryDetection =>
+      detections.isNotEmpty ? detections.first : null;
+
+  /// Semua label unik yang terdeteksi di frame ini.
+  List<String> get detectedLabels =>
+      detections.map((d) => d.label).toSet().toList();
+
+  /// True jika ada deteksi bahaya aktif (pothole/obstacle/stair/road).
+  bool get hasDangerDetection => detections.any(
+    (d) => const {'pothole', 'obstacle', 'stair', 'road'}.contains(d.label),
+  );
 
   String? get detectedObjectLabel => _detectedObjectLabel;
   String? get guidanceDecisionText => _decisionText;
@@ -811,10 +862,10 @@ class SmartCaneSensorData {
       return null;
     }
 
-    return _translateObjectLabel(label);
+    return SmartCaneSensorData._translateObjectLabel(label);
   }
 
-  String _translateObjectLabel(String label) {
+  static String _translateObjectLabel(String label) {
     return switch (label.toLowerCase()) {
       'person' => 'orang',
       'bicycle' => 'sepeda',
@@ -896,10 +947,22 @@ class SmartCaneSensorData {
         rightCm: _readDouble(decoded['right'] ?? decoded['r']),
         decision: (decoded['decision'] ?? decoded['dir'] ?? decoded['a'])
             ?.toString(),
+        detections: _readDetections(decoded['detections']),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// Parse array detections dari payload RPi.
+  static List<SmartCaneDetection> _readDetections(dynamic raw) {
+    if (raw is! List) return const [];
+    final result = <SmartCaneDetection>[];
+    for (final item in raw) {
+      final det = SmartCaneDetection.tryParse(item);
+      if (det != null) result.add(det);
+    }
+    return List.unmodifiable(result);
   }
 
   static double? _readDouble(dynamic value) {

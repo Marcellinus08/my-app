@@ -98,7 +98,6 @@ class FamilyUser {
   final String email;
   final String name;
   final String phoneNumber;
-  final String pairingCode;
   final String pairedUserUid;
   final DateTime createdAt;
   bool isEmailVerified;
@@ -108,7 +107,6 @@ class FamilyUser {
     required this.email,
     required this.name,
     required this.phoneNumber,
-    required this.pairingCode,
     required this.pairedUserUid,
     required this.createdAt,
     this.isEmailVerified = false,
@@ -121,7 +119,6 @@ class FamilyUser {
       'email': email,
       'name': name,
       'phoneNumber': phoneNumber,
-      'pairingCode': pairingCode,
       'pairedUserUid': pairedUserUid,
       'createdAt': createdAt.toIso8601String(),
       'isEmailVerified': isEmailVerified,
@@ -146,7 +143,6 @@ class FamilyUser {
       email: map['email'] ?? '',
       name: map['name'] ?? '',
       phoneNumber: map['phoneNumber'] ?? '',
-      pairingCode: map['pairingCode'] ?? '',
       pairedUserUid: map['pairedUserUid'] ?? '',
       createdAt: parsedDate,
       isEmailVerified: map['isEmailVerified'] ?? false,

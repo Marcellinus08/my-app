@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Stress test credentials — jangan di-commit
+stress-test/serviceAccountKey.json
+stress-test/node_modules/

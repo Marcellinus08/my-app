@@ -141,8 +141,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   DateTime? _lastDurationUpdateTime; // Last time duration was updated
   Timer? _durationUpdateTimer; // Timer for periodic duration updates
   SmartCaneSensorData? _latestSmartCaneSensorData;
-  String _lastSpokenSensorMessage = '';
-  DateTime? _lastSensorTtsAt;
 
   // Navigation instructions (Turn-by-turn guidance)
   List<NavigationInstruction> _navigationInstructions = [];
@@ -163,61 +161,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   bool _hasArrivedAtDestination = false;
   int _arrivalConfirmationCount = 0;
   String _destinationName = '';
-
-  void _handleSensorTts(SmartCaneSensorData data) {
-    // Hanya bunyi saat navigasi aktif dan fitur hazard diaktifkan
-    if (!_smartCaneBleService.navigationHazardAnnouncementsEnabled) return;
-    if (!_isNavigating) return;
-
-    final message = data.message.trim();
-    if (message.isEmpty) return;
-
-    // Jangan ulangi pesan yang sama dalam 3 detik
-    final now = DateTime.now();
-    final lastAt = _lastSensorTtsAt;
-    if (message == _lastSpokenSensorMessage &&
-        lastAt != null &&
-        now.difference(lastAt) < const Duration(seconds: 3)) {
-      return;
-    }
-
-    // Tentukan priority berdasarkan status sensor + deteksi ML
-    final TtsPriority priority;
-    final String replacementKey;
-
-    if (data.isDanger || data.hasDangerDetection) {
-      // Bahaya langsung (ultrasonik danger ATAU pothole/obstacle/stair/road)
-      // → warning priority, bisa interrupt TTS normal tapi tidak interrupt navigasi
-      priority = TtsPriority.warning;
-      replacementKey = 'sensor-hazard';
-    } else if (data.isWarning) {
-      // Ultrasonik warning (hambatan dalam 50–150 cm)
-      priority = TtsPriority.normal;
-      replacementKey = 'sensor-info';
-    } else {
-      // Safe — hanya bunyi jika ada info ML (kendaraan, walkable, dll)
-      // Jangan bunyi "Jalur aman, lanjutkan" tiap detik saat tidak ada info
-      final hasUsefulMl = data.detections.any(
-        (d) => !const {'road', 'walkable'}.contains(d.label),
-      );
-      if (!hasUsefulMl && message == 'Jalur aman, lanjutkan.') return;
-      priority = TtsPriority.low;
-      replacementKey = 'sensor-info';
-    }
-
-    _lastSpokenSensorMessage = message;
-    _lastSensorTtsAt = now;
-
-    unawaited(
-      speakSafe(
-        message,
-        priority: priority,
-        deduplicationKey: 'sensor-$message',
-        replacementKey: replacementKey,
-        maxAge: const Duration(seconds: 4),
-      ),
-    );
-  }
 
   Future<void> speakSafe(
     String text, {
@@ -258,7 +201,6 @@ class _NavigationScreenState extends State<NavigationScreen>
       (data) {
         if (!mounted) return;
         setState(() => _latestSmartCaneSensorData = data);
-        _handleSensorTts(data);
       },
     );
     _smartCaneButtonSubscription = _smartCaneBleService.buttonEventStream
