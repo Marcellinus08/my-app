@@ -216,55 +216,81 @@ class _ConnectedFamilyAccountsScreenState
 
   Widget _buildEmptyState() {
     return Container(
-      margin: const EdgeInsets.only(top: 2),
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.textPrimary.withValues(alpha: 0.035),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 72,
+            height: 72,
             decoration: BoxDecoration(
-              color: AppColors.primaryLight.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
+              color: AppColors.primaryDark.withValues(alpha: 0.09),
+              shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.people_outline_rounded,
+              size: 36,
               color: AppColors.primaryDark,
-              size: 22,
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 16),
+          Text(
+            'Belum ada keluarga terhubung',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Bagikan kode pairing kepada keluarga agar mereka dapat terhubung dengan akun ini.',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.primaryDark.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
               children: [
-                Text(
-                  'Belum ada keluarga terhubung',
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: AppColors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
+                const Icon(
+                  Icons.info_outline_rounded,
+                  color: AppColors.primaryDark,
+                  size: 18,
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  'Bagikan kode penghubung agar keluarga dapat terhubung.',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    fontSize: 12.5,
-                    height: 1.3,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Keluarga yang terhubung akan muncul di sini dan dapat dikelola kapan saja.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primaryDark,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],

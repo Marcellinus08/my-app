@@ -1623,6 +1623,78 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         ? familyName!
         : (familyEmail?.isNotEmpty == true ? familyEmail! : 'Keluarga');
 
+    // Hentikan STT home agar TTS dapat langsung berbicara
+    await _stopHomeStt();
+
+    // 1. TTS - informasikan permintaan pairing masuk
+    await speakSafe(
+      '$displayName ingin terhubung dan memonitor akun Anda. '
+      'Ucapkan terima untuk menerima, atau tolak untuk menolak.',
+      priority: TtsPriority.warning,
+      maxAge: const Duration(seconds: 25),
+    );
+
+    // 2. STT auto-start + button subscription untuk re-trigger setelah timeout
+    bool sttCommandHandled = false;
+    bool pairingSttActive = false;
+    bool pairingSttStarting = false;
+
+    Future<void> startPairingStt() async {
+      if (pairingSttStarting || pairingSttActive || sttCommandHandled) return;
+      pairingSttStarting = true;
+      await _sttService.stopListening();
+      pairingSttActive = false;
+
+      await _sttService.startListening(
+        (result) {
+          if (sttCommandHandled || !mounted) return;
+          final text = result.toLowerCase().trim();
+          if (TunaNetraVoiceCommands.isAcceptCommand(text)) {
+            sttCommandHandled = true;
+            Navigator.of(context, rootNavigator: true).pop(true);
+          } else if (TunaNetraVoiceCommands.isRejectCommand(text)) {
+            sttCommandHandled = true;
+            Navigator.of(context, rootNavigator: true).pop(false);
+          }
+        },
+        onNoSpeechDetected: () {
+          if (!mounted) return;
+          unawaited(
+            speakSafe(
+              'Tidak ada suara terdeteksi. Tekan tombol dan coba lagi.',
+            ),
+          );
+        },
+        onStatus: (status) {
+          pairingSttActive = status == 'listening';
+        },
+        onError: (_) {
+          pairingSttActive = false;
+          pairingSttStarting = false;
+        },
+        pauseFor: const Duration(seconds: 20),
+        finalResultsOnly: true,
+      );
+      pairingSttStarting = false;
+    }
+
+    // Button subscription tersendiri untuk re-trigger setelah 20 detik timeout
+    final pairingButtonSub = SmartCaneBleService.instance.buttonEventStream
+        .listen((event) {
+          if (!mounted || sttCommandHandled) return;
+          if (event.isVoiceAssistantStop) {
+            unawaited(_sttService.stopListening());
+            pairingSttActive = false;
+            return;
+          }
+          if (!event.isVoiceAssistantStart) return;
+          unawaited(startPairingStt());
+        });
+
+    // Auto-start STT segera setelah TTS selesai
+    unawaited(startPairingStt());
+
+    // 3. Tampilkan dialog konfirmasi
     final accepted = await showAppConfirmDialog(
       context: context,
       title: 'Konfirmasi Keluarga',
@@ -1634,6 +1706,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       confirmButtonColor: AppColors.primaryDark,
       barrierDismissible: false,
     );
+
+    // Bersihkan resources setelah dialog tertutup
+    await pairingButtonSub.cancel();
+    await _sttService.stopListening();
 
     if (!mounted || accepted == null) {
       _isPairingDialogOpen = false;
@@ -1647,22 +1723,33 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       );
 
       if (!mounted) return;
+
+      // 4. TTS konfirmasi hasil
+      await speakSafe(
+        accepted
+            ? '$displayName berhasil terhubung dengan akun Anda.'
+            : 'Permintaan dari $displayName telah ditolak.',
+      );
+
       AppFeedback.show(
         context,
         accepted
             ? 'Keluarga berhasil terhubung.'
             : 'Permintaan keluarga ditolak.',
         type: accepted ? AppFeedbackType.success : AppFeedbackType.warning,
-        announce: true,
+        announce: false,
       );
     } catch (error) {
       if (!mounted) return;
+      await speakSafe(
+        'Terjadi kesalahan saat memproses respons. Silakan coba lagi.',
+      );
       AppFeedback.error(
         context,
         error,
         fallback:
             'Respons koneksi keluarga belum dapat diproses. Silakan coba lagi.',
-        announce: true,
+        announce: false,
       );
     } finally {
       _isPairingDialogOpen = false;

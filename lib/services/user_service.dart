@@ -80,7 +80,6 @@ class UserService {
     required String email,
     required String name,
     required String phoneNumber,
-    required String pairingCode,
     required String pairedUserUid,
     bool isEmailVerified = false,
   }) async {
@@ -90,7 +89,6 @@ class UserService {
         email: email,
         name: name,
         phoneNumber: phoneNumber,
-        pairingCode: pairingCode,
         pairedUserUid: pairedUserUid,
         createdAt: DateTime.now(),
         isEmailVerified: isEmailVerified,

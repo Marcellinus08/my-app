@@ -36,7 +36,6 @@ class _RegisterScreenState extends State<RegisterScreen>
   // Controllers - Keluarga
   late TextEditingController _familyEmailController;
   late TextEditingController _familyPasswordController;
-  late TextEditingController _familyPairingCodeController;
   late TextEditingController _familyNameController2;
   late TextEditingController _familyPhoneController2;
 
@@ -140,7 +139,6 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     _familyEmailController = TextEditingController();
     _familyPasswordController = TextEditingController();
-    _familyPairingCodeController = TextEditingController();
     _familyNameController2 = TextEditingController();
     _familyPhoneController2 = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -158,7 +156,6 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     _familyEmailController.dispose();
     _familyPasswordController.dispose();
-    _familyPairingCodeController.dispose();
     _familyNameController2.dispose();
     _familyPhoneController2.dispose();
     super.dispose();
@@ -269,27 +266,24 @@ class _RegisterScreenState extends State<RegisterScreen>
       return;
     }
 
-    final targetUser = await _pairingService.verifyPairingCode(
-      pending.pairingCode,
+    await _runFinalizationStep(
+      () => _authService.saveUserDataToFirestore(
+        uid: user.uid,
+        email: pending.email,
+        name: pending.name,
+        phoneNumber: pending.phoneNumber,
+        userType: UserType.family,
+      ),
     );
-    if (targetUser == null) {
-      throw Exception('Kode pairing tidak valid atau sudah tidak tersedia');
-    }
-
     await _runFinalizationStep(
       () => _userService.saveFamilyUser(
         uid: user.uid,
         email: pending.email,
         name: pending.name,
         phoneNumber: pending.phoneNumber,
-        pairingCode: pending.pairingCode,
         pairedUserUid: '',
         isEmailVerified: true,
       ),
-    );
-    await _pairingService.createPairingRequest(
-      familyUid: user.uid,
-      pairingCode: pending.pairingCode,
     );
     await _pendingRegistrationService.clear();
     if (mounted) {
@@ -528,25 +522,16 @@ class _RegisterScreenState extends State<RegisterScreen>
     bool emailVerified = false;
 
     try {
-      final pairingCode = _familyPairingCodeController.text
-          .toUpperCase()
-          .trim();
-      // Verify pairing code first
-      final pairedUserInfo = await _pairingService.verifyPairingCode(
-        pairingCode,
-      );
-      if (pairedUserInfo == null) {
-        throw Exception('Kode pairing tidak valid atau sudah digunakan');
-      }
-
       final email = _familyEmailController.text.trim();
       final password = _familyPasswordController.text;
+      final name = _familyNameController2.text.trim();
+      final phone = _familyPhoneController2.text.trim();
 
       final user = await _authService.registerWithEmailPasswordAndVerification(
         email: email,
         password: password,
-        name: _familyNameController2.text.trim(),
-        phoneNumber: _familyPhoneController2.text.trim(),
+        name: name,
+        phoneNumber: phone,
         userType: UserType.family,
       );
 
@@ -563,9 +548,8 @@ class _RegisterScreenState extends State<RegisterScreen>
         PendingRegistration(
           userType: 'family',
           email: email,
-          name: _familyNameController2.text.trim(),
-          phoneNumber: _familyPhoneController2.text.trim(),
-          pairingCode: pairingCode,
+          name: name,
+          phoneNumber: phone,
         ),
       );
 
@@ -594,47 +578,31 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
       emailVerified = true;
 
-      // Re-check pairing code after verification to ensure target user still exists.
-      final verifiedPairingInfo = await _pairingService.verifyPairingCode(
-        pairingCode,
+      await _runFinalizationStep(
+        () => _authService.saveUserDataToFirestore(
+          uid: user.uid,
+          email: email,
+          name: name,
+          phoneNumber: phone,
+          userType: UserType.family,
+        ),
       );
-      if (verifiedPairingInfo == null) {
-        throw Exception('Kode pairing tidak valid atau sudah tidak tersedia');
-      }
-
-      final familyName = _familyNameController2.text.trim();
-      final familyPhone = _familyPhoneController2.text.trim();
 
       await _runFinalizationStep(
         () => _userService.saveFamilyUser(
           uid: user.uid,
           email: email,
-          name: familyName,
-          phoneNumber: familyPhone,
-          pairingCode: pairingCode,
+          name: name,
+          phoneNumber: phone,
           pairedUserUid: '',
           isEmailVerified: true,
         ),
-      );
-
-      await _pairingService.createPairingRequest(
-        familyUid: user.uid,
-        pairingCode: pairingCode,
       );
 
       await _pendingRegistrationService.clear();
 
       if (mounted) {
         await _showRegistrationSuccess();
-      }
-    } on PairingException catch (e) {
-      if (mounted) {
-        _closeVerificationDialogIfOpen();
-        AppFeedback.error(
-          context,
-          e,
-          fallback: 'Kode pairing tidak valid atau sudah tidak tersedia.',
-        );
       }
     } catch (e) {
       if (mounted) {
@@ -694,6 +662,15 @@ class _RegisterScreenState extends State<RegisterScreen>
                         _selectedUserType == UserType.tunanetra
                             ? _buildPenggunaFormSimplified()
                             : _buildKeluargaFormSimplified(),
+                        const SizedBox(height: 24),
+                        _AuthSubmitButton(
+                          label: 'Daftar',
+                          icon: Icons.arrow_forward_rounded,
+                          isLoading: _isLoading,
+                          onTap: _selectedUserType == UserType.tunanetra
+                              ? _handlePenggunaRegister
+                              : _handleKeluargaRegister,
+                        ),
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 20),
                           child: Row(
@@ -819,14 +796,6 @@ class _RegisterScreenState extends State<RegisterScreen>
             semanticLabel: 'Nomor HP Anda',
           ),
           const SizedBox(height: 16),
-
-          // DAFTAR Button
-          _AuthSubmitButton(
-            label: 'Daftar',
-            icon: Icons.arrow_forward_rounded,
-            isLoading: _isLoading,
-            onTap: _handlePenggunaRegister,
-          ),
         ],
       ),
     );
@@ -847,23 +816,6 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
           ),
           const SizedBox(height: 20),
-
-          // Pairing Code
-          ModernTextField(
-            controller: _familyPairingCodeController,
-            label: 'Kode Pairing (dari Pengguna)',
-            icon: Icons.vpn_key_rounded,
-            semanticLabel: 'Kode pairing dari pengguna TunaNetra',
-            validator: (value) {
-              if (value == null || value.isEmpty)
-                return 'Kode pairing harus diisi';
-              if (!RegExp(r'^USER\d{5}$').hasMatch(value.toUpperCase())) {
-                return 'Format tidak valid (misal: USER12345)';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 16),
 
           // Email
           ModernTextField(
@@ -918,13 +870,7 @@ class _RegisterScreenState extends State<RegisterScreen>
             },
             semanticLabel: 'Nomor HP keluarga',
           ),
-          const SizedBox(height: 28),
-          _AuthSubmitButton(
-            label: 'Daftar',
-            icon: Icons.send_rounded,
-            isLoading: _isLoading,
-            onTap: _handleKeluargaRegister,
-          ),
+          const SizedBox(height: 16),
         ],
       ),
     );

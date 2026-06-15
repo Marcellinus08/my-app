@@ -1295,118 +1295,88 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Container(
-            padding: const EdgeInsets.all(28),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.045),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(
-                color: AppColors.primary.withOpacity(0.08),
-                width: 1,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0F172A).withOpacity(0.06),
-                  blurRadius: 28,
-                  offset: const Offset(0, 14),
-                ),
-              ],
+              color: AppColors.primaryDark.withValues(alpha: 0.09),
+              shape: BoxShape.circle,
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+            child: const Icon(
+              Icons.people_outline_rounded,
+              size: 36,
+              color: AppColors.primaryDark,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Belum ada pengguna terhubung',
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Tekan Tambah Pengguna dan masukkan kode pairing dari akun tunanetra.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              height: 1.45,
+              fontWeight: FontWeight.w600,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.primaryDark.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
               children: [
-                Container(
-                  width: 88,
-                  height: 88,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.people_outline_rounded,
-                    size: 44,
-                    color: AppColors.primary,
-                  ),
+                const Icon(
+                  Icons.info_outline_rounded,
+                  color: AppColors.primaryDark,
+                  size: 18,
                 ),
-                const SizedBox(height: 20),
-                Text(
-                  'Belum ada pengguna terhubung',
-                  style: AppTextStyles.heading3.copyWith(
-                    color: AppColors.textPrimary,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Setelah akun keluarga terhubung, kartu monitoring akan tampil otomatis di sini.',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.45,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: AppColors.primary.withOpacity(0.06),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Kartu monitoring akan muncul otomatis setelah pengguna terhubung.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primaryDark,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                      fontSize: 12,
                     ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.add_circle_outline_rounded,
-                          color: AppColors.primary,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Siapkan koneksi baru',
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Tekan tombol Tambah Pengguna untuk menghubungkan akun TunaNetra ke keluarga.',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.textSecondary,
-                                height: 1.35,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ],
             ),
           ),
-        ),
+        ],
       ),
     );
   }

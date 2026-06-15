@@ -14,7 +14,7 @@ class PendingRegistration {
     required this.email,
     required this.name,
     required this.phoneNumber,
-    required this.pairingCode,
+    this.pairingCode = '',
   });
 
   Map<String, dynamic> toMap() => {

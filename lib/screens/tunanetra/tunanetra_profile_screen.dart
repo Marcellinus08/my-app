@@ -130,6 +130,14 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
   }
 
   Future<bool> _handleVoiceCommand(String command) async {
+    if (TunaNetraVoiceCommands.isPairingCodeCommand(command)) {
+      final code = _user?.pairingCode ?? '';
+      final message = code.isEmpty
+          ? 'Kode penghubung belum tersedia.'
+          : 'Kode penghubung Anda adalah, ${_spellOutCode(code)}';
+      await speakHomeCommandResponse(message);
+      return true;
+    }
     if (TunaNetraVoiceCommands.isSettingsCommand(command)) {
       await stopHomeVoiceCommandListener();
       if (!mounted) return true;
@@ -138,6 +146,11 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     }
     return false;
   }
+
+  /// Formats a pairing code so TTS reads each character individually.
+  /// e.g. "USER12345" → "U, S, E, R, 1, 2, 3, 4, 5"
+  String _spellOutCode(String code) =>
+      code.toUpperCase().split('').join(', ');
 
   /// Generate random pairing code
   String _generatePairingCode() {
