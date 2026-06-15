@@ -701,8 +701,6 @@ class _ConnectedFamilyAccountsScreenState
       int deletedCount = 0;
       for (final entry in duplicateMap.entries) {
         if (entry.value.length > 1) {
-          debugPrint('Found ${entry.value.length} entries for ${entry.key}');
-
           // Delete all except the first
           for (int i = 1; i < entry.value.length; i++) {
             await _firestore
@@ -713,7 +711,6 @@ class _ConnectedFamilyAccountsScreenState
                 .delete();
 
             deletedCount++;
-            debugPrint('Deleted duplicate: ${entry.value[i]}');
           }
         }
       }

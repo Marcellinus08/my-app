@@ -279,7 +279,6 @@ class LiveTrackingService {
   Future<void> updateHomeLocationOnly({required Position position}) async {
     final user = _auth.currentUser;
     if (user == null) {
-      print('[LIVE_TRACKING] Home update skipped: currentUser is null');
       return;
     }
 
@@ -304,11 +303,7 @@ class LiveTrackingService {
         'smartCaneBatteryLevel': smartCaneBatteryLevel,
       });
 
-      print(
-        '[LIVE_TRACKING] Home location updated: ${position.latitude}, ${position.longitude}, battery: $batteryLevel%, caneBattery: ${smartCaneBatteryLevel ?? '-'}%',
-      );
-    } catch (e) {
-      print('[LIVE_TRACKING] Home update failed: $e');
+    } catch (_) {
     }
   }
 
@@ -361,8 +356,7 @@ class LiveTrackingService {
         currentTripId: currentTripId,
         isNavigating: isNavigating,
       );
-    } catch (e) {
-      print('[LIVE_TRACKING] Failed to update navigation trip state: $e');
+    } catch (_) {
     }
   }
 

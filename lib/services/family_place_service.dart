@@ -32,7 +32,6 @@ class FamilyPlaceService {
       return null;
     }
 
-    debugPrint('[FamilyPlaceService] pairedUserUid ditemukan: $pairedUserUid');
     return pairedUserUid;
   }
 
@@ -61,7 +60,6 @@ class FamilyPlaceService {
       if (lat == null || lng == null) continue;
       if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
 
-      debugPrint('[FamilyPlaceService] koordinat berhasil diparse: $lat,$lng');
       return LatLng(lat, lng);
     }
 

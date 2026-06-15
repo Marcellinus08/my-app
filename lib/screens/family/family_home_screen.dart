@@ -108,14 +108,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
 
   Future<void> _loadMonitoredUsers() async {
     try {
-      print(
-        '\nΓòöΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòù',
-      );
-      print('Γòæ [FAMILY HOME] Loading Monitored Users (by Family ID)  Γòæ');
-      print(
-        'ΓòÜΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓò¥',
-      );
-
       final resolvedFamilyId = widget.familyId.trim().isNotEmpty
           ? widget.familyId.trim()
           : (AuthService().currentUserId ?? '');
@@ -173,9 +165,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         }
       }
 
-      print('Γ£à Monitoring users loaded: ${users.length}');
     } catch (e) {
-      print('Γ¥î Error loading monitored users: $e');
       if (mounted) {
         setState(() {
           _isLoadingUsers = false;

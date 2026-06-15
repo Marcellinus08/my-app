@@ -43,8 +43,6 @@ class RoutingService {
       final url =
           '$baseUrl/$coordinates?geometries=geojson&overview=full&steps=true';
 
-      print('[ROUTING] Requesting route (foot) from: $url');
-
       final response = await _dio.get(url);
 
       if (response.statusCode == 200) {
@@ -64,8 +62,6 @@ class RoutingService {
         final geometry = routes[0]['geometry'];
         final coordinates = geometry['coordinates'] as List;
 
-        print('[ROUTING] 📍 Polyline points: ${coordinates.length}');
-
         // Convert dari [lon, lat] ke LatLng
         final polylinePoints = coordinates
             .map(
@@ -84,16 +80,13 @@ class RoutingService {
       if (e is DioException) {
         if (e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout) {
-          print('[ROUTING] ❌ Timeout: Server took too long to respond');
           throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
         } else if (e.type == DioExceptionType.connectionError) {
-          print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
           throw Exception(
             'Tidak ada koneksi internet. Silakan periksa jaringan Anda.',
           );
         }
       }
-      print('[ROUTING] ❌ Error getting route: $e');
       rethrow;
     }
   }
@@ -106,22 +99,11 @@ class RoutingService {
     String profile = 'foot',
   }) async {
     try {
-      print('[ROUTING] ⭐ START getRouteInfo');
-      print('[ROUTING] Profile requested: $profile');
       final baseUrl = _getBaseUrl(profile);
-      print('[ROUTING] Base URL selected: $baseUrl');
 
       final coordinates =
           '${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}';
       final url = '$baseUrl/$coordinates?overview=full&geometries=geojson';
-
-      print('[ROUTING] Origin: ${origin.longitude}, ${origin.latitude}');
-      print(
-        '[ROUTING] Destination: ${destination.longitude}, ${destination.latitude}',
-      );
-      print('[ROUTING] 🌐 REQUEST URL:');
-      print('[ROUTING] $url');
-      print('[ROUTING] ---');
 
       final response = await _dio.get(url);
 
@@ -143,10 +125,6 @@ class RoutingService {
         final durationMinutes = (rawDuration as num) / 60;
         final distanceKm = (rawDistance as num) / 1000;
 
-        print(
-          '[ROUTING] ✅ Profile: $profile - Duration: ${rawDuration}s (${durationMinutes.toStringAsFixed(1)} min), Distance: ${rawDistance}m (${distanceKm.toStringAsFixed(1)} km)',
-        );
-
         return {
           'distance': rawDistance, // dalam meter
           'duration': rawDuration, // dalam detik
@@ -160,16 +138,13 @@ class RoutingService {
       if (e is DioException) {
         if (e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout) {
-          print('[ROUTING] ❌ Timeout: Server took too long to respond');
           throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
         } else if (e.type == DioExceptionType.connectionError) {
-          print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
           throw Exception(
             'Tidak ada koneksi internet. Silakan periksa jaringan Anda.',
           );
         }
       }
-      print('[ROUTING] ❌ Error getting route info: $e');
       rethrow;
     }
   }
@@ -202,13 +177,6 @@ class RoutingService {
 
       final carDuration = carInfo['duration'] as num;
 
-      print(
-        '[ROUTING] ✅ Foot (Google Maps method): ${footDuration}s (${(footDuration / 60).toStringAsFixed(1)} min) - Distance: ${distanceMeters}m @ ${pedestrianSpeedMs}m/s',
-      );
-      print(
-        '[ROUTING] ✅ Car: ${carDuration}s (${(carDuration / 60).toStringAsFixed(1)} min)',
-      );
-
       return {
         'foot_duration': footDuration,
         'foot_duration_minutes': (footDuration as num) / 60,
@@ -218,7 +186,6 @@ class RoutingService {
         'distance_km': footInfo['distance_km'],
       };
     } catch (e) {
-      print('[ROUTING] ❌ Error in getComparisonDurations: $e');
       rethrow;
     }
   }
@@ -231,36 +198,19 @@ class RoutingService {
       final origin = LatLng(-6.9147, 107.6098);
       final destination = LatLng(-6.7727, 107.5778);
 
-      print('[ROUTING] 🧪 Testing OSRM Difference for Foot vs Car');
-      print('[ROUTING] Origin: ${origin.latitude}, ${origin.longitude}');
-      print(
-        '[ROUTING] Destination: ${destination.latitude}, ${destination.longitude}',
-      );
-
-      final footInfo = await getRouteInfo(
+      await getRouteInfo(
         origin: origin,
         destination: destination,
         profile: 'foot',
       );
 
-      final carInfo = await getRouteInfo(
+      await getRouteInfo(
         origin: origin,
         destination: destination,
         profile: 'car',
       );
-
-      print('[ROUTING] 🧪 TEST RESULTS:');
-      print(
-        '[ROUTING] Foot - Duration: ${footInfo['duration_minutes']} min, Distance: ${footInfo['distance_km']} km',
-      );
-      print(
-        '[ROUTING] Car - Duration: ${carInfo['duration_minutes']} min, Distance: ${carInfo['distance_km']} km',
-      );
-      print(
-        '[ROUTING] Difference - Time: ${(footInfo['duration_minutes'] as num) - (carInfo['duration_minutes'] as num)} min',
-      );
     } catch (e) {
-      print('[ROUTING] ❌ Test error: $e');
+      rethrow;
     }
   }
 
@@ -272,7 +222,6 @@ class RoutingService {
     String profile = 'foot',
   }) async {
     try {
-      print('[ROUTING] 📍 Getting navigation instructions for $profile mode');
       final baseUrl = _getBaseUrl(profile);
 
       final coordinates =
@@ -280,8 +229,6 @@ class RoutingService {
       // Tambahkan parameter ?steps=true&annotations=distance,duration untuk mendapat detail steps
       final url =
           '$baseUrl/$coordinates?overview=full&geometries=geojson&steps=true&annotations=distance,duration';
-
-      print('[ROUTING] 🌐 Navigation URL: $url');
 
       final response = await _dio.get(url);
 
@@ -301,7 +248,6 @@ class RoutingService {
         final legs = route['legs'] as List;
 
         List<NavigationInstruction> instructions = [];
-        int stepIndex = 0;
 
         // Iterate through each leg (segment antara 2 waypoint)
         for (var leg in legs) {
@@ -404,15 +350,9 @@ class RoutingService {
                 polylinePoints: polylinePoints,
               ),
             );
-
-            stepIndex++;
-            print(
-              '[ROUTING] Step $stepIndex: $instruction (${distance.toStringAsFixed(0)}m, ${duration.toStringAsFixed(1)}s)',
-            );
           }
         }
 
-        print('[ROUTING] ✅ Got ${instructions.length} navigation instructions');
         return instructions;
       } else {
         throw Exception(
@@ -423,16 +363,13 @@ class RoutingService {
       if (e is DioException) {
         if (e.type == DioExceptionType.connectionTimeout ||
             e.type == DioExceptionType.receiveTimeout) {
-          print('[ROUTING] ❌ Timeout: Server took too long to respond');
           throw Exception('Koneksi lambat. Coba lagi dalam beberapa saat.');
         } else if (e.type == DioExceptionType.connectionError) {
-          print('[ROUTING] ❌ Network Error: Device tidak terhubung internet');
           throw Exception(
             'Tidak ada koneksi internet. Silakan periksa jaringan Anda.',
           );
         }
       }
-      print('[ROUTING] ❌ Error getting navigation instructions: $e');
       rethrow;
     }
   }
@@ -545,10 +482,6 @@ class RoutingService {
         LengthUnit.Meter,
         currentLocation,
         instruction.location,
-      );
-
-      print(
-        '[ROUTING] Distance to instruction $i: ${distanceToInstruction.toStringAsFixed(1)}m',
       );
 
       if (distanceToInstruction <= distanceThreshold) {

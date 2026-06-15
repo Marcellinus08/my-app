@@ -110,7 +110,7 @@ class SosService {
       }
 
       debugPrint(
-        '[SosService] Mengirim SOS ke ${familyUids.length} keluarga: $familyUids',
+        '[SosService] Mengirim SOS ke ${familyUids.length} keluarga',
       );
 
       final sosId = await saveSosAlert(
@@ -194,7 +194,6 @@ class SosService {
     required String sosId,
   }) async {
     try {
-      debugPrint('[SosService] Mengirim SOS ke familyUid: $familyUid');
       final response = await _httpClient
           .post(
             Uri.parse(workerSendSosUrl),
@@ -216,10 +215,6 @@ class SosService {
           )
           .timeout(const Duration(seconds: 15));
 
-      debugPrint(
-        '[SosService] Worker response for $familyUid: ${response.statusCode}',
-      );
-
       final responseBody = _decodeJsonObject(response.body);
       final success =
           response.statusCode == 200 && responseBody?['success'] == true;
@@ -227,20 +222,11 @@ class SosService {
       final workerFailedCount = _readInt(responseBody?['failedCount']);
 
       if (success) {
-        debugPrint(
-          '[SosService] SOS sent to familyUid: $familyUid '
-          'sent=${workerSentCount ?? 1} failed=${workerFailedCount ?? 0}',
-        );
         return [workerSentCount ?? 1, workerFailedCount ?? 0];
       } else {
-        debugPrint(
-          '[SosService] SOS failed for familyUid=$familyUid '
-          'status=${response.statusCode} body=${response.body}',
-        );
         return [0, workerFailedCount ?? 1];
       }
-    } catch (e) {
-      debugPrint('[SosService] SOS error for familyUid=$familyUid: $e');
+    } catch (_) {
       return [0, 1];
     }
   }
@@ -327,8 +313,7 @@ class SosService {
     ]);
 
     debugPrint(
-      '[SosService] Connected family UIDs ditemukan: '
-      '${familyUids.length} → $familyUids',
+      '[SosService] Connected family UIDs ditemukan: ${familyUids.length}',
     );
     return familyUids.toList();
   }
@@ -399,7 +384,6 @@ class SosService {
       'resolvedAt': null,
     });
 
-    debugPrint('[SosService] SOS alert saved to Firestore: ${docRef.id}');
     return docRef.id;
   }
 
@@ -421,7 +405,6 @@ class SosService {
           'timestamp': FieldValue.serverTimestamp(),
         });
 
-    debugPrint('[SosService] SOS trip event saved: $currentTripId');
   }
 
   bool _isTunaNetraUserType(String? userType) {

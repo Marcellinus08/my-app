@@ -57,7 +57,6 @@ class WeatherService {
       final data = jsonDecode(jsonString) as Map<String, dynamic>;
       return WeatherData.fromJson(data);
     } catch (e) {
-      print('[WEATHER] Error loading cached weather: $e');
       return null;
     }
   }
@@ -67,50 +66,38 @@ class WeatherService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_cachedWeatherKey, jsonEncode(weatherData.toJson()));
     } catch (e) {
-      print('[WEATHER] Error saving cached weather: $e');
+      // ignore cache write error
     }
   }
 
   /// Get current weather based on user's GPS location
   Future<WeatherData?> getWeatherByLocation() async {
     try {
-      print('[WEATHER] Starting weather fetch...');
-      
-      // Check location permission
       LocationPermission permission = await Geolocator.checkPermission();
-      print('[WEATHER] Initial permission: $permission');
-      
+
       if (permission == LocationPermission.denied) {
-        print('[WEATHER] Requesting location permission...');
         permission = await Geolocator.requestPermission();
-        print('[WEATHER] Permission after request: $permission');
         if (permission == LocationPermission.denied) {
-          print('[WEATHER] Location permission denied');
           return await getCachedWeather() ?? _getMockWeather();
         }
       }
 
       if (permission == LocationPermission.deniedForever) {
-        print('[WEATHER] Location permission permanently denied');
         return await getCachedWeather() ?? _getMockWeather();
       }
 
-      print('[WEATHER] Getting current position...');
-      // Get current position with longer timeout
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
         timeLimit: const Duration(seconds: 30),
       );
-
-      print('[WEATHER] Got location: ${position.latitude}, ${position.longitude}');
 
       // Start reverse geocoding in the background so weather can render first.
       unawaited(
         _getLocationName(position.latitude, position.longitude)
             .then((locationName) {
           _cachedLocationName = locationName;
-        }).catchError((error) {
-          print('[WEATHER] Background location lookup failed: $error');
+        }).catchError((Object error) {
+          // ignore background geocoding error
         }),
       );
 
@@ -129,7 +116,6 @@ class WeatherService {
 
       return await getCachedWeather() ?? _getMockWeather();
     } catch (e) {
-      print('[WEATHER] Error getting weather: $e');
       final cached = await getCachedWeather();
       return cached ?? _getMockWeather();
     }
@@ -142,8 +128,6 @@ class WeatherService {
     String locationName,
   ) async {
     try {
-      print('[WEATHER] Fetching weather for $latitude, $longitude...');
-      
       final url = Uri.parse(
         '$_openMeteoUrl?latitude=$latitude&longitude=$longitude&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto',
       );
@@ -168,15 +152,11 @@ class WeatherService {
           locationName: locationName,
         );
 
-        print(
-            '[WEATHER] Got weather: ${weatherData.temperature}°C, ${weatherData.weatherCondition}');
         return weatherData;
       } else {
-        print('[WEATHER] Failed to fetch weather: ${response.statusCode}');
         return null;
       }
     } catch (e) {
-      print('[WEATHER] Error fetching weather data: $e');
       return null;
     }
   }
@@ -184,8 +164,6 @@ class WeatherService {
   /// Get location name from coordinates using Nominatim (OpenStreetMap)
   Future<String> _getLocationName(double latitude, double longitude) async {
     try {
-      print('[WEATHER] Fetching location name for $latitude, $longitude...');
-      
       final url = Uri.parse(
         '$_reverseGeoUrl?format=json&lat=$latitude&lon=$longitude&zoom=10&addressdetails=1',
       );
@@ -206,14 +184,11 @@ class WeatherService {
             address['village'] ??
             'Lokasi Saat Ini';
 
-        print('[WEATHER] Location name: $city');
         return city;
       } else {
-        print('[WEATHER] Failed to get location name: ${response.statusCode}');
         return 'Lokasi Saat Ini';
       }
     } catch (e) {
-      print('[WEATHER] Error getting location name: $e');
       return 'Lokasi Saat Ini';
     }
   }
@@ -290,7 +265,6 @@ class WeatherService {
 
   /// Get mock weather data for development/testing
   WeatherData _getMockWeather() {
-    print('[WEATHER] Using mock weather data for development');
     return WeatherData(
       temperature: 28.5,
       humidity: 60,

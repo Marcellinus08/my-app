@@ -37,10 +37,8 @@ class ConnectedFamilyService {
       final connectedFamilies =
           List<Map<String, dynamic>>.from(userData['connectedFamilies'] ?? []);
 
-      print('✅ Retrieved ${connectedFamilies.length} connected families');
       return connectedFamilies;
     } catch (e) {
-      print('❌ Error getting connected families: $e');
       throw Exception('Gagal mengambil daftar keluarga: $e');
     }
   }
@@ -70,10 +68,7 @@ class ConnectedFamilyService {
       await _firestore.collection('users').doc(userId).update({
         'connectedFamilies': FieldValue.arrayUnion([newFamily]),
       });
-
-      print('✅ Family added to connected list');
     } catch (e) {
-      print('❌ Error adding connected family: $e');
       throw Exception('Gagal menambahkan keluarga: $e');
     }
   }
@@ -103,10 +98,7 @@ class ConnectedFamilyService {
         userId: userId,
         familyUid: familyUid,
       );
-
-      print('✅ Family removed from connected list');
     } catch (e) {
-      print('❌ Error removing connected family: $e');
       throw Exception('Gagal menghapus keluarga: $e');
     }
   }
@@ -148,10 +140,7 @@ class ConnectedFamilyService {
       await _firestore.collection('users').doc(userId).update({
         'connectedFamilies': connectedFamilies,
       });
-
-      print('✅ Family information updated');
     } catch (e) {
-      print('❌ Error updating connected family: $e');
       throw Exception('Gagal memperbarui data keluarga: $e');
     }
   }
@@ -165,8 +154,7 @@ class ConnectedFamilyService {
         (family) => family['uid'] == familyUid,
         orElse: () => {},
       );
-    } catch (e) {
-      print('❌ Error getting family detail: $e');
+    } catch (_) {
       return null;
     }
   }
@@ -176,8 +164,7 @@ class ConnectedFamilyService {
     try {
       final families = await getConnectedFamilies();
       return families.any((family) => family['uid'] == familyUid);
-    } catch (e) {
-      print('❌ Error checking family connection: $e');
+    } catch (_) {
       return false;
     }
   }
@@ -187,8 +174,7 @@ class ConnectedFamilyService {
     try {
       final families = await getConnectedFamilies();
       return families.length;
-    } catch (e) {
-      print('❌ Error getting family count: $e');
+    } catch (_) {
       return 0;
     }
   }

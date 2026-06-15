@@ -44,9 +44,6 @@ final RouteObserver<ModalRoute<void>> routeObserver =
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await _ensureFirebaseInitialized();
-  debugPrint('[MAIN] background message received');
-  debugPrint('[MAIN] background payload data: ${message.data}');
-
   if (message.data['type'] == 'sos') {
     await NotificationService.showBackgroundSosFullScreenNotification(message);
   }
@@ -74,32 +71,14 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    print('\n🔥🔥🔥 [FIREBASE INITIALIZATION START] 🔥🔥🔥');
-
-    // Initialize Firebase
-    print('📡 Calling Firebase.initializeApp()...');
-    final startInit = DateTime.now();
-
     await _ensureFirebaseInitialized().timeout(
       const Duration(seconds: 30),
       onTimeout: () {
-        print('❌ Firebase.initializeApp() timed out after 30s!');
         throw Exception('Firebase initialization timeout');
       },
     );
-
-    final initTime = DateTime.now().difference(startInit).inSeconds;
-    print('✅ Firebase initialized successfully in ${initTime}s!');
-
-    print('\n🔥🔥🔥 [FIREBASE INITIALIZATION COMPLETE] 🔥🔥🔥\n');
   } catch (e) {
-    print('\n❌ CRITICAL: Firebase initialization error:');
-    print('   Error type: ${e.runtimeType}');
-    print('   Error message: $e');
-    print('   This will cause Auth and Firestore to fail!');
-    print('   → Check Firebase Console: https://console.firebase.google.com/');
-    print('   → Verify package name matches');
-    print('   → Verify google-services.json is correct\n');
+    // Firebase initialization failed — Auth and Firestore will be unavailable
   }
 
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -213,7 +192,6 @@ class _MyAppState extends State<MyApp> {
       final shouldUseBle = await _isTunaNetraUser();
       if (!shouldUseBle) {
         _smartCaneStatusNotificationService.stop();
-        debugPrint('[MAIN] BLE auto reconnect dilewati: user bukan tunanetra');
         return;
       }
 
@@ -410,7 +388,6 @@ class _AppLifecycleBleObserver extends WidgetsBindingObserver {
 
   Future<void> _reconnectIfAllowed() async {
     if (!await shouldUseBle()) {
-      debugPrint('[MAIN] BLE resume reconnect dilewati: user bukan tunanetra');
       return;
     }
 

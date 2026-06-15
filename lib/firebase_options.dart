@@ -48,41 +48,35 @@ class DefaultFirebaseOptions {
     appId: '1:60336439697:android:5863a0a5ba25821dbc1a30',
     messagingSenderId: '60336439697',
     projectId: 'smarthcane-11b47',
-    databaseURL:
-        'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'smarthcane-11b47.firebasestorage.app',
   );
-
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBsDkRB2A6-IPJs1n-5siCVWiMOETudKXo',
-    appId: '1:60336439697:ios:5863a0a5ba25821dbc1a30',
+    apiKey: 'AIzaSyDSvhNl3lT7kFDEzx30kM5srxcgxCB5VXM',
+    appId: '1:60336439697:ios:8ae34e93cb37e07fbc1a30',
     messagingSenderId: '60336439697',
     projectId: 'smarthcane-11b47',
-    databaseURL:
-        'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'smarthcane-11b47.firebasestorage.app',
     iosBundleId: 'com.example.myApp',
   );
-
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyBsDkRB2A6-IPJs1n-5siCVWiMOETudKXo',
-    appId: '1:60336439697:ios:5863a0a5ba25821dbc1a30',
+    apiKey: 'AIzaSyDSvhNl3lT7kFDEzx30kM5srxcgxCB5VXM',
+    appId: '1:60336439697:ios:8ae34e93cb37e07fbc1a30',
     messagingSenderId: '60336439697',
     projectId: 'smarthcane-11b47',
-    databaseURL:
-        'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'smarthcane-11b47.firebasestorage.app',
     iosBundleId: 'com.example.myApp',
   );
-
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBsDkRB2A6-IPJs1n-5siCVWiMOETudKXo',
-    appId: '1:60336439697:web:5863a0a5ba25821dbc1a30',
+    apiKey: 'AIzaSyCkyPOmWN_fPtcKL_tuKM-w9OIQxDgTeH4',
+    appId: '1:60336439697:web:672d74a2ccc1e22abc1a30',
     messagingSenderId: '60336439697',
     projectId: 'smarthcane-11b47',
-    databaseURL:
-        'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
-    storageBucket: 'smarthcane-11b47.firebasestorage.app',
     authDomain: 'smarthcane-11b47.firebaseapp.com',
+    databaseURL: 'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app',
+    storageBucket: 'smarthcane-11b47.firebasestorage.app',
+    measurementId: 'G-K3JMDK5CST',
   );
 }

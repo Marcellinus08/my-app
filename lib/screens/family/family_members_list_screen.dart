@@ -39,8 +39,7 @@ class _FamilyMembersListScreenState extends State<FamilyMembersListScreen> {
         _members = members;
         _isLoading = false;
       });
-    } catch (e) {
-      print('Error loading family members: $e');
+    } catch (_) {
       setState(() {
         _isLoading = false;
       });

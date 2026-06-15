@@ -282,8 +282,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
   @override
   void didPopNext() async {
-    print("🔙 Balik ke HomeScreen");
-
     await _stopHomeStt();
 
     if (_suppressNextHomeReturnTts) {
@@ -361,8 +359,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
             if (text.length < 15 && !_isKnownHomeVoiceCommand(text)) {
               return;
             }
-
-            print("🎤 $text");
 
             _handleCommand(text);
           },
@@ -601,18 +597,14 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     final authService = AuthService();
     final uid = authService.currentUserId;
 
-    print('🔍 Home Screen - User UID: $uid');
-
     if (uid != null) {
       _userNameStream = _firestore.collection('users').doc(uid).snapshots().map(
         (snapshot) {
           if (snapshot.exists) {
             final data = snapshot.data();
             final name = data?['name'] as String? ?? 'Pengguna';
-            print('📝 User name updated: $name');
             return name;
           }
-          print('⚠️ User document does not exist');
           return 'Pengguna';
         },
       );
@@ -629,7 +621,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       });
       unawaited(_syncRealtimeTrackingAccess(uid));
     } else {
-      print('❌ User UID is null');
       _userNameStream = Stream.value('Pengguna');
     }
   }
@@ -683,8 +674,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           _speakIfReady();
         }
       }
-    } catch (e) {
-      print('❌ Error loading weather: $e');
+    } catch (_) {
       if (mounted) {
         setState(() {
           _isLoadingWeather = false;

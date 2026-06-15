@@ -64,9 +64,7 @@ class PairingService {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      print('✅ Pairing code saved: $normalizedCode');
     } catch (e) {
-      print('❌ Error saving pairing code: $e');
       throw Exception('Gagal menyimpan kode pairing: $e');
     }
   }
@@ -75,7 +73,6 @@ class PairingService {
   Future<Map<String, dynamic>?> verifyPairingCode(String pairingCode) async {
     try {
       final normalizedCode = pairingCode.toUpperCase().trim();
-      print('🔍 Verifying pairing code: $normalizedCode');
 
       final pairingDoc = await _firestore
           .collection('pairing_codes')
@@ -149,7 +146,6 @@ class PairingService {
       }
 
       final userData = query.docs.first.data();
-      print('✅ Pairing code verified for user: ${userData['name']}');
 
       return {
         'uid': query.docs.first.id,
@@ -161,7 +157,6 @@ class PairingService {
     } on PairingException {
       rethrow;
     } catch (e) {
-      print('❌ Error verifying pairing code: $e');
       throw const PairingException(
         'Tidak dapat memeriksa kode pairing saat ini. Periksa koneksi lalu coba lagi.',
         code: 'verification-failed',
@@ -325,7 +320,6 @@ class PairingService {
 
       return memberDoc.exists;
     } catch (e) {
-      print('❌ Error checking active connection: $e');
       return false;
     }
   }
@@ -400,11 +394,6 @@ class PairingService {
     String? fallbackPhone,
   }) async {
     try {
-      print('🔗 [PAIRING] Starting linkFamilyToUser');
-      print('   Family UID: $familyUid');
-      print('   TunaNetra UID: $tunaNetraUid');
-      print('   Fallback data provided: ${fallbackName != null}');
-
       // Keep latest linked timestamp on the family profile.
       await _firestore.collection('users').doc(familyUid).set({
         'linkedAt': DateTime.now(),
@@ -419,21 +408,14 @@ class PairingService {
         familyDoc = await _firestore.collection('users').doc(familyUid).get();
         familyData = familyDoc.data();
 
-        print('📦 Family data retrieval attempt ${retry + 1}:');
-        print('   Email: ${familyData?['email']}');
-        print('   Name: ${familyData?['name']}');
-        print('   Phone: ${familyData?['phoneNumber']}');
-
         // Jika nama sudah ada, stop retry
         if ((familyData?['name'] as String?)?.isNotEmpty ?? false) {
-          print('   ✅ Data found, proceeding');
           break;
         }
 
         // Jika masih kosong dan ada fallback, gunakan fallback
         final isEmpty = (familyData?['name'] as String?)?.isEmpty ?? true;
         if (retry < 2 && isEmpty) {
-          print('   ⏳ Data kosong, waiting before retry...');
           await Future.delayed(const Duration(milliseconds: 500));
         }
       }
@@ -451,13 +433,6 @@ class PairingService {
           ? familyData!['phoneNumber'] as String
           : (fallbackPhone ?? '');
 
-      print('📋 Final data to save:');
-      print(
-        '   Name: $name (from ${(familyData?['name'] as String?)?.isNotEmpty ?? false ? "Firestore" : "fallback"})',
-      );
-      print('   Email: $email');
-      print('   Phone: $phone');
-
       if (name.isNotEmpty || email.isNotEmpty) {
         await _removeConnectedFamilyReference(
           familyUid: familyUid,
@@ -472,8 +447,6 @@ class PairingService {
           'connectedAt': DateTime.now(),
         };
 
-        print('💾 Saving to connectedFamilies array');
-
         // Add to connectedFamilies array in tunanetra user's document
         await _firestore
             .collection('users')
@@ -482,7 +455,6 @@ class PairingService {
               'connectedFamilies': FieldValue.arrayUnion([familyInfo]),
             })
             .catchError((e) {
-              print('⚠️  Update failed, trying merge set: $e');
               // If document doesn't exist or array doesn't exist, create it
               if (e.toString().contains('FAILED_PRECONDITION') ||
                   e.toString().contains('not-found')) {
@@ -492,8 +464,6 @@ class PairingService {
               }
               throw e;
             });
-
-        print('💾 Saving to family_members subcollection');
 
         // Update tunanetra document dengan family uid (subcollection)
         await _firestore
@@ -508,15 +478,8 @@ class PairingService {
               'phone': phone,
               'linkedAt': DateTime.now(),
             });
-
-        print('✅ Data saved to subcollection');
-      } else {
-        print('⚠️  No valid name or email to save');
       }
-
-      print('✅ Family linked to user successfully');
     } catch (e) {
-      print('❌ Error linking family: $e');
       throw Exception('Gagal menghubungkan keluarga: $e');
     }
   }
@@ -532,7 +495,6 @@ class PairingService {
 
       return query.docs.isNotEmpty;
     } catch (e) {
-      print('❌ Error checking pairing code: $e');
       return false;
     }
   }
@@ -552,7 +514,6 @@ class PairingService {
 
       return query.docs.first.data();
     } catch (e) {
-      print('❌ Error getting pairing code info: $e');
       return null;
     }
   }
@@ -560,15 +521,10 @@ class PairingService {
   /// Add user to family's paired users list (untuk mendukung multiple users)
   Future<void> addPairedUser(String familyUid, String tunaNetraUid) async {
     try {
-      print('📌 Adding paired user $tunaNetraUid to family $familyUid');
-
       await _firestore.collection('users').doc(familyUid).update({
         'pairedUserUids': FieldValue.arrayUnion([tunaNetraUid]),
       });
-
-      print('✅ Paired user added successfully');
     } catch (e) {
-      print('❌ Error adding paired user: $e');
       throw Exception('Gagal menambah pengguna: $e');
     }
   }
@@ -600,7 +556,6 @@ class PairingService {
 
       return pairedUserUids;
     } catch (e) {
-      print('❌ Error getting paired users: $e');
       return [];
     }
   }
@@ -608,8 +563,6 @@ class PairingService {
   /// Remove user from family's paired users list
   Future<void> removePairedUser(String familyUid, String tunaNetraUid) async {
     try {
-      print('🗑️ Removing paired user $tunaNetraUid from family $familyUid');
-
       await _firestore.collection('users').doc(familyUid).update({
         'pairedUserUid': FieldValue.delete(),
         'pairedUserUids': FieldValue.arrayRemove([tunaNetraUid]),
@@ -631,10 +584,7 @@ class PairingService {
         userId: tunaNetraUid,
         familyUid: familyUid,
       );
-
-      print('✅ Paired user removed successfully');
     } catch (e) {
-      print('❌ Error removing paired user: $e');
       throw Exception('Gagal menghapus pengguna: $e');
     }
   }

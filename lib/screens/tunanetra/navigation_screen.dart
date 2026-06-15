@@ -295,7 +295,6 @@ class _NavigationScreenState extends State<NavigationScreen>
             final text = result.toString().toLowerCase();
             if (text.trim().isEmpty) return;
 
-            print('🎤 NAV: $text');
 
             _handleNavigationCommand(text);
           },
@@ -1070,7 +1069,6 @@ class _NavigationScreenState extends State<NavigationScreen>
 
       if (!_isLocationReady) {
         _isLocationReady = true;
-        print('[NAVIGATION] ✅ Real GPS location obtained from streaming!');
       }
     });
 
@@ -1771,23 +1769,13 @@ class _NavigationScreenState extends State<NavigationScreen>
   /// Load places from Firestore
   Future<void> _loadPlaces() async {
     try {
-      print('[NAVIGATION] Loading places from Firestore...');
       final places = await _placesService.getAllPlaces();
-
-      // Debug: Print each place
-      for (var place in places) {
-        print(
-          '[NAVIGATION] 📍 Place: ${place.name} (${place.category}) at [${place.latitude}, ${place.longitude}]',
-        );
-      }
 
       setState(() {
         _places = places;
         _isLoadingPlaces = false;
       });
-      print('[NAVIGATION] ✅ Loaded ${places.length} places');
     } catch (e) {
-      print('[NAVIGATION] ❌ Error loading places: $e');
       setState(() => _isLoadingPlaces = false);
       // Fallback: use mock locations
       setState(() {
@@ -1798,13 +1786,10 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   Future<void> _getUserLocation() async {
     try {
-      print('[NAVIGATION] Requesting location permission...');
-
       // Check if location service is enabled
       bool isServiceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!mounted) return;
       if (!isServiceEnabled) {
-        print('[NAVIGATION] ❌ Location service is disabled');
         setState(() {
           _userLocation = defaultLocation;
           _isLocationReady = false;
@@ -1823,13 +1808,11 @@ class _NavigationScreenState extends State<NavigationScreen>
       LocationPermission permission = await Geolocator.checkPermission();
 
       if (permission == LocationPermission.denied) {
-        print('[NAVIGATION] Permission denied, requesting...');
         permission = await Geolocator.requestPermission();
       }
       if (!mounted) return;
 
       if (permission == LocationPermission.deniedForever) {
-        print('[NAVIGATION] ❌ Permission permanently denied');
         setState(() {
           _userLocation = defaultLocation;
           _isLocationReady = false; // Keep false - using default location
@@ -1847,18 +1830,11 @@ class _NavigationScreenState extends State<NavigationScreen>
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
         try {
-          print(
-            '[NAVIGATION] Getting initial GPS location (one-time, battery friendly)...',
-          );
           Position position = await Geolocator.getCurrentPosition(
             locationSettings: const LocationSettings(
               accuracy: LocationAccuracy.bestForNavigation,
               timeLimit: Duration(seconds: 60),
             ),
-          );
-
-          print(
-            '[NAVIGATION] ✅ Initial location obtained: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy.toStringAsFixed(1)}m)',
           );
 
           if (mounted) {
@@ -1874,7 +1850,6 @@ class _NavigationScreenState extends State<NavigationScreen>
             _safeMoveMap(_userLocation, 18.0);
           }
         } catch (e) {
-          print('[NAVIGATION] ❌ Error getting position: $e');
           setState(() {
             _userLocation = defaultLocation;
             _isLocationReady = false; // Keep false - using default location
@@ -1882,7 +1857,6 @@ class _NavigationScreenState extends State<NavigationScreen>
         }
       }
     } catch (e) {
-      print('[NAVIGATION] ❌ Error: $e');
       setState(() {
         _userLocation = defaultLocation;
         _isLocationReady = false; // Keep false - using default location
@@ -1893,10 +1867,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   /// Start continuous location streaming for detailed navigation
   /// Called when user starts navigating to a destination
   void _startLocationStreaming() {
-    print(
-      '[NAVIGATION] Starting continuous location streaming for navigation...',
-    );
-
     if (_selectedPlace != null) {
       speakSafe("Memulai navigasi ke ${_selectedPlace!.name}");
     }
@@ -1910,26 +1880,19 @@ class _NavigationScreenState extends State<NavigationScreen>
       _liveTrackingService.startNavigationTracking(
         destinationName: _selectedPlace?.name,
         onPosition: (Position position) {
-          print(
-            '[NAVIGATION] 📍 Navigation position: ${position.latitude}, ${position.longitude} (accuracy: ${position.accuracy.toStringAsFixed(1)}m)',
-          );
-
           if (mounted) {
             _onGpsPositionUpdate(position);
 
             // Bentuk rute dari pembacaan GPS pertama. Akurasi GPS tetap
             // divalidasi saat memperbarui progres rute dan status tiba.
             if (!hasLoadedRouteOnceFromStreaming && _selectedPlace != null) {
-              print(
-                '[NAVIGATION] Loading route with real GPS location from streaming...',
-              );
               _loadRoute();
               hasLoadedRouteOnceFromStreaming = true;
             }
           }
         },
         onError: (e) {
-          print('[NAVIGATION] ❌ Location stream error during navigation: $e');
+          // ignore location stream errors during navigation
         },
       ),
     );
@@ -1937,7 +1900,6 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   /// Stop continuous location streaming to save battery
   void _stopLocationStreaming() {
-    print('[NAVIGATION] Stopping location streaming (battery save mode)...');
     unawaited(_liveTrackingService.stopNavigationTracking());
     _stopSensorFusion();
   }
@@ -2693,7 +2655,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     });
 
     try {
-      print('[ROUTING] Loading route to ${_selectedPlace?.name}...');
       final destination = LatLng(
         _selectedPlace!.latitude,
         _selectedPlace!.longitude,
@@ -2706,7 +2667,6 @@ class _NavigationScreenState extends State<NavigationScreen>
       );
 
       // Get route info in walking mode only
-      print('[NAVIGATION] 🔍 Fetching walking duration...');
       final routeInfo = await _routingService.getRouteInfo(
         origin: _userLocation,
         destination: destination,
@@ -2714,7 +2674,6 @@ class _NavigationScreenState extends State<NavigationScreen>
       );
 
       // Get turn-by-turn navigation instructions
-      print('[NAVIGATION] 📍 Fetching turn-by-turn instructions...');
       final instructions = await _routingService.getNavigationInstructions(
         origin: _userLocation,
         destination: destination,
@@ -2800,19 +2759,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           );
         }
       }
-      print('[NAVIGATION] ============ FINAL VALUES ============');
-      print(
-        '[NAVIGATION] 🚶 Foot - Distance: $_routeDistanceKm km, Duration: $_routeDurationMinutes minutes',
-      );
-      print(
-        '[NAVIGATION] 📍 Turn-by-turn instructions: ${_navigationInstructions.length} steps',
-      );
-      print('[NAVIGATION] ==========================================');
-      print(
-        '[ROUTING] ✅ Route loaded (Foot: ${_routeDurationMinutes.toStringAsFixed(0)} min)',
-      );
     } catch (error) {
-      print('[ROUTING] ❌ Error loading route: $error');
       if (!wasNavigating) {
         _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
       }
@@ -2853,7 +2800,6 @@ class _NavigationScreenState extends State<NavigationScreen>
       }
     });
 
-    print('[NAVIGATION] ⏱️ Duration update timer started (update every 5s)');
   }
 
   /// Update remaining duration based on current location
@@ -2915,9 +2861,6 @@ class _NavigationScreenState extends State<NavigationScreen>
             // Tandai bahwa kita perlu memicu suara SETELAH setState selesai
             forwardInstruction = true;
 
-            print(
-              '[NAVIGATION] 📍 Updated to instruction ${_currentInstructionIndex + 1}',
-            );
           }
           _lastDurationUpdateTime = now;
         });
@@ -2932,12 +2875,8 @@ class _NavigationScreenState extends State<NavigationScreen>
           _updateLiveInstructionDistance(_userLocation, allowVoiceCue: false);
         }
 
-        print(
-          '[NAVIGATION] ⏱️ Duration updated - Foot: ${_routeDurationMinutes.toStringAsFixed(0)} min, Instruction: ${_currentInstructionIndex + 1}/${_navigationInstructions.length}',
-        );
       }
     } catch (e) {
-      print('[NAVIGATION] ⚠️ Error updating duration: $e');
       // Silently fail - don't show error to user during navigation
     }
   }
@@ -2985,7 +2924,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   /// Stop navigation tracking and cleanup timers
   void _stopNavigationTracking({bool clearDuration = true}) {
     _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
-    print('[NAVIGATION] ⏹️ Stopping navigation tracking');
     _durationUpdateTimer?.cancel();
     _durationUpdateTimer = null;
     setState(() {

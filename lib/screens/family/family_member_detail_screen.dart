@@ -38,8 +38,7 @@ class _FamilyMemberDetailScreenState extends State<FamilyMemberDetailScreen> {
           _isLoading = false;
         });
       }
-    } catch (e) {
-      print('Error loading user data: $e');
+    } catch (_) {
       setState(() {
         _isLoading = false;
       });

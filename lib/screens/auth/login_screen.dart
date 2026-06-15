@@ -55,8 +55,6 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      print('🔐 Attempting login with email: ${_emailController.text}');
-
       final userCredential = await _authService.loginWithEmailPasswordNew(
         _emailController.text.trim(),
         _passwordController.text,
@@ -66,14 +64,10 @@ class _LoginScreenState extends State<LoginScreen> {
         throw Exception('Login gagal - user tidak ditemukan');
       }
 
-      print('✅ Login successful, UID: ${userCredential.user!.uid}');
-
       // Check if email is verified
-      print('\n🔍 Checking email verification status...');
       final isVerified = await _authService.isEmailVerified();
 
       if (!isVerified) {
-        print('⚠️ Email not verified yet');
         if (!mounted) return;
 
         AppFeedback.warning(
@@ -103,8 +97,6 @@ class _LoginScreenState extends State<LoginScreen> {
         );
 
         return;
-      } else {
-        print('Email verified - proceeding with login');
       }
 
       await Future.delayed(const Duration(milliseconds: 500));

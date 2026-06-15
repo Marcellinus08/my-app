@@ -66,34 +66,25 @@ class _SplashScreenState extends State<SplashScreen>
         // Check if user is already logged in
         if (authService.isAuthenticated) {
           if (pendingRegistration != null) {
-            print(
-              '[SPLASH] Pending email registration found, resuming registration...',
-            );
             Navigator.pushReplacementNamed(context, AppRoutes.register);
             return;
           }
-
-          print('[SPLASH] User is authenticated, checking user type...');
 
           // Get user type
           final userType = await authService.getUserType();
 
           if (userType == UserType.tunanetra) {
-            print('[SPLASH] User is Tunanetra, navigating to home...');
             Navigator.pushReplacementNamed(context, AppRoutes.tunaNetraHome);
           } else if (userType == UserType.family) {
-            print('[SPLASH] User is Family, navigating to family home...');
             Navigator.pushReplacementNamed(
               context,
               AppRoutes.familyHome,
               arguments: {'familyId': authService.currentUserId ?? ''},
             );
           } else {
-            print('[SPLASH] User type not found, going to login');
             Navigator.pushReplacementNamed(context, AppRoutes.login);
           }
         } else {
-          print('[SPLASH] User is not authenticated, navigating to login...');
           Navigator.pushReplacementNamed(context, AppRoutes.login);
         }
       }

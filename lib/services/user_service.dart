@@ -26,11 +26,6 @@ class UserService {
     required List<FamilyContact> familyContacts,
   }) async {
     try {
-      print('\n╔════════════════════════════════════════════════════════╗');
-      print('║ [USER SERVICE] saveTunaNetraUser()                    ║');
-      print('╚════════════════════════════════════════════════════════╝');
-
-      print('\n[USER] SUBSTEP 1: Creating user object');
       final user = TunaNetraUser(
         uid: uid,
         email: email,
@@ -40,29 +35,13 @@ class UserService {
         familyContacts: familyContacts,
         createdAt: DateTime.now(),
       );
-      print('   ✅ TunaNetraUser object created');
 
-      print('\n[USER] SUBSTEP 2: Converting user to map (toMap)');
       final userMap = user.toMap();
       // Jika tidak ada family contacts, jangan sertakan field tersebut di Firestore
       if (familyContacts.isEmpty) {
         userMap.remove('familyContacts');
-        print('   ➖ Omitting empty familyContacts from Firestore write');
       }
-      print('   ✅ User converted to Firestore-compatible map');
-      print('   Data keys: ${userMap.keys.join(', ')}');
 
-      print('\n[USER] SUBSTEP 3: Preparing Firestore write operation');
-      print('   Collection: users');
-      print('   Document ID: $uid');
-      print('   Email: $email');
-      print('   Name: $name');
-      print('   Phone: $phoneNumber');
-      print('   Pairing Code: $pairingCode');
-      print('   Family Contacts: ${familyContacts.length}');
-
-      print('\n[USER] SUBSTEP 4: Writing user document to Firestore');
-      print('   ⏱️  Starting write operation...');
       final uploadStart = DateTime.now();
 
       await _firestore
@@ -73,47 +52,23 @@ class UserService {
             const Duration(seconds: 60),
             onTimeout: () {
               final duration = DateTime.now().difference(uploadStart).inSeconds;
-              print('   ⏱️  TIMEOUT after ${duration}s!');
               throw Exception(
-                '💥 Firestore write timeout (60s) - backend tidak merespons',
+                'Firestore write timeout (${duration}s) - backend tidak merespons',
               );
             },
           );
 
-      final uploadTime = DateTime.now().difference(uploadStart).inSeconds;
-      print('   ✅ Write completed in ${uploadTime}s');
-
-      print('\n[USER] SUBSTEP 5: Verifying document was created');
       final verifyDoc = await _firestore.collection('users').doc(uid).get();
       if (!verifyDoc.exists) {
         throw Exception(
           'Document write returned success but document not found',
         );
       }
-      print('   ✅ Document verified in Firestore');
-
-      print('\n✅ [USER SERVICE] saveTunaNetraUser() COMPLETE');
-      print('   Document path: users/$uid\n');
     } on FirebaseException catch (fe) {
-      print('\n❌ [USER SERVICE] Firebase Exception');
-      print('   Code: ${fe.code}');
-      print('   Message: ${fe.message}');
-      print('   Possible causes:');
-      print('   - Firestore database not created');
-      print('   - Security rules blocking write');
-      print('   - Network connectivity issue\n');
       throw Exception('Firestore error: ${fe.message ?? fe.code}');
-    } on TimeoutException catch (te) {
-      print('\n❌ [USER SERVICE] Timeout Exception');
-      print('   Message: ${te.message}');
-      print('   Possible causes:');
-      print('   - Firestore backend not responding');
-      print('   - Network too slow or unstable\n');
+    } on TimeoutException catch (_) {
       throw Exception('Write timeout - check network connection');
     } catch (e) {
-      print('\n❌ [USER SERVICE] Unexpected Error');
-      print('   Type: ${e.runtimeType}');
-      print('   Message: $e\n');
       rethrow;
     }
   }
@@ -141,13 +96,6 @@ class UserService {
         isEmailVerified: isEmailVerified,
       );
 
-      print('📦 Preparing Family user data for Firestore...');
-      print('   uid: $uid');
-      print('   email: $email');
-      print('   name: $name');
-      print('   pairedUserUid: $pairedUserUid');
-
-      print('📤 Uploading to Firestore (collection: users, doc: $uid)...');
       final uploadStart = DateTime.now();
 
       await _firestore
@@ -158,24 +106,12 @@ class UserService {
             const Duration(seconds: 60),
             onTimeout: () {
               final duration = DateTime.now().difference(uploadStart).inSeconds;
-              print('⏱️ Firestore upload timed out after ${duration}s');
               throw Exception(
-                'Firestore save timeout (60s) - connection issue',
+                'Firestore save timeout (${duration}s) - connection issue',
               );
             },
           );
-
-      final uploadTime = DateTime.now().difference(uploadStart).inSeconds;
-      print('✅ Family user saved in ${uploadTime}s: $uid');
-      print('   Document path: users/$uid');
     } catch (e) {
-      print('❌ Error saving Family user: $e');
-      print('   Error type: ${e.runtimeType}');
-      print('   Possible causes:');
-      print('   - Firestore database not created in Firebase Console');
-      print('   - Network connectivity issue');
-      print('   - Security rules blocking write operation');
-      print('   - User document already exists');
       throw Exception(
         'Gagal menyimpan data keluarga ke Firestore: ${e.toString()}',
       );
@@ -189,14 +125,11 @@ class UserService {
       final doc = await _firestore.collection('users').doc(uid).get();
 
       if (doc.exists) {
-        print('✅ User data retrieved: $uid');
         return doc.data();
       } else {
-        print('⚠️ User not found: $uid');
         return null;
       }
     } catch (e) {
-      print('❌ Error retrieving user data: $e');
       throw Exception('Gagal mengambil data pengguna: ${e.toString()}');
     }
   }
@@ -212,7 +145,6 @@ class UserService {
       }
       return null;
     } catch (e) {
-      print('❌ Error retrieving TunaNetra user: $e');
       return null;
     }
   }
@@ -228,7 +160,6 @@ class UserService {
       }
       return null;
     } catch (e) {
-      print('❌ Error retrieving Family user: $e');
       return null;
     }
   }
@@ -259,10 +190,8 @@ class UserService {
 
       if (updateData.isNotEmpty) {
         await _firestore.collection('users').doc(uid).update(updateData);
-        print('✅ TunaNetra user updated: $uid');
       }
     } catch (e) {
-      print('❌ Error updating TunaNetra user: $e');
       throw Exception('Gagal update data pengguna: ${e.toString()}');
     }
   }
@@ -290,10 +219,8 @@ class UserService {
           familyName: name,
           familyPhone: phoneNumber,
         );
-        print('✅ Family user updated: $uid');
       }
     } catch (e) {
-      print('❌ Error updating Family user: $e');
       throw Exception('Gagal update data keluarga: ${e.toString()}');
     }
   }
@@ -307,7 +234,6 @@ class UserService {
 
     final connectedUsers = await getTunaNetraUsersByFamilyId(familyUid);
     if (connectedUsers.isEmpty) {
-      print('ℹ️ Tidak ada pengguna terhubung yang perlu disinkronkan');
       return;
     }
 
@@ -355,7 +281,6 @@ class UserService {
 
     if (updatesCount > 0) {
       await batch.commit();
-      print('✅ Synced family info to $updatesCount connected user(s)');
     }
   }
 
@@ -366,10 +291,7 @@ class UserService {
       await _firestore.collection('users').doc(uid).update({
         'isEmailVerified': true,
       });
-
-      print('✅ Email verified: $uid');
     } catch (e) {
-      print('❌ Error verifying email: $e');
       throw Exception('Gagal verifikasi email: ${e.toString()}');
     }
   }
@@ -379,9 +301,7 @@ class UserService {
   Future<void> deleteUser(String uid) async {
     try {
       await _firestore.collection('users').doc(uid).delete();
-      print('✅ User deleted: $uid');
     } catch (e) {
-      print('❌ Error deleting user: $e');
       throw Exception('Gagal menghapus user: ${e.toString()}');
     }
   }
@@ -396,14 +316,10 @@ class UserService {
           .where('userType', isEqualTo: 'family')
           .get();
 
-      final familyUsers = snapshot.docs
+      return snapshot.docs
           .map((doc) => FamilyUser.fromMap(doc.data()))
           .toList();
-
-      print('✅ Found ${familyUsers.length} paired families for: $tunaNetraUid');
-      return familyUsers;
     } catch (e) {
-      print('❌ Error getting paired families: $e');
       throw Exception('Gagal mengambil data keluarga: ${e.toString()}');
     }
   }
@@ -415,37 +331,18 @@ class UserService {
     String familyPairingCode,
   ) async {
     try {
-      print('\n╔════════════════════════════════════════════════════════╗');
-      print('║ [USER SERVICE] getTunaNetraUsersByPairingCode()       ║');
-      print('╚════════════════════════════════════════════════════════╝');
-
       // Normalize pairing code (uppercase untuk konsistensi)
       final normalizedCode = familyPairingCode.toUpperCase().trim();
-      print('🔍 Input pairing code: "$familyPairingCode"');
-      print('🔍 Normalized code: "$normalizedCode"');
 
       // Ambil semua tuna netra users dengan pairing code yang cocok
-      print('🔍 Querying Firestore...');
-      print('   Collection: users');
-      print('   Where: userType == "tunanetra"');
-      print('   Where: pairingCode == "$normalizedCode"');
-
       final snapshot = await _firestore
           .collection('users')
           .where('userType', isEqualTo: 'tunanetra')
           .where('pairingCode', isEqualTo: normalizedCode)
           .get();
 
-      print('✅ Query completed');
-      print('   Documents found: ${snapshot.docs.length}');
-
       final users = snapshot.docs.map((doc) {
         final data = doc.data();
-
-        print('\n📄 Processing document: ${doc.id}');
-        print('   Name: ${data['name']}');
-        print('   Email: ${data['email']}');
-        print('   PairingCode from DB: "${data['pairingCode']}"');
 
         // Parse createdAt
         DateTime createdAt = DateTime.now();
@@ -469,19 +366,8 @@ class UserService {
         };
       }).toList();
 
-      print(
-        '\n✅ Found ${users.length} TunaNetra users with pairing code: $normalizedCode',
-      );
-      if (users.isNotEmpty) {
-        for (int i = 0; i < users.length; i++) {
-          print('   ${i + 1}. ${users[i]['name']} (${users[i]['uid']})');
-        }
-      }
-
       return users;
     } catch (e) {
-      print('❌ Error getting TunaNetra users by pairing code: $e');
-      print('   Error type: ${e.runtimeType}');
       throw Exception('Gagal mengambil data pengguna: ${e.toString()}');
     }
   }
@@ -493,13 +379,6 @@ class UserService {
     String familyId,
   ) async {
     try {
-      print('\n╔════════════════════════════════════════════════════════╗');
-      print('║ [USER SERVICE] getTunaNetraUsersByFamilyId()          ║');
-      print('╚════════════════════════════════════════════════════════╝');
-
-      print('🔍 Step 1: Fetch family user document');
-      print('   Family ID: $familyId');
-
       // Ambil family user document
       final familyDoc = await _firestore
           .collection('users')
@@ -507,18 +386,12 @@ class UserService {
           .get();
 
       if (!familyDoc.exists) {
-        print('❌ Family user tidak ditemukan: $familyId');
         return [];
       }
 
       final familyData = familyDoc.data() as Map<String, dynamic>;
-      print('✅ Family user found');
-      print('   Name: ${familyData['name']}');
-      print('   UserType: ${familyData['userType']}');
 
       // Ambil pairedUserUid atau pairedUserUids
-      print('\n🔍 Step 2: Get paired user UIDs');
-
       final pairedUserUids = <String>[];
       final seenPairedUserUids = <String>{};
 
@@ -527,7 +400,6 @@ class UserService {
         final uid = familyData['pairedUserUid'] as String;
         if (uid.isNotEmpty && seenPairedUserUids.add(uid)) {
           pairedUserUids.add(uid);
-          print('   Found single pairedUserUid: $uid');
         }
       }
 
@@ -539,23 +411,17 @@ class UserService {
             pairedUserUids.add(uid);
           }
         }
-        print('   Found ${uids.length} pairedUserUids: ${uids.join(", ")}');
       }
 
       if (pairedUserUids.isEmpty) {
-        print('⚠️ Tidak ada paired user UIDs ditemukan');
         return [];
       }
-
-      print('\n🔍 Step 3: Fetch TunaNetra users');
-      print('   Total UIDs to fetch: ${pairedUserUids.length}');
 
       // Ambil semua TunaNetra users berdasarkan UIDs
       final users = <Map<String, dynamic>>[];
 
       for (int i = 0; i < pairedUserUids.length; i++) {
         final uid = pairedUserUids[i];
-        print('\n   Fetching user ${i + 1}/${pairedUserUids.length}: $uid');
 
         final userDoc = await _firestore.collection('users').doc(uid).get();
 
@@ -575,13 +441,8 @@ class UserService {
                 });
 
             if (!isStillConnected) {
-              print(
-                '      ⚠️ Skip user karena connectedFamilies sudah tidak berisi family ini',
-              );
               continue;
             }
-
-            print('      ✅ Valid TunaNetra user: ${userData['name']}');
 
             // Parse createdAt
             DateTime createdAt = DateTime.now();
@@ -603,19 +464,12 @@ class UserService {
               'isEmailVerified': userData['isEmailVerified'] ?? false,
               'familyContacts': userData['familyContacts'] ?? [],
             });
-          } else {
-            print('      ⚠️ User bukan TunaNetra: ${userData['userType']}');
           }
-        } else {
-          print('      ❌ User document tidak ditemukan: $uid');
         }
       }
 
-      print('\n✅ Completed: Found ${users.length} TunaNetra users');
       return users;
     } catch (e) {
-      print('❌ Error getting TunaNetra users by family ID: $e');
-      print('   Error type: ${e.runtimeType}');
       throw Exception('Gagal mengambil data pengguna: ${e.toString()}');
     }
   }
@@ -636,7 +490,6 @@ class UserService {
       }
       return null;
     } catch (e) {
-      print('❌ Error getting user type: $e');
       return null;
     }
   }
@@ -648,7 +501,6 @@ class UserService {
       final doc = await _firestore.collection('users').doc(uid).get();
       return doc.exists;
     } catch (e) {
-      print('❌ Error checking user existence: $e');
       return false;
     }
   }
@@ -657,12 +509,10 @@ class UserService {
   /// Test Firestore connection with simple write
   Future<bool> testFirestoreConnection() async {
     try {
-      print('🔍 Testing Firestore connection...');
       final testStart = DateTime.now();
 
       // Try a simple write
       final testDocId = 'test_${DateTime.now().millisecondsSinceEpoch}';
-      print('   Writing test document: $testDocId');
 
       await _firestore
           .collection('_test')
@@ -673,22 +523,13 @@ class UserService {
             onTimeout: () => throw Exception('Write timeout'),
           );
 
-      final writeTime = DateTime.now().difference(testStart).inSeconds;
-      print('✅ Firestore write test successful in ${writeTime}s');
+      final _ = DateTime.now().difference(testStart).inSeconds;
 
       // Try a read
-      final readStart = DateTime.now();
-      final snap = await _firestore.collection('_test').doc(testDocId).get();
-      final readTime = DateTime.now().difference(readStart).inMilliseconds;
-      print('✅ Firestore read test successful in ${readTime}ms');
+      await _firestore.collection('_test').doc(testDocId).get();
 
       return true;
     } catch (e) {
-      print('❌ Firestore connection test FAILED: $e');
-      print('   This indicates Firestore is not accessible');
-      print('   Check: 1) Firestore database exists');
-      print('         2) Security rules allow writes');
-      print('         3) Network connection is stable');
       return false;
     }
   }
@@ -705,10 +546,6 @@ class UserService {
     required String deviceType, // 'android', 'ios', 'web'
   }) async {
     try {
-      print('\n╔════════════════════════════════════════════════════════╗');
-      print('║ [USER SERVICE] registerFamilyDevice()                 ║');
-      print('╚════════════════════════════════════════════════════════╝');
-
       final now = DateTime.now();
       final device = FamilyDevice(
         deviceId: deviceId,
@@ -720,13 +557,6 @@ class UserService {
         lastSeen: now,
       );
 
-      print('📱 Registering device:');
-      print('   Tunanetra UID: $tunanetraUid');
-      print('   Family UID: $familyUid');
-      print('   Device ID: $deviceId');
-      print('   Device Type: $deviceType');
-      print('   Device Name: ${deviceName ?? "Not set"}');
-
       // Simpan ke subcollection connected_family_devices
       await _firestore
           .collection('users')
@@ -735,10 +565,8 @@ class UserService {
           .doc(deviceId)
           .set(device.toMap());
 
-      print('✅ Device registered successfully');
       return deviceId;
     } catch (e) {
-      print('❌ Error registering device: $e');
       throw Exception('Gagal mendaftar device: $e');
     }
   }
@@ -759,10 +587,7 @@ class UserService {
           .collection('connected_family_devices')
           .doc(deviceId)
           .update(updateData);
-
-      print('✅ Device last seen updated: $deviceId');
     } catch (e) {
-      print('❌ Error updating device last seen: $e');
       // Don't throw - ini background task
     }
   }
@@ -772,12 +597,6 @@ class UserService {
     String tunanetraUid,
   ) async {
     try {
-      print('\n╔════════════════════════════════════════════════════════╗');
-      print('║ [USER SERVICE] getConnectedFamilyDevices()            ║');
-      print('╚════════════════════════════════════════════════════════╝');
-
-      print('🔍 Fetching connected devices for: $tunanetraUid');
-
       final snapshot = await _firestore
           .collection('users')
           .doc(tunanetraUid)
@@ -785,19 +604,10 @@ class UserService {
           .orderBy('lastSeen', descending: true)
           .get();
 
-      print('📱 Found ${snapshot.docs.length} connected device(s)');
-
-      final devices = snapshot.docs.map((doc) {
-        final device = FamilyDevice.fromMap(doc.data());
-        print(
-          '   - ${device.deviceName ?? "Unknown"} (${device.deviceType}) | Last seen: ${device.lastSeen.toIso8601String()}',
-        );
-        return device;
+      return snapshot.docs.map((doc) {
+        return FamilyDevice.fromMap(doc.data());
       }).toList();
-
-      return devices;
     } catch (e) {
-      print('❌ Error fetching connected devices: $e');
       return [];
     }
   }
@@ -825,18 +635,13 @@ class UserService {
     String deviceId,
   ) async {
     try {
-      print('🗑️  Removing device: $deviceId');
-
       await _firestore
           .collection('users')
           .doc(tunanetraUid)
           .collection('connected_family_devices')
           .doc(deviceId)
           .delete();
-
-      print('✅ Device removed: $deviceId');
     } catch (e) {
-      print('❌ Error removing device: $e');
       throw Exception('Gagal menghapus device: $e');
     }
   }
@@ -854,10 +659,7 @@ class UserService {
           .collection('connected_family_devices')
           .doc(deviceId)
           .update({'deviceName': newName});
-
-      print('✅ Device name updated: $newName');
     } catch (e) {
-      print('❌ Error updating device name: $e');
       throw Exception('Gagal mengubah nama device: $e');
     }
   }

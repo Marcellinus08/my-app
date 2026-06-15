@@ -25,9 +25,7 @@ class AnalyticsService {
           'initial_distance_km': initialDistanceKm,
         },
       );
-    } catch (e) {
-      print('[ANALYTICS] Failed to log start_navigation: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> logEndNavigation({
@@ -46,9 +44,7 @@ class AnalyticsService {
           'remaining_distance_km': remainingDistanceKm,
         },
       );
-    } catch (e) {
-      print('[ANALYTICS] Failed to log end_navigation: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> logOffRouteDetected({
@@ -63,9 +59,7 @@ class AnalyticsService {
           'distance_to_route_m': distanceToRouteMeters,
         },
       );
-    } catch (e) {
-      print('[ANALYTICS] Failed to log off_route_detected: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> logArrivedDestination({
@@ -82,17 +76,13 @@ class AnalyticsService {
           'route_distance_km': routeDistanceKm,
         },
       );
-    } catch (e) {
-      print('[ANALYTICS] Failed to log arrived_destination: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> logScreenView({required String screenName}) async {
     try {
       await _analytics.logEvent(name: 'screen_view', parameters: {'screen_name': screenName});
-    } catch (e) {
-      print('[ANALYTICS] Failed to log screen_view: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> logFamilyAlert({required String familyId, required String uid, required String message}) async {
@@ -102,8 +92,6 @@ class AnalyticsService {
         'uid': uid,
         'message': message,
       });
-    } catch (e) {
-      print('[ANALYTICS] Failed to log family_alert: $e');
-    }
+    } catch (_) {}
   }
 }

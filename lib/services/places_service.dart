@@ -20,9 +20,6 @@ class PlacesService {
   Future<List<PlaceModel>> getAllPlaces() async {
     try {
       final currentUid = _auth.currentUser?.uid;
-      print(
-        '[PLACES] Fetching public places and private places for $currentUid',
-      );
       final places = <PlaceModel>[];
       final seenIds = <String>{};
       final publicSnapshot = await _db
@@ -38,9 +35,7 @@ class PlacesService {
             .where('visibility', isNull: true)
             .get();
         _addPlacesFromSnapshot(legacyPublicSnapshot, places, seenIds);
-      } catch (e) {
-        print('[PLACES] Legacy public places query skipped: $e');
-      }
+      } catch (_) {}
 
       if (places.isEmpty) {
         try {
@@ -51,9 +46,7 @@ class PlacesService {
             seenIds,
             currentUid: currentUid,
           );
-        } catch (e) {
-          print('[PLACES] All places fallback query skipped: $e');
-        }
+        } catch (_) {}
       }
 
       if (currentUid != null) {
@@ -70,10 +63,8 @@ class PlacesService {
         (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
       );
 
-      print('[PLACES] ✅ Fetched ${places.length} places');
       return places;
     } catch (e) {
-      print('[PLACES] ❌ Error fetching all places: $e');
       rethrow;
     }
   }
@@ -100,22 +91,19 @@ class PlacesService {
 
       try {
         places.add(PlaceModel.fromFirestore(data, doc.id));
-      } catch (e) {
-        print('[PLACES] Skipping invalid place ${doc.id}: $e');
-      }
+      } catch (_) {}
     }
   }
 
   /// Get places by category
   Future<List<PlaceModel>> getPlacesByCategory(String category) async {
     try {
-      print('[PLACES] Fetching places in category: $category');
       final QuerySnapshot snapshot = await _db
           .collection(_collectionName)
           .where('category', isEqualTo: category)
           .get();
 
-      final places = snapshot.docs
+      return snapshot.docs
           .map(
             (doc) => PlaceModel.fromFirestore(
               doc.data() as Map<String, dynamic>,
@@ -123,11 +111,7 @@ class PlacesService {
             ),
           )
           .toList();
-
-      print('[PLACES] ✅ Found ${places.length} places in category: $category');
-      return places;
     } catch (e) {
-      print('[PLACES] ❌ Error fetching places by category: $e');
       rethrow;
     }
   }
@@ -135,26 +119,20 @@ class PlacesService {
   /// Get place by ID
   Future<PlaceModel?> getPlaceById(String placeId) async {
     try {
-      print('[PLACES] Fetching place by ID: $placeId');
       final DocumentSnapshot doc = await _db
           .collection(_collectionName)
           .doc(placeId)
           .get();
 
       if (!doc.exists) {
-        print('[PLACES] ⚠️ Place not found: $placeId');
         return null;
       }
 
-      final place = PlaceModel.fromFirestore(
+      return PlaceModel.fromFirestore(
         doc.data() as Map<String, dynamic>,
         doc.id,
       );
-
-      print('[PLACES] ✅ Found place: ${place.name}');
-      return place;
     } catch (e) {
-      print('[PLACES] ❌ Error fetching place by ID: $e');
       rethrow;
     }
   }
@@ -162,14 +140,13 @@ class PlacesService {
   /// Search places by name
   Future<List<PlaceModel>> searchPlacesByName(String query) async {
     try {
-      print('[PLACES] Searching places with query: $query');
       final QuerySnapshot snapshot = await _db
           .collection(_collectionName)
           .where('name', isGreaterThanOrEqualTo: query)
           .where('name', isLessThan: query + 'z')
           .get();
 
-      final places = snapshot.docs
+      return snapshot.docs
           .map(
             (doc) => PlaceModel.fromFirestore(
               doc.data() as Map<String, dynamic>,
@@ -177,11 +154,7 @@ class PlacesService {
             ),
           )
           .toList();
-
-      print('[PLACES] ✅ Found ${places.length} results for: $query');
-      return places;
-    } catch (e) {
-      print('[PLACES] ❌ Error searching places: $e');
+    } catch (_) {
       return [];
     }
   }
@@ -189,14 +162,13 @@ class PlacesService {
   /// Get top rated places
   Future<List<PlaceModel>> getTopRatedPlaces({int limit = 10}) async {
     try {
-      print('[PLACES] Fetching top rated places (limit: $limit)...');
       final QuerySnapshot snapshot = await _db
           .collection(_collectionName)
           .orderBy('rating', descending: true)
           .limit(limit)
           .get();
 
-      final places = snapshot.docs
+      return snapshot.docs
           .map(
             (doc) => PlaceModel.fromFirestore(
               doc.data() as Map<String, dynamic>,
@@ -204,11 +176,7 @@ class PlacesService {
             ),
           )
           .toList();
-
-      print('[PLACES] ✅ Found ${places.length} top rated places');
-      return places;
-    } catch (e) {
-      print('[PLACES] ❌ Error fetching top rated places: $e');
+    } catch (_) {
       return [];
     }
   }
@@ -216,15 +184,12 @@ class PlacesService {
   /// Add new place (for admin/development)
   Future<String> addPlace(PlaceModel place) async {
     try {
-      print('[PLACES] Adding new place: ${place.name}');
       final docRef = await _db
           .collection(_collectionName)
           .add(place.toFirestore());
 
-      print('[PLACES] ✅ Place added with ID: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      print('[PLACES] ❌ Error adding place: $e');
       rethrow;
     }
   }
@@ -232,12 +197,8 @@ class PlacesService {
   /// Update place
   Future<void> updatePlace(String placeId, Map<String, dynamic> updates) async {
     try {
-      print('[PLACES] Updating place: $placeId');
       await _db.collection(_collectionName).doc(placeId).update(updates);
-
-      print('[PLACES] ✅ Place updated: $placeId');
     } catch (e) {
-      print('[PLACES] ❌ Error updating place: $e');
       rethrow;
     }
   }
@@ -245,12 +206,8 @@ class PlacesService {
   /// Delete place
   Future<void> deletePlace(String placeId) async {
     try {
-      print('[PLACES] Deleting place: $placeId');
       await _db.collection(_collectionName).doc(placeId).delete();
-
-      print('[PLACES] ✅ Place deleted: $placeId');
     } catch (e) {
-      print('[PLACES] ❌ Error deleting place: $e');
       rethrow;
     }
   }
@@ -258,7 +215,6 @@ class PlacesService {
   /// Get categories available
   Future<List<String>> getAvailableCategories() async {
     try {
-      print('[PLACES] Fetching available categories...');
       final QuerySnapshot snapshot = await _db
           .collection(_collectionName)
           .get();
@@ -271,10 +227,8 @@ class PlacesService {
         }
       }
 
-      print('[PLACES] ✅ Found ${categories.length} categories');
       return categories.toList();
-    } catch (e) {
-      print('[PLACES] ❌ Error fetching categories: $e');
+    } catch (_) {
       return [];
     }
   }

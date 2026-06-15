@@ -212,8 +212,6 @@ class NotificationService {
     await _handleLocalNotificationLaunchDetails();
 
     FirebaseMessaging.onMessage.listen((message) {
-      debugPrint('[NotificationService] FCM FOREGROUND');
-      debugPrint('[NotificationService] payload data: ${message.data}');
       if (_isSosMessage(message)) {
         debugPrint('SOS FCM received');
         final data = Map<String, dynamic>.from(message.data);
@@ -222,8 +220,6 @@ class NotificationService {
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
-      debugPrint('[NotificationService] FCM CLICK BACKGROUND');
-      debugPrint('[NotificationService] payload data: ${message.data}');
       if (_isSosMessage(message)) {
         debugPrint('full-screen notification clicked');
         _scheduleSosNavigationFromData(Map<String, dynamic>.from(message.data));
@@ -231,8 +227,6 @@ class NotificationService {
     });
 
     _messaging.getInitialMessage().then((message) {
-      debugPrint('[NotificationService] FCM CLICK TERMINATED');
-      debugPrint('[NotificationService] payload data: ${message?.data}');
       if (message != null && _isSosMessage(message)) {
         debugPrint('full-screen notification clicked');
         _scheduleSosNavigationFromData(
@@ -276,7 +270,7 @@ class NotificationService {
         return;
       }
 
-      debugPrint('[NotificationService] FCM token berhasil didapat: $token');
+      debugPrint('[NotificationService] FCM token berhasil didapat');
       await saveFcmToken(token);
       listenTokenRefresh();
     } catch (e, stackTrace) {
@@ -372,10 +366,7 @@ class NotificationService {
       'updatedAt': FieldValue.serverTimestamp(),
     });
 
-    debugPrint(
-      '[NotificationService] FCM token berhasil disimpan: '
-      'users/${user.uid}/fcmTokens/$token',
-    );
+    debugPrint('[NotificationService] FCM token berhasil disimpan');
   }
 
   void listenTokenRefresh() {
@@ -385,7 +376,7 @@ class NotificationService {
     }
 
     _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((token) async {
-      debugPrint('[NotificationService] FCM token refresh diterima: $token');
+      debugPrint('[NotificationService] FCM token refresh diterima');
       await saveFcmToken(token);
     });
 
@@ -461,8 +452,6 @@ class NotificationService {
     final payload = response?.payload;
 
     if (details?.didNotificationLaunchApp == true && payload != null) {
-      debugPrint('[NotificationService] local notification launch details');
-      debugPrint('[NotificationService] local payload: $payload');
       final data = parseNotificationPayload(payload);
       if (data == null || data['type'] != 'sos') return;
       debugPrint('full-screen notification clicked');
@@ -617,8 +606,6 @@ class NotificationService {
   ) async {
     if (kIsWeb) return;
     if (data['type'] != 'sos') return;
-
-    debugPrint('[NotificationService] background SOS payload data: $data');
 
     final plugin = FlutterLocalNotificationsPlugin();
     const initializationSettingsAndroid = AndroidInitializationSettings(
@@ -1018,12 +1005,10 @@ class NotificationService {
   Future<bool> _isCurrentUserFamily(String uid) async {
     final userDoc = await _firestore.collection('users').doc(uid).get();
     if (!userDoc.exists) {
-      debugPrint('[NotificationService] users/$uid tidak ditemukan');
       return false;
     }
 
     final userType = userDoc.data()?['userType'] as String?;
-    debugPrint('[NotificationService] Firestore userType: $userType');
     return _isFamilyUserType(userType);
   }
 

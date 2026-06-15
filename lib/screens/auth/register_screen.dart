@@ -376,7 +376,6 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     // Validate other fields
     if (!_penggunaFormKey.currentState!.validate()) {
-      print('❌ [UI] Form validation failed - fields are empty or invalid');
       return;
     }
 
@@ -391,19 +390,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       final name = _userNameController.text.trim();
       final phone = _userPhoneController.text.trim();
 
-      print('\n╔═══════════════════════════════════════════════════════╗');
-      print('║ [PENGGUNA REGISTRATION] NEW FLOW                     ║');
-      print('║ Step 1: Create Auth                                  ║');
-      print('║ Step 2: Wait for Email Verification                  ║');
-      print('║ Step 3: Save Data to Firestore                       ║');
-      print('╚═══════════════════════════════════════════════════════╝');
-
       // ===== STEP 1: Create Auth User + Send Verification Email =====
-      print('\n[UI] STEP 1: Creating Firebase account...');
-      print('   Email: $email');
-      print('   Name: $name');
-      print('   Phone: $phone');
-
       final user = await _authService.registerWithEmailPasswordAndVerification(
         email: email,
         password: password,
@@ -417,17 +404,8 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
       provisionalAccountCreated = true;
 
-      print('\n✅ [UI] Firebase account created');
-      print('   UID: ${user.uid}');
-      print('   Email: ${user.email}');
-      print('   ⏳ Verification email sent - waiting for user to verify...');
-
       // ===== STEP 2: Generate Pairing Code (before waiting) =====
-      print(
-        '\n[UI] Generating pairing code (will be saved after verification)...',
-      );
       String pairingCode = _pairingService.generatePairingCode();
-      print('   Pairing code: $pairingCode');
 
       await _pendingRegistrationService.save(
         PendingRegistration(
@@ -446,10 +424,6 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
 
       // ===== STEP 3: Wait for Email Verification =====
-      print(
-        '\n[UI] STEP 2: Waiting for email verification (max 10 minutes)...',
-      );
-
       // Using optimized defaults: 2s polling interval, 300 attempts = 10 minutes
       final verified = await _authService
           .waitForEmailVerificationWithLongPolling(
@@ -476,11 +450,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       }
       emailVerified = true;
 
-      print('\n✅ [UI] Email verification confirmed!');
-
       // ===== STEP 4: Save Data to Firestore (AFTER verification) =====
-      print('\n[UI] STEP 3: Saving user data to Firestore...');
-
       await _runFinalizationStep(
         () => _authService.saveUserDataToFirestore(
           uid: user.uid,
@@ -491,13 +461,10 @@ class _RegisterScreenState extends State<RegisterScreen>
         ),
       );
 
-      print('\n[UI] Saving pairing code to Firestore...');
       await _runFinalizationStep(
         () => _pairingService.savePairingCode(user.uid, pairingCode),
       );
-      print('✅ Pairing code saved');
 
-      print('\n[UI] Saving Pengguna data...');
       await _runFinalizationStep(
         () => _userService.saveTunaNetraUser(
           uid: user.uid,
@@ -508,14 +475,11 @@ class _RegisterScreenState extends State<RegisterScreen>
           familyContacts: [],
         ),
       );
-      print('✅ Family contact saved');
       await _pendingRegistrationService.clear();
 
       if (mounted) {
         await _showRegistrationSuccess();
       }
-
-      print('\n✅ [PENGGUNA REGISTRATION] COMPLETE\n');
     } on PairingException catch (e) {
       if (mounted) {
         _closeVerificationDialogIfOpen();
@@ -526,11 +490,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         );
       }
     } catch (e) {
-      print('\n❌ [UI] REGISTRATION FAILED');
-      print('Error: $e\n');
-
       if (mounted) {
-        // Try to close dialog if still open
         _closeVerificationDialogIfOpen();
       }
 
@@ -559,7 +519,6 @@ class _RegisterScreenState extends State<RegisterScreen>
   // ========== KELUARGA REGISTRATION ==========
   Future<void> _handleKeluargaRegister() async {
     if (!_keluargaFormKey.currentState!.validate()) {
-      print('❌ Form validation failed');
       return;
     }
 
@@ -572,8 +531,6 @@ class _RegisterScreenState extends State<RegisterScreen>
       final pairingCode = _familyPairingCodeController.text
           .toUpperCase()
           .trim();
-      print('🔄 [Keluarga] Verifying pairing code: $pairingCode');
-
       // Verify pairing code first
       final pairedUserInfo = await _pairingService.verifyPairingCode(
         pairingCode,
@@ -582,13 +539,8 @@ class _RegisterScreenState extends State<RegisterScreen>
         throw Exception('Kode pairing tidak valid atau sudah digunakan');
       }
 
-      print('✅ [Keluarga] Pairing code verified');
-
       final email = _familyEmailController.text.trim();
       final password = _familyPasswordController.text;
-      print(
-        '📧 [Keluarga] Creating account and sending verification email to: $email',
-      );
 
       final user = await _authService.registerWithEmailPasswordAndVerification(
         email: email,
@@ -617,9 +569,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         ),
       );
 
-      print('✅ [Keluarga] Account created: ${user.uid}');
-
-      print('⏳ [Keluarga] Waiting for email verification...');
       final verified = await _authService
           .waitForEmailVerificationWithLongPolling(
             isCancelled: () => _verificationCancelled,
@@ -657,9 +606,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           verifiedPairingInfo['name'] ??
           pairedUserInfo['name'] ??
           'pengguna TunaNetra';
-      print('[Keluarga] Pairing target confirmed: $targetName');
 
-      print('🔄 [Keluarga] Saving Keluarga data...');
       final familyName = _familyNameController2.text.trim();
       final familyPhone = _familyPhoneController2.text.trim();
 
@@ -675,13 +622,11 @@ class _RegisterScreenState extends State<RegisterScreen>
         ),
       );
 
-      print('🔄 [Keluarga] Sending pairing request to Pengguna...');
       await _pairingService.createPairingRequest(
         familyUid: user.uid,
         pairingCode: pairingCode,
       );
 
-      print('✅ Registration complete!');
       await _pendingRegistrationService.clear();
 
       if (mounted) {
