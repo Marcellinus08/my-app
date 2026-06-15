@@ -615,6 +615,10 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen>
         text.contains('hentikan') ||
         text.contains('stop')) {
       if (_isSpeaking) await _toggleSpeech();
+      await _ttsService.speak(
+        'Panduan dihentikan.',
+        priority: TtsPriority.normal,
+      );
       return true;
     }
     if (text.contains('kembali')) {
@@ -657,8 +661,6 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen>
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 2, 20, 24),
                 children: [
-                  _buildVoiceHintCard(),
-                  const SizedBox(height: 10),
                   _buildIntroduction(),
                   const SizedBox(height: 10),
                   for (final section in widget.guide.sections) ...[
