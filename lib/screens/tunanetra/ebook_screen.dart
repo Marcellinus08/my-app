@@ -255,6 +255,7 @@ class _EbookScreenState extends State<EbookScreen>
     startHomeVoiceCommandListener(
       openingAnnouncement:
           'Buku Panduan. Sepuluh topik tersedia. Ucapkan Topik 1 hingga Topik 10 untuk membuka topik.',
+      pageName: 'Buku Panduan',
       onCommand: _handleVoiceCommand,
     );
   }
@@ -591,6 +592,7 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen>
     startHomeVoiceCommandListener(
       openingAnnouncement:
           '${widget.guide.title}. Ucapkan Dengarkan untuk mendengarkan panduan ini.',
+      pageName: widget.guide.title,
       onCommand: _handleVoiceCommand,
     );
   }

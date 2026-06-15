@@ -24,6 +24,7 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
     super.initState();
     startHomeVoiceCommandListener(
       openingAnnouncement: 'Halaman pengaturan dibuka',
+      pageName: 'Pengaturan',
       onCommand: _handleSettingsVoiceCommand,
     );
   }
@@ -69,6 +70,7 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
     if (!mounted) return;
     startHomeVoiceCommandListener(
       openingAnnouncement: 'Kembali ke pengaturan',
+      pageName: 'Pengaturan',
       onCommand: _handleSettingsVoiceCommand,
     );
   }

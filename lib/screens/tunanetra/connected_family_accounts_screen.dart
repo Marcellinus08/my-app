@@ -30,6 +30,7 @@ class _ConnectedFamilyAccountsScreenState
     _cleanupDuplicates();
     startHomeVoiceCommandListener(
       openingAnnouncement: 'Halaman akun keluarga dibuka',
+      pageName: 'Akun Keluarga',
       onCommand: _handleVoiceCommand,
     );
   }

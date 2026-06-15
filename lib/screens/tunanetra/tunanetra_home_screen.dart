@@ -339,6 +339,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       await speakSafe("Membuka pengaturan");
       if (!mounted) return;
       Navigator.pushNamed(context, AppRoutes.tunaNetraSettings);
+    } else if (TunaNetraVoiceCommands.isPageStatusCommand(command)) {
+      await speakSafe("Anda sedang berada di halaman utama");
     } else {
       await speakSafe("Perintah tidak dikenali");
     }
@@ -419,6 +421,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         text.contains("smartcane") ||
         text.contains("smarthcane") ||
         text.contains("pengaturan") ||
+        TunaNetraVoiceCommands.isPageStatusCommand(text) ||
         TunaNetraVoiceCommands.isSosCommand(text);
   }
 

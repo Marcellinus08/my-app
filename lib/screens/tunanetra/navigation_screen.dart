@@ -47,6 +47,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   final STTService _sttService = STTService();
   bool _hasSpoken = false;
   bool _isSpeaking = false;
+  bool _suppressTtsStopOnDispose = false;
   int _localSpeechGeneration = 0;
   bool _navigationSttActive = false;
   bool _navigationSttStarting = false;
@@ -341,6 +342,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     await _stopNavigationStt();
 
     if (TunaNetraVoiceCommands.isHomeCommand(cleanedCommand)) {
+      _suppressTtsStopOnDispose = true;
       await speakSafe('Membuka halaman utama');
       if (!mounted) return;
       Navigator.of(
@@ -372,6 +374,18 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (cleanedCommand.contains('hentikan')) {
       await speakSafe('Navigasi dihentikan');
       await _endNavigationSession();
+      return;
+    }
+
+    if (TunaNetraVoiceCommands.isPageStatusCommand(cleanedCommand)) {
+      await speakSafe('Anda sedang berada di halaman Navigasi');
+      return;
+    }
+
+    if (TunaNetraVoiceCommands.isBackCommand(cleanedCommand)) {
+      _suppressTtsStopOnDispose = true;
+      if (!mounted) return;
+      Navigator.of(context).pop();
       return;
     }
 
@@ -2338,7 +2352,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       ..removeListener(_onLocationAnimationTick)
       ..dispose();
     unawaited(_liveTrackingService.stopNavigationTracking());
-    unawaited(_ttsService.stop());
+    if (!_suppressTtsStopOnDispose) unawaited(_ttsService.stop());
     _stopNavigationStt();
     super.dispose();
   }

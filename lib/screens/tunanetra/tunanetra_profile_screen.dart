@@ -42,6 +42,7 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
     _loadUserData();
     startHomeVoiceCommandListener(
       openingAnnouncement: 'Halaman profil dibuka',
+      pageName: 'Profil',
       onCommand: _handleVoiceCommand,
     );
   }

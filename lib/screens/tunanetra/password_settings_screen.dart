@@ -24,6 +24,7 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
     if (widget.enableVoice) {
       startHomeVoiceCommandListener(
         openingAnnouncement: 'Halaman kata sandi dibuka',
+        pageName: 'Kata Sandi',
         onCommand: _handleVoiceCommand,
       );
     }

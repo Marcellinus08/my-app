@@ -57,6 +57,15 @@ class TunaNetraVoiceCommands {
     return asksToReconnect && mentionsCane;
   }
 
+  static bool isBackCommand(String command) {
+    return command.toLowerCase().contains('kembali');
+  }
+
+  static bool isPageStatusCommand(String command) {
+    final text = command.toLowerCase();
+    return text.contains('status halaman') || text.contains('halaman apa');
+  }
+
   static bool claimSosTrigger({
     Duration cooldown = const Duration(seconds: 5),
   }) {
@@ -75,6 +84,7 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
   final STTService _homeCommandSttService = STTService();
   final TTSService _homeCommandTtsService = TTSService();
   late final String _screenTtsKey = 'screen-tts-${identityHashCode(this)}';
+  String? _pageName;
   bool _isHomeCommandSpeaking = false;
   bool _hasHandledHomeCommand = false;
   bool _homeCommandListenerActive = false;
@@ -86,8 +96,10 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
   void startHomeVoiceCommandListener({
     bool isHomePage = false,
     String? openingAnnouncement,
+    String? pageName,
     Future<bool> Function(String command)? onCommand,
   }) {
+    _pageName = pageName;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _homeCommandListenerEnabled = true;
@@ -177,6 +189,14 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
               _handleSosCommand();
               return;
             }
+            if (TunaNetraVoiceCommands.isBackCommand(text) && !isHomePage) {
+              _handleBackVoiceCommand();
+              return;
+            }
+            if (TunaNetraVoiceCommands.isPageStatusCommand(text)) {
+              _handlePageStatusVoiceCommand();
+              return;
+            }
             if (TunaNetraVoiceCommands.isHomeCommand(text)) {
               _handleHomeVoiceCommand(isHomePage: isHomePage);
             }
@@ -191,6 +211,16 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
 
         if (TunaNetraVoiceCommands.isSosCommand(text)) {
           _handleSosCommand();
+          return;
+        }
+
+        if (TunaNetraVoiceCommands.isBackCommand(text) && !isHomePage) {
+          _handleBackVoiceCommand();
+          return;
+        }
+
+        if (TunaNetraVoiceCommands.isPageStatusCommand(text)) {
+          _handlePageStatusVoiceCommand();
           return;
         }
 
@@ -315,6 +345,41 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
       _isHomeCommandSpeaking = false;
       _hasHandledHomeCommand = false;
     }
+  }
+
+  Future<void> _handleBackVoiceCommand() async {
+    _hasHandledHomeCommand = true;
+    _homeCommandListenerActive = false;
+    await _homeCommandSttService.stopListening();
+
+    _isHomeCommandSpeaking = true;
+    await _homeCommandTtsService.speak(
+      'Kembali',
+      replacementKey: _screenTtsKey,
+    );
+    _isHomeCommandSpeaking = false;
+
+    _homeCommandListenerEnabled = false;
+    await _homeCommandButtonSubscription?.cancel();
+    _homeCommandButtonSubscription = null;
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
+  Future<void> _handlePageStatusVoiceCommand() async {
+    _hasHandledHomeCommand = true;
+    _homeCommandListenerActive = false;
+    await _homeCommandSttService.stopListening();
+
+    final name = _pageName ?? 'ini';
+    _isHomeCommandSpeaking = true;
+    await _homeCommandTtsService.speak(
+      'Anda sedang berada di halaman $name',
+      replacementKey: _screenTtsKey,
+    );
+    _isHomeCommandSpeaking = false;
+    _hasHandledHomeCommand = false;
   }
 
   Future<void> _handleHomeVoiceCommand({required bool isHomePage}) async {
