@@ -47,3 +47,12 @@ app.*.map.json
 # Stress test credentials — jangan di-commit
 stress-test/serviceAccountKey.json
 stress-test/node_modules/
+
+# Sensitive credentials
+android/key.properties
+android/upload-keystore.jks
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+*.jks
+*.keystore
+*firebase-adminsdk*.json
