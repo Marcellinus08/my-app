@@ -62,7 +62,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   bool _isSubmittingPairingRequest = false;
   String _resolvedFamilyId = '';
 
-  // Debug info
   String? _debugPairingCode;
   String? _debugErrorMessage;
   Timer? _liveTrackingFreshnessTimer;
@@ -1833,16 +1832,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     if (value is String) {
       final parsed = double.tryParse(value);
       return parsed?.clamp(0.0, 100.0);
-    }
-    return null;
-  }
-
-  double? _parseDouble(dynamic value) {
-    if (value is num) {
-      return value.toDouble();
-    }
-    if (value is String) {
-      return double.tryParse(value);
     }
     return null;
   }

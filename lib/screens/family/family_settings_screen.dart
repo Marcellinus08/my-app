@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
 import '../../utils/constants.dart';
-import '../../widgets/app_dialog.dart';
 import '../tunanetra/password_settings_screen.dart';
 import 'family_connected_tunanetra_screen.dart';
 import 'family_profile_screen.dart';

@@ -45,7 +45,6 @@ class _NavigationScreenState extends State<NavigationScreen>
   final SosService _sosService = SosService();
   final TTSService _ttsService = TTSService();
   final STTService _sttService = STTService();
-  bool _hasSpoken = false;
   bool _isSpeaking = false;
   bool _suppressTtsStopOnDispose = false;
   int _localSpeechGeneration = 0;
@@ -1159,33 +1158,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     // deteksi keluar jalur, dan riwayat tetap menunggu GPS asli.
   }
 
-  int _findClosestRoutePointIndex(
-    LatLng currentPosition, {
-    required int fromIndex,
-  }) {
-    if (_routePoints.isEmpty) return 0;
-
-    final startIndex = fromIndex.clamp(0, _routePoints.length - 1);
-    var closestIndex = startIndex;
-    var minDistance = double.infinity;
-
-    for (var i = startIndex; i < _routePoints.length; i++) {
-      final routePoint = _routePoints[i];
-      final distance = Geolocator.distanceBetween(
-        currentPosition.latitude,
-        currentPosition.longitude,
-        routePoint.latitude,
-        routePoint.longitude,
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
-      }
-    }
-
-    return closestIndex;
-  }
-
   void _updateRouteProgress(int segmentIndex, double distanceToRouteMeters) {
     if (!_isNavigating || _routePoints.length < 2) return;
 
@@ -1986,20 +1958,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     return "${durationMinutes.round()} menit";
   }
 
-  String _getFusionStatusLabel() {
-    if (_isUsingPredictedPosition) {
-      return 'Mode Prediksi';
-    }
-    return 'GPS Live';
-  }
-
-  Color _getFusionStatusColor() {
-    if (_isUsingPredictedPosition) {
-      return Colors.orange;
-    }
-    return Colors.green;
-  }
-
   bool shouldSaveRoutePoint(LatLng currentPosition) {
     if (_currentTripId == null) return false;
 
@@ -2377,59 +2335,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     AppFeedback.info(
       context,
       'Peta dipusatkan ke posisi Anda.',
-      announce: true,
-    );
-  }
-
-  /// Zoom map to fit all markers (user location + all places)
-  void _zoomToFitAllMarkers() {
-    if (_places.isEmpty) {
-      _safeMoveMap(_userLocation, 18.0);
-      return;
-    }
-
-    // Collect all coordinates
-    List<LatLng> allPoints = [_userLocation];
-    allPoints.addAll(
-      _places.map((place) => LatLng(place.latitude, place.longitude)),
-    );
-
-    // Calculate bounds
-    double minLat = allPoints.first.latitude;
-    double maxLat = allPoints.first.latitude;
-    double minLng = allPoints.first.longitude;
-    double maxLng = allPoints.first.longitude;
-
-    for (var point in allPoints) {
-      minLat = point.latitude < minLat ? point.latitude : minLat;
-      maxLat = point.latitude > maxLat ? point.latitude : maxLat;
-      minLng = point.longitude < minLng ? point.longitude : minLng;
-      maxLng = point.longitude > maxLng ? point.longitude : maxLng;
-    }
-
-    // Calculate center and zoom
-    final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
-    final padding = 0.1; // 10% padding
-    final latRange = (maxLat - minLat) * (1 + padding * 2);
-    final lngRange = (maxLng - minLng) * (1 + padding * 2);
-
-    // Approximate zoom level
-    double zoom = 16;
-    if (latRange > 0.01 || lngRange > 0.01) {
-      zoom = 15;
-    }
-    if (latRange > 0.05 || lngRange > 0.05) {
-      zoom = 13;
-    }
-    if (latRange > 0.1 || lngRange > 0.1) {
-      zoom = 12;
-    }
-
-    _safeMoveMap(center, zoom);
-
-    AppFeedback.info(
-      context,
-      'Menampilkan ${_places.length} tempat dan posisi Anda.',
       announce: true,
     );
   }

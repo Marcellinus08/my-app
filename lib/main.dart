@@ -121,19 +121,6 @@ void main() async {
   );
 }
 
-/// Test Firebase Auth connection
-Future<bool> _testAuthConnection() async {
-  try {
-    print('  Testing Auth.currentUser...');
-    final user = FirebaseAuth.instance.currentUser;
-    print('  Current user: ${user?.email ?? "none (expected for new app)"}');
-    return true;
-  } catch (e) {
-    print('  ❌ Auth connection failed: $e');
-    return false;
-  }
-}
-
 class MyApp extends StatefulWidget {
   final Map<String, dynamic>? initialSosPayload;
   final Map<String, dynamic>? initialSosMonitoringPayload;
