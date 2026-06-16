@@ -421,17 +421,21 @@ async function sendSosNotification(
   let failedCount = 0;
 
   await Promise.all(
-    tokens.map(async (fcmToken) => {
-      try {
-        await sendFcmToToken(
-          env,
-          authAccessToken,
-          fcmToken,
-          createSosFcmPayload(data),
-        );
+    tokens.map(async ({ token, documentName }) => {
+      const result = await sendFcmToToken(
+        env,
+        authAccessToken,
+        token,
+        createSosFcmPayload(data),
+      );
+      if (result.ok) {
         sentCount += 1;
-      } catch {
+      } else {
         failedCount += 1;
+        if (result.stale) {
+          console.log(`[send-sos] Deleting stale FCM token: ${documentName}`);
+          await deleteStaleToken(env, documentName, authAccessToken);
+        }
       }
     }),
   );
@@ -447,7 +451,7 @@ async function getFamilyFcmTokens(
   env: Env,
   familyUid: string,
   accessToken?: string,
-): Promise<string[]> {
+): Promise<{ token: string; documentName: string }[]> {
   const firebaseConfig = getFirebaseConfig(env);
   assertFirebaseConfig(firebaseConfig);
 
@@ -480,15 +484,21 @@ async function getFamilyFcmTokens(
     return [];
   }
 
-  const tokens: string[] = [];
+  const seen = new Set<string>();
+  const tokens: { token: string; documentName: string }[] = [];
   for (const document of body.documents) {
     const fcmToken = readFirestoreStringField(document, 'token');
-    if (fcmToken !== null) {
-      tokens.push(fcmToken);
+    const documentName =
+      isRecord(document) && typeof document.name === 'string'
+        ? document.name
+        : '';
+    if (fcmToken !== null && !seen.has(fcmToken) && documentName.length > 0) {
+      seen.add(fcmToken);
+      tokens.push({ token: fcmToken, documentName });
     }
   }
 
-  return [...new Set(tokens)];
+  return tokens;
 }
 
 async function sendFcmToToken(
@@ -496,7 +506,7 @@ async function sendFcmToToken(
   accessToken: string,
   token: string,
   payload: Record<string, unknown>,
-): Promise<unknown> {
+): Promise<{ ok: true } | { ok: false; stale: boolean }> {
   const firebaseConfig = getFirebaseConfig(env);
   assertFirebaseConfig(firebaseConfig);
 
@@ -504,26 +514,61 @@ async function sendFcmToToken(
     `https://fcm.googleapis.com/v1/projects/` +
     `${encodeURIComponent(firebaseConfig.projectId)}/messages:send`;
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: {
-        token,
-        ...payload,
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        message: {
+          token,
+          ...payload,
+        },
+      }),
+    });
 
-  const body = await readJsonOrText(response);
-  if (!response.ok) {
-    throw new Error(JSON.stringify(body));
+    const body = await readJsonOrText(response);
+    if (!response.ok) {
+      return { ok: false, stale: isStaleTokenError(body) };
+    }
+
+    return { ok: true };
+  } catch {
+    return { ok: false, stale: false };
   }
+}
 
-  return body;
+function isStaleTokenError(body: unknown): boolean {
+  if (!isRecord(body)) return false;
+  const error = body.error;
+  if (!isRecord(error)) return false;
+  const status = error.status;
+  return status === 'UNREGISTERED' || status === 'INVALID_ARGUMENT';
+}
+
+async function deleteStaleToken(
+  env: Env,
+  documentName: string,
+  accessToken: string,
+): Promise<void> {
+  try {
+    const response = await fetch(
+      `https://firestore.googleapis.com/v1/${documentName}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+    if (!response.ok && response.status !== 404) {
+      console.warn(
+        `[send-sos] Failed to delete stale FCM token (status=${response.status})`,
+      );
+    }
+  } catch (e) {
+    console.warn(`[send-sos] deleteStaleToken error: ${e}`);
+  }
 }
 
 function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
