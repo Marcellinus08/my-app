@@ -8,6 +8,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' hide Int64List;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/constants.dart';
 
@@ -264,6 +265,24 @@ class NotificationService {
       await createSosEmergencyChannel();
       await requestNotificationPermission();
 
+      // Deteksi fresh install: SharedPreferences terhapus saat reinstall APK.
+      // Jika belum ada flag untuk user ini, paksa hapus token lama dari FCM
+      // agar token baru yang valid didapatkan (token debug/release bisa berbeda).
+      final prefs = await SharedPreferences.getInstance();
+      final registeredKey = 'fcm_registered_${user.uid}';
+      final alreadyRegistered = prefs.getBool(registeredKey) ?? false;
+
+      if (!alreadyRegistered) {
+        debugPrint(
+          '[NotificationService] Fresh install terdeteksi, memaksa refresh FCM token',
+        );
+        try {
+          await _messaging.deleteToken();
+        } catch (e) {
+          debugPrint('[NotificationService] deleteToken gagal (diabaikan): $e');
+        }
+      }
+
       final token = await _messaging.getToken();
       if (token == null || token.isEmpty) {
         debugPrint('[NotificationService] FCM token null/kosong');
@@ -272,6 +291,12 @@ class NotificationService {
 
       debugPrint('[NotificationService] FCM token berhasil didapat');
       await saveFcmToken(token);
+
+      if (!alreadyRegistered) {
+        await prefs.setBool(registeredKey, true);
+        debugPrint('[NotificationService] FCM token terdaftar untuk install ini');
+      }
+
       listenTokenRefresh();
     } catch (e, stackTrace) {
       debugPrint('[NotificationService] FCM setup gagal: $e');
