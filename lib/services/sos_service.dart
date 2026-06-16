@@ -220,22 +220,12 @@ class SosService {
       final success =
           response.statusCode == 200 && responseBody?['success'] == true;
 
-      // TODO(debug): hapus setelah masalah partial delivery teridentifikasi
-      debugPrint(
-        '[SosService] familyUid=$familyUid '
-        'status=${response.statusCode} '
-        'success=$success '
-        'body=${response.body}',
-      );
-
       if (success) {
         return [1, 0];
       } else {
         return [0, 1];
       }
-    } catch (e) {
-      // TODO(debug): hapus setelah masalah partial delivery teridentifikasi
-      debugPrint('[SosService] familyUid=$familyUid exception: $e');
+    } catch (_) {
       return [0, 1];
     }
   }
