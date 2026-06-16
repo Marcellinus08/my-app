@@ -607,6 +607,19 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
     },
     android: {
       priority: 'HIGH',
+      // notification field diperlukan agar Android menampilkan notifikasi
+      // secara native saat app di background/terminated, tanpa bergantung
+      // pada Flutter background handler yang bisa diblokir battery optimizer.
+      notification: {
+        title,
+        body,
+        channel_id: 'sos_emergency_channel_v3',
+        sound: 'sos_alert',
+        notification_priority: 'PRIORITY_MAX',
+        default_vibrate_timings: false,
+        vibrate_timings_millis: ['0', '1000', '500', '1000', '500', '1500'],
+        visibility: 'PUBLIC',
+      },
     },
     webpush: {
       headers: {
