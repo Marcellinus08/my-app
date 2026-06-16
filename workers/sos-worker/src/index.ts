@@ -262,6 +262,19 @@ async function handleSendSos(request: Request, env: Env): Promise<Response> {
       );
     }
 
+    if (result.sentCount === 0) {
+      console.log(`[send-sos] All ${result.tokenCount} token(s) stale/rejected, no message delivered`);
+      return jsonResponse(
+        {
+          success: false,
+          message: 'All FCM tokens were stale or rejected by FCM',
+          sentCount: result.sentCount,
+          failedCount: result.failedCount,
+        },
+        500,
+      );
+    }
+
     console.log('[send-sos] SOS sent');
     return jsonResponse({
       success: true,

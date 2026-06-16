@@ -43,6 +43,7 @@ final RouteObserver<ModalRoute<void>> routeObserver =
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  WidgetsFlutterBinding.ensureInitialized();
   await _ensureFirebaseInitialized();
   if (message.data['type'] == 'sos') {
     await NotificationService.showBackgroundSosFullScreenNotification(message);

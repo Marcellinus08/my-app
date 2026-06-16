@@ -223,9 +223,14 @@ class SosService {
       if (success) {
         return [1, 0];
       } else {
+        debugPrint(
+          '[SosService] worker gagal familyUid=$familyUid '
+          'status=${response.statusCode} body=${response.body}',
+        );
         return [0, 1];
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[SosService] _sendNotificationToFamily error=$e');
       return [0, 1];
     }
   }
