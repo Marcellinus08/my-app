@@ -8,7 +8,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' hide Int64List;
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/constants.dart';
 
@@ -265,38 +264,32 @@ class NotificationService {
       await createSosEmergencyChannel();
       await requestNotificationPermission();
 
-      // Deteksi fresh install: SharedPreferences terhapus saat reinstall APK.
-      // Jika belum ada flag untuk user ini, paksa hapus token lama dari FCM
-      // agar token baru yang valid didapatkan (token debug/release bisa berbeda).
-      final prefs = await SharedPreferences.getInstance();
-      final registeredKey = 'fcm_registered_${user.uid}';
-      final alreadyRegistered = prefs.getBool(registeredKey) ?? false;
-
-      if (!alreadyRegistered) {
-        debugPrint(
-          '[NotificationService] Fresh install terdeteksi, memaksa refresh FCM token',
-        );
-        try {
-          await _messaging.deleteToken();
-        } catch (e) {
-          debugPrint('[NotificationService] deleteToken gagal (diabaikan): $e');
-        }
-      }
-
+      // Selalu ambil token terbaru dari FCM. Jika token berubah (misal upgrade
+      // debug→release, reinstall, atau FCM rotasi token), saveFcmToken akan
+      // menghapus token lama dan menyimpan yang baru.
+      // Pendekatan ini lebih andal dari SharedPreferences karena SharedPrefs
+      // TIDAK terhapus saat upgrade APK tanpa uninstall.
       final token = await _messaging.getToken();
       if (token == null || token.isEmpty) {
-        debugPrint('[NotificationService] FCM token null/kosong');
-        return;
+        debugPrint('[NotificationService] FCM token null/kosong, coba deleteToken lalu retry');
+        try {
+          await _messaging.deleteToken();
+          final retryToken = await _messaging.getToken();
+          if (retryToken == null || retryToken.isEmpty) {
+            debugPrint('[NotificationService] FCM token masih null setelah retry');
+            return;
+          }
+          await saveFcmToken(retryToken);
+          listenTokenRefresh();
+          return;
+        } catch (e) {
+          debugPrint('[NotificationService] FCM token retry gagal: $e');
+          return;
+        }
       }
 
       debugPrint('[NotificationService] FCM token berhasil didapat');
       await saveFcmToken(token);
-
-      if (!alreadyRegistered) {
-        await prefs.setBool(registeredKey, true);
-        debugPrint('[NotificationService] FCM token terdaftar untuk install ini');
-      }
-
       listenTokenRefresh();
     } catch (e, stackTrace) {
       debugPrint('[NotificationService] FCM setup gagal: $e');
