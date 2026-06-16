@@ -342,11 +342,11 @@ class NotificationService {
       return;
     }
 
-    final tokenRef = _firestore
+    final tokenCollection = _firestore
         .collection('users')
         .doc(user.uid)
-        .collection('fcmTokens')
-        .doc(token);
+        .collection('fcmTokens');
+    final tokenRef = tokenCollection.doc(token);
 
     final tokenDoc = await tokenRef.get();
     if (tokenDoc.exists) {
@@ -355,6 +355,21 @@ class NotificationService {
         '[NotificationService] FCM token sudah ada, updatedAt diperbarui',
       );
       return;
+    }
+
+    // Hapus token lama untuk platform yang sama sebelum simpan yang baru.
+    // Ini terjadi saat FCM me-refresh token — token lama tidak lagi valid
+    // dan harus diganti agar tidak ada duplikat per platform.
+    final staleSnapshot = await tokenCollection
+        .where('platform', isEqualTo: _platformName)
+        .get();
+    for (final doc in staleSnapshot.docs) {
+      if (doc.id != token) {
+        await doc.reference.delete();
+        debugPrint(
+          '[NotificationService] Token lama dihapus: ${doc.id.substring(0, 20)}…',
+        );
+      }
     }
 
     await tokenRef.set({
