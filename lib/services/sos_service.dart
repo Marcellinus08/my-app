@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -62,8 +61,6 @@ class SosService {
 
   Future<SosSendResult> sendSosAlert() async {
     try {
-      debugPrint('[SosService] sendSosAlert started');
-
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
         throw Exception('User belum login');
@@ -73,7 +70,6 @@ class SosService {
       if (idToken == null || idToken.trim().isEmpty) {
         throw Exception('Token autentikasi tidak tersedia');
       }
-      debugPrint('[SosService] Firebase ID Token berhasil didapat');
 
       final uid = currentUser.uid;
       final profile = await getTunaNetraProfile(uid);
@@ -108,10 +104,6 @@ class SosService {
       if (familyUids.isEmpty) {
         throw Exception('Belum ada keluarga terhubung');
       }
-
-      debugPrint(
-        '[SosService] Mengirim SOS ke ${familyUids.length} keluarga',
-      );
 
       final sosId = await saveSosAlert(
         userId: uid,
@@ -157,25 +149,12 @@ class SosService {
         failedCount += result[1];
       }
 
-      debugPrint(
-        '[SosService] SOS result successCount=$successCount '
-        'failedCount=$failedCount',
-      );
-
-      if (successCount == 0) {
-        debugPrint(
-          '[SosService] SOS alert already saved, but push delivery failed '
-          'for every family device.',
-        );
-      }
-
       return SosSendResult(
         sosId: sosId,
         successCount: successCount,
         failedCount: failedCount,
       );
     } catch (e) {
-      debugPrint('[SosService] sendSosAlert failed: $e');
       rethrow;
     }
   }
@@ -193,7 +172,6 @@ class SosService {
     required String currentTripId,
     required String sosId,
   }) async {
-    debugPrint('[SosService] _sendNotificationToFamily → familyUid=$familyUid');
     try {
       final response = await _httpClient
           .post(
@@ -220,17 +198,8 @@ class SosService {
       final success =
           response.statusCode == 200 && responseBody?['success'] == true;
 
-      if (success) {
-        return [1, 0];
-      } else {
-        debugPrint(
-          '[SosService] worker gagal familyUid=$familyUid '
-          'status=${response.statusCode} body=${response.body}',
-        );
-        return [0, 1];
-      }
-    } catch (e) {
-      debugPrint('[SosService] _sendNotificationToFamily error=$e');
+      return success ? [1, 0] : [0, 1];
+    } catch (_) {
       return [0, 1];
     }
   }
@@ -258,9 +227,7 @@ class SosService {
           }
         }
       }
-    } catch (e) {
-      debugPrint('[SosService] getConnectedFamilyUids source1 error: $e');
-    }
+    } catch (_) {}
 
     // Sumber 2: family_members subcollection di dokumen tunaNetra
     try {
@@ -273,9 +240,7 @@ class SosService {
         final uid = _readString(doc.data()['uid']) ?? doc.id;
         if (uid.isNotEmpty) familyUids.add(uid);
       }
-    } catch (e) {
-      debugPrint('[SosService] getConnectedFamilyUids source2 error: $e');
-    }
+    } catch (_) {}
 
     // Sumber 3 & 4: reverse lookup pada family users — dijalankan paralel
     await Future.wait([
@@ -291,11 +256,7 @@ class SosService {
               if (uid.isNotEmpty) familyUids.add(uid);
             }
           })
-          .catchError((Object e) {
-            debugPrint(
-              '[SosService] getConnectedFamilyUids source3 error: $e',
-            );
-          }),
+          .catchError((_) {}),
 
       // Sumber 4: pairedUserUid (legacy, single) di dokumen keluarga
       _firestore
@@ -309,16 +270,9 @@ class SosService {
               if (uid.isNotEmpty) familyUids.add(uid);
             }
           })
-          .catchError((Object e) {
-            debugPrint(
-              '[SosService] getConnectedFamilyUids source4 error: $e',
-            );
-          }),
+          .catchError((_) {}),
     ]);
 
-    debugPrint(
-      '[SosService] Connected family UIDs ditemukan: ${familyUids.length}',
-    );
     return familyUids.toList();
   }
 
@@ -334,10 +288,7 @@ class SosService {
   Future<LatLng?> getCurrentLocationFallback() async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        debugPrint('[SosService] Location service disabled');
-        return null;
-      }
+      if (!serviceEnabled) return null;
 
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -346,7 +297,6 @@ class SosService {
 
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
-        debugPrint('[SosService] Location permission denied: $permission');
         return null;
       }
 
@@ -358,8 +308,7 @@ class SosService {
       );
 
       return LatLng(position.latitude, position.longitude);
-    } catch (e) {
-      debugPrint('[SosService] Location fallback failed: $e');
+    } catch (_) {
       return null;
     }
   }
@@ -408,7 +357,6 @@ class SosService {
           'lng': lng,
           'timestamp': FieldValue.serverTimestamp(),
         });
-
   }
 
   bool _isTunaNetraUserType(String? userType) {

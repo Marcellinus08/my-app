@@ -181,27 +181,11 @@ class NotificationService {
         ),
       );
 
-  static void _debugSosSoundChoice() {
-    if (useCustomSosSound) {
-      debugPrint(
-        '[NotificationService] custom SOS sound digunakan: '
-        '$sosCustomSoundResourceName',
-      );
-    } else {
-      debugPrint(
-        '[NotificationService] custom SOS sound belum tersedia, fallback default sound',
-      );
-    }
-  }
-
   Future<void> initialize({
     required GlobalKey<NavigatorState> navigatorKey,
     bool requestPermission = true,
   }) async {
-    if (_messageHandlersInitialized) {
-      debugPrint('[NotificationService] Message handlers sudah aktif');
-      return;
-    }
+    if (_messageHandlersInitialized) return;
 
     _navigatorKey = navigatorKey;
     _messageHandlersInitialized = true;
@@ -214,7 +198,6 @@ class NotificationService {
 
     FirebaseMessaging.onMessage.listen((message) {
       if (_isSosMessage(message)) {
-        debugPrint('SOS FCM received');
         final data = Map<String, dynamic>.from(message.data);
         unawaited(_handleForegroundSosMessage(message, data));
       }
@@ -222,14 +205,12 @@ class NotificationService {
 
     FirebaseMessaging.onMessageOpenedApp.listen((message) {
       if (_isSosMessage(message)) {
-        debugPrint('full-screen notification clicked');
         _scheduleSosNavigationFromData(Map<String, dynamic>.from(message.data));
       }
     });
 
     _messaging.getInitialMessage().then((message) {
       if (message != null && _isSosMessage(message)) {
-        debugPrint('full-screen notification clicked');
         _scheduleSosNavigationFromData(
           Map<String, dynamic>.from(message.data),
           delay: const Duration(milliseconds: 700),
@@ -245,22 +226,12 @@ class NotificationService {
   }
 
   Future<void> initializeForFamilyUser() async {
-    debugPrint('[NotificationService] initializeForFamilyUser() started');
-
     try {
       final user = _auth.currentUser;
-      if (user == null) {
-        debugPrint('[NotificationService] currentUser null, skip FCM setup');
-        return;
-      }
+      if (user == null) return;
 
       final isFamily = await _isCurrentUserFamily(user.uid);
-      if (!isFamily) {
-        debugPrint(
-          '[NotificationService] User ${user.uid} bukan family, token tidak disimpan',
-        );
-        return;
-      }
+      if (!isFamily) return;
 
       await createSosEmergencyChannel();
       await requestNotificationPermission();
@@ -272,34 +243,25 @@ class NotificationService {
       // TIDAK terhapus saat upgrade APK tanpa uninstall.
       final token = await _messaging.getToken();
       if (token == null || token.isEmpty) {
-        debugPrint('[NotificationService] FCM token null/kosong, coba deleteToken lalu retry');
         try {
           await _messaging.deleteToken();
           final retryToken = await _messaging.getToken();
-          if (retryToken == null || retryToken.isEmpty) {
-            debugPrint('[NotificationService] FCM token masih null setelah retry');
-            return;
-          }
+          if (retryToken == null || retryToken.isEmpty) return;
           await saveFcmToken(retryToken);
           listenTokenRefresh();
           return;
-        } catch (e) {
-          debugPrint('[NotificationService] FCM token retry gagal: $e');
+        } catch (_) {
           return;
         }
       }
 
-      debugPrint('[NotificationService] FCM token berhasil didapat');
       await saveFcmToken(token);
       listenTokenRefresh();
-    } catch (e, stackTrace) {
-      debugPrint('[NotificationService] FCM setup gagal: $e');
-      debugPrint('$stackTrace');
-    }
+    } catch (_) {}
   }
 
   Future<void> requestNotificationPermission() async {
-    final settings = await _messaging.requestPermission(
+    await _messaging.requestPermission(
       alert: true,
       announcement: false,
       badge: true,
@@ -309,21 +271,12 @@ class NotificationService {
       sound: true,
     );
 
-    debugPrint(
-      '[NotificationService] Permission status: '
-      '${settings.authorizationStatus}',
-    );
-
     final androidImplementation = _localNotifications
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
 
-    final androidGranted = await androidImplementation
-        ?.requestNotificationsPermission();
-    debugPrint(
-      '[NotificationService] Android notification permission: $androidGranted',
-    );
+    await androidImplementation?.requestNotificationsPermission();
 
     try {
       final fullScreenGranted = await androidImplementation
@@ -331,15 +284,7 @@ class NotificationService {
       if (fullScreenGranted == false) {
         _fullScreenIntentAllowed = false;
       }
-      debugPrint(
-        '[NotificationService] Android full-screen intent permission: '
-        '$fullScreenGranted',
-      );
-    } catch (e) {
-      debugPrint(
-        '[NotificationService] full-screen intent permission check failed: $e',
-      );
-    }
+    } catch (_) {}
 
     // Request battery optimization exemption so FCM background handler
     // is not killed by Doze mode on release APK.
@@ -354,30 +299,17 @@ class NotificationService {
     try {
       const channel = MethodChannel('com.example.my_app/battery');
       await channel.invokeMethod<void>('requestIgnoreBatteryOptimizations');
-    } catch (e) {
-      // Channel not available (e.g. iOS or older setup) — non-fatal.
-      debugPrint('[NotificationService] battery exemption request: $e');
-    }
+    } catch (_) {}
   }
 
   Future<void> saveFcmToken(String token) async {
     final user = _auth.currentUser;
-    if (user == null) {
-      debugPrint(
-        '[NotificationService] currentUser null, token tidak disimpan',
-      );
-      return;
-    }
+    if (user == null) return;
 
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
     final userType = userDoc.data()?['userType'] as String?;
 
-    if (!_isFamilyUserType(userType)) {
-      debugPrint(
-        '[NotificationService] userType=$userType, token tidak disimpan',
-      );
-      return;
-    }
+    if (!_isFamilyUserType(userType)) return;
 
     final tokenCollection = _firestore
         .collection('users')
@@ -388,9 +320,6 @@ class NotificationService {
     final tokenDoc = await tokenRef.get();
     if (tokenDoc.exists) {
       await tokenRef.update({'updatedAt': FieldValue.serverTimestamp()});
-      debugPrint(
-        '[NotificationService] FCM token sudah ada, updatedAt diperbarui',
-      );
       return;
     }
 
@@ -403,9 +332,6 @@ class NotificationService {
     for (final doc in staleSnapshot.docs) {
       if (doc.id != token) {
         await doc.reference.delete();
-        debugPrint(
-          '[NotificationService] Token lama dihapus: ${doc.id.substring(0, 20)}…',
-        );
       }
     }
 
@@ -417,37 +343,19 @@ class NotificationService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-
-    debugPrint('[NotificationService] FCM token berhasil disimpan');
   }
 
   void listenTokenRefresh() {
-    if (_tokenRefreshSubscription != null) {
-      debugPrint('[NotificationService] Token refresh listener sudah aktif');
-      return;
-    }
+    if (_tokenRefreshSubscription != null) return;
 
     _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((token) async {
-      debugPrint('[NotificationService] FCM token refresh diterima');
       await saveFcmToken(token);
     });
-
-    debugPrint('[NotificationService] Token refresh listener aktif');
   }
 
   Future<void> createSosEmergencyChannel() async {
-    if (kIsWeb) {
-      debugPrint(
-        '[NotificationService] Web detected, skip Android notification channel',
-      );
-      return;
-    }
-
-    if (_localNotificationsInitialized) {
-      return;
-    }
-
-    debugPrint('Creating SOS full-screen and fallback channels');
+    if (kIsWeb) return;
+    if (_localNotificationsInitialized) return;
 
     const initializationSettingsAndroid = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
@@ -459,8 +367,6 @@ class NotificationService {
     await _localNotifications.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (response) {
-        debugPrint('[NotificationService] local notification clicked');
-        debugPrint('[NotificationService] local payload: ${response.payload}');
         _handleLocalNotificationPayload(response.payload);
       },
     );
@@ -488,8 +394,6 @@ class NotificationService {
         ?.createNotificationChannel(silentAndroidChannel);
 
     _localNotificationsInitialized = true;
-    _debugSosSoundChoice();
-    debugPrint('SOS channel created with sound and vibration');
   }
 
   Future<void> createSosNotificationChannel() {
@@ -506,7 +410,6 @@ class NotificationService {
     if (details?.didNotificationLaunchApp == true && payload != null) {
       final data = parseNotificationPayload(payload);
       if (data == null || data['type'] != 'sos') return;
-      debugPrint('full-screen notification clicked');
       final openMode = data['openMode']?.toString();
       if (openMode == 'monitoring') {
         _initialSosMonitoringPayload = _buildSosPayload(
@@ -548,10 +451,7 @@ class NotificationService {
         _readStringFromMap(data, 'sosId') ??
         _readStringFromMap(data, 'alertId') ??
         _readStringFromMap(data, 'id');
-    if (sosId != null && !_shownOneShotSosIds.add(sosId)) {
-      debugPrint('[NotificationService] one-shot SOS already shown: $sosId');
-      return;
-    }
+    if (sosId != null && !_shownOneShotSosIds.add(sosId)) return;
 
     await createSosEmergencyChannel();
     await _showSosNotificationFromData(
@@ -564,11 +464,9 @@ class NotificationService {
     if (kIsWeb) return;
     if (!await _shouldShowSosForCurrentUser(data)) return;
 
-    debugPrint('showing full-screen SOS notification');
     await createSosEmergencyChannel();
 
     if (!_fullScreenIntentAllowed) {
-      debugPrint('fallback notification used');
       await _showSosLocalNotificationFromData(data);
       _startSosAlarmLoop(data);
       return;
@@ -584,11 +482,7 @@ class NotificationService {
         openMode: 'fullscreen',
       );
       _startSosAlarmLoop(data);
-    } catch (e) {
-      debugPrint(
-        '[NotificationService] full-screen SOS notification failed: $e',
-      );
-      debugPrint('fallback notification used');
+    } catch (_) {
       await _showSosLocalNotificationFromData(data);
       _startSosAlarmLoop(data);
     }
@@ -618,9 +512,6 @@ class NotificationService {
     if (kIsWeb) return;
     if (data['type'] != 'sos') return;
 
-    debugPrint('SOS FCM received');
-    debugPrint('showing full-screen SOS notification');
-
     final plugin = FlutterLocalNotificationsPlugin();
     const initializationSettingsAndroid = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
@@ -642,9 +533,7 @@ class NotificationService {
         ),
         openMode: 'fullscreen',
       );
-    } catch (e) {
-      debugPrint('[NotificationService] background full-screen failed: $e');
-      debugPrint('fallback notification used');
+    } catch (_) {
       await _showSosNotificationWithPlugin(
         plugin: plugin,
         data: data,
@@ -675,9 +564,6 @@ class NotificationService {
       data: data,
       details: _buildSosNotificationDetails(),
     );
-
-    debugPrint('Showing SOS notification with sound and vibration');
-    debugPrint('SOS local notification shown');
   }
 
   Future<void> _showSosLocalNotificationFromData(
@@ -699,8 +585,6 @@ class NotificationService {
     final title = _sosNotificationTitle;
     final body = _sosNotificationBody(data);
 
-    debugPrint('Showing SOS notification with sound and vibration');
-
     await _localNotifications.show(
       sosEmergencyNotificationId,
       title,
@@ -708,15 +592,11 @@ class NotificationService {
       details,
       payload: jsonEncode(_buildSosPayload(data, openMode: openMode)),
     );
-
-    debugPrint('SOS local notification shown');
   }
 
   static Future<void> _createSosChannelsForPlugin(
     FlutterLocalNotificationsPlugin plugin,
   ) async {
-    debugPrint('Creating SOS full-screen and fallback channels');
-
     final androidImplementation = plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -731,9 +611,6 @@ class NotificationService {
     await androidImplementation?.createNotificationChannel(
       _buildSosSilentAndroidChannel(),
     );
-
-    _debugSosSoundChoice();
-    debugPrint('SOS channel created with sound and vibration');
   }
 
   static Future<void> _showSosNotificationWithPlugin({
@@ -756,10 +633,7 @@ class NotificationService {
     if (!await _shouldShowSosForCurrentUser(data)) return;
 
     final context = _navigatorKey?.currentContext;
-    if (context == null) {
-      debugPrint('[NotificationService] Navigator context null for SOS dialog');
-      return;
-    }
+    if (context == null || !context.mounted) return;
 
     final userName = _readSosString(message, 'userName') ?? 'Pengguna';
 
@@ -823,7 +697,6 @@ class NotificationService {
   }) {
     final navigator = _navigatorKey?.currentState;
     if (navigator == null) {
-      debugPrint('[NotificationService] Navigator null for SOS navigation');
       if (remainingRetries > 0) {
         Future.delayed(const Duration(milliseconds: 350), () {
           _navigateToFamilyMonitoringFromData(
@@ -857,15 +730,11 @@ class NotificationService {
       'sosData': data,
     };
 
-    debugPrint('Navigating to FamilyMonitoringScreen from SOS');
-    debugPrint('[NotificationService] Navigate to family monitoring: $args');
-
     navigator.pushNamedAndRemoveUntil(
       AppRoutes.familyMonitoring,
       (route) => false,
       arguments: args,
     );
-    debugPrint('[NotificationService] route navigation result: pushed');
   }
 
   void _handleLocalNotificationPayload(
@@ -874,12 +743,9 @@ class NotificationService {
   }) {
     if (payload == null || payload.isEmpty) return;
 
-    debugPrint('SOS notification clicked');
-
     final data = parseNotificationPayload(payload);
     if (data == null || data['type'] != 'sos') return;
 
-    debugPrint('full-screen notification clicked');
     final openMode = data['openMode']?.toString();
     if (openMode == 'fullscreen') {
       _scheduleSosFullScreenNavigation(data, delay: delay);
@@ -913,7 +779,6 @@ class NotificationService {
   }) {
     final navigator = _navigatorKey?.currentState;
     if (navigator == null) {
-      debugPrint('[NotificationService] Navigator null for SOS full-screen');
       if (remainingRetries > 0) {
         Future.delayed(const Duration(milliseconds: 350), () {
           _navigateToSosFullScreen(
@@ -925,7 +790,6 @@ class NotificationService {
       return;
     }
 
-    debugPrint('SOS full-screen opened');
     navigator.pushNamed(
       AppRoutes.sosFullScreen,
       arguments: _buildSosPayload(data),
@@ -938,12 +802,8 @@ class NotificationService {
     _activeSosData = Map<String, dynamic>.from(data);
     _listenActiveSosStatus(data);
 
-    if (_sosAlarmTimer?.isActive == true) {
-      debugPrint('[NotificationService] SOS alarm loop already active');
-      return;
-    }
+    if (_sosAlarmTimer?.isActive == true) return;
 
-    debugPrint('[NotificationService] SOS alarm loop started');
     _sosAlarmTimer = Timer.periodic(sosAlarmRepeatInterval, (_) async {
       final latestData = _activeSosData;
       if (latestData == null || latestData['type'] != 'sos') {
@@ -951,7 +811,6 @@ class NotificationService {
         return;
       }
 
-      debugPrint('[NotificationService] SOS alarm loop cycle');
       await _showSosLocalNotificationFromData(latestData);
     });
   }
@@ -974,7 +833,7 @@ class NotificationService {
     }
 
     if (hadActiveAlarm) {
-      debugPrint('[NotificationService] SOS alarm loop stopped');
+      // alarm stopped
     }
   }
 
@@ -984,23 +843,16 @@ class NotificationService {
   }) async {
     if (kIsWeb) return;
 
-    debugPrint('[NotificationService] SOS notification silenced');
     stopSosAlarmLoop(cancelNotification: false);
     await createSosEmergencyChannel();
     await _localNotifications.cancelAll();
 
-    if (sosResolved) {
-      debugPrint(
-        '[NotificationService] SOS already resolved, notification removed',
-      );
-      return;
-    }
+    if (sosResolved) return;
 
     await _showSosNotificationFromData(
       data,
       details: _sosSilentNotificationDetails,
     );
-    debugPrint('[NotificationService] Silent SOS notification shown');
   }
 
   void _listenActiveSosStatus(Map<String, dynamic> data) {
@@ -1008,12 +860,7 @@ class NotificationService {
         _readStringFromMap(data, 'sosId') ??
         _readStringFromMap(data, 'alertId') ??
         _readStringFromMap(data, 'id');
-    if (sosId == null) {
-      debugPrint(
-        '[NotificationService] SOS id missing, skip resolved listener',
-      );
-      return;
-    }
+    if (sosId == null) return;
 
     _activeSosStatusSubscription?.cancel();
     _activeSosStatusSubscription = _firestore
@@ -1023,16 +870,11 @@ class NotificationService {
         .listen(
           (snapshot) {
             final status = snapshot.data()?['status']?.toString();
-            debugPrint('[NotificationService] active SOS status: $status');
             if (status == 'resolved') {
               stopSosAlarmLoop();
             }
           },
-          onError: (Object error) {
-            debugPrint(
-              '[NotificationService] SOS status listener failed: $error',
-            );
-          },
+          onError: (_) {},
         );
   }
 
@@ -1044,21 +886,15 @@ class NotificationService {
     try {
       final decoded = jsonDecode(payload);
       if (decoded is! Map) return null;
-
-      final data = Map<String, dynamic>.from(decoded);
-      debugPrint('SOS payload parsed');
-      return data;
-    } catch (e) {
-      debugPrint('[NotificationService] local payload decode failed: $e');
+      return Map<String, dynamic>.from(decoded);
+    } catch (_) {
       return null;
     }
   }
 
   Future<bool> _isCurrentUserFamily(String uid) async {
     final userDoc = await _firestore.collection('users').doc(uid).get();
-    if (!userDoc.exists) {
-      return false;
-    }
+    if (!userDoc.exists) return false;
 
     final userType = userDoc.data()?['userType'] as String?;
     return _isFamilyUserType(userType);
@@ -1066,30 +902,18 @@ class NotificationService {
 
   Future<bool> _shouldShowSosForCurrentUser(Map<String, dynamic> data) async {
     final user = _auth.currentUser;
-    if (user == null) {
-      debugPrint('[NotificationService] skip SOS: currentUser null');
-      return false;
-    }
+    if (user == null) return false;
 
     final senderUid = _readStringFromMap(data, 'userId');
-    if (senderUid == user.uid) {
-      debugPrint('[NotificationService] skip SOS: current user is sender');
-      return false;
-    }
+    if (senderUid == user.uid) return false;
 
     final isFamily = await _isCurrentUserFamily(user.uid);
-    if (!isFamily) {
-      debugPrint('[NotificationService] skip SOS: current user is not family');
-      return false;
-    }
+    if (!isFamily) return false;
 
     final familyUid =
         _readStringFromMap(data, 'familyUid') ??
         _readStringFromMap(data, 'familyId');
-    if (familyUid != null && familyUid != user.uid) {
-      debugPrint('[NotificationService] skip SOS: familyUid mismatch');
-      return false;
-    }
+    if (familyUid != null && familyUid != user.uid) return false;
 
     return true;
   }
@@ -1154,15 +978,9 @@ class NotificationService {
   }
 
   String get _platformName {
-    if (kIsWeb) {
-      return 'web';
-    }
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      return 'android';
-    }
-    if (defaultTargetPlatform == TargetPlatform.iOS) {
-      return 'ios';
-    }
+    if (kIsWeb) return 'web';
+    if (defaultTargetPlatform == TargetPlatform.android) return 'android';
+    if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
     return defaultTargetPlatform.name;
   }
 }
