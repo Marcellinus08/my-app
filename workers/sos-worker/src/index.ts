@@ -844,13 +844,68 @@ async function isFamilyPairedWithUser(
     return true;
   }
 
+  // Dokumen di family_members mungkin menggunakan ID yang bukan familyUid,
+  // sehingga lookup langsung bisa gagal. Coba dua cara:
+  // 1. Lookup langsung by ID (cepat, berhasil jika ID = familyUid)
+  // 2. List seluruh subcollection dan cek field uid (fallback)
   const familyMemberDocument = await getFirestoreDocument(
     env,
     `users/${tunaNetraUid}/family_members/${familyUid}`,
     accessToken,
   );
+  if (familyMemberDocument !== null) {
+    return true;
+  }
 
-  return familyMemberDocument !== null;
+  const familyMemberUids = await listFamilyMemberUids(
+    env,
+    tunaNetraUid,
+    accessToken,
+  );
+  return familyMemberUids.includes(familyUid);
+}
+
+async function listFamilyMemberUids(
+  env: Env,
+  tunaNetraUid: string,
+  accessToken: string,
+): Promise<string[]> {
+  const firebaseConfig = getFirebaseConfig(env);
+  assertFirebaseConfig(firebaseConfig);
+
+  const url =
+    `https://firestore.googleapis.com/v1/projects/` +
+    `${encodeURIComponent(firebaseConfig.projectId)}` +
+    `/databases/(default)/documents/users/` +
+    `${encodeURIComponent(tunaNetraUid)}/family_members`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (response.status === 404) return [];
+
+  const body = await readJsonOrText(response);
+  if (!response.ok || !isRecord(body) || !Array.isArray(body.documents)) {
+    return [];
+  }
+
+  const uids: string[] = [];
+  for (const doc of body.documents) {
+    // Coba baca field uid dulu, fallback ke document ID
+    const uidFromField = readFirestoreStringField(doc, 'uid');
+    if (uidFromField) {
+      uids.push(uidFromField);
+      continue;
+    }
+    if (isRecord(doc) && typeof doc.name === 'string') {
+      const parts = doc.name.split('/');
+      const docId = parts[parts.length - 1];
+      if (docId) uids.push(docId);
+    }
+  }
+  return uids;
 }
 
 async function getFirestoreDocument(
