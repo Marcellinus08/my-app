@@ -557,7 +557,9 @@ function isStaleTokenError(body: unknown): boolean {
   const error = body.error;
   if (!isRecord(error)) return false;
   const status = error.status;
-  return status === 'UNREGISTERED' || status === 'INVALID_ARGUMENT';
+  // Hanya UNREGISTERED yang berarti token tidak valid.
+  // INVALID_ARGUMENT bisa berarti payload salah, bukan token stale.
+  return status === 'UNREGISTERED';
 }
 
 
@@ -593,9 +595,9 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
         channel_id: 'sos_emergency_channel_v3',
         sound: 'sos_alert',
         notification_priority: 'PRIORITY_MAX',
-        default_vibrate_timings: false,
-        vibrate_timings_millis: ['0', '1000', '500', '1000', '500', '1500'],
         visibility: 'PUBLIC',
+        default_vibrate_timings: false,
+        vibrate_timings: ['0s', '1s', '0.5s', '1s', '0.5s', '1.5s'],
       },
     },
     webpush: {
