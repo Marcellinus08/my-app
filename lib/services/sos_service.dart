@@ -193,6 +193,7 @@ class SosService {
     required String currentTripId,
     required String sosId,
   }) async {
+    debugPrint('[SosService] _sendNotificationToFamily → familyUid=$familyUid');
     try {
       final response = await _httpClient
           .post(
@@ -218,15 +219,23 @@ class SosService {
       final responseBody = _decodeJsonObject(response.body);
       final success =
           response.statusCode == 200 && responseBody?['success'] == true;
-      final workerSentCount = _readInt(responseBody?['sentCount']);
-      final workerFailedCount = _readInt(responseBody?['failedCount']);
+
+      // TODO(debug): hapus setelah masalah partial delivery teridentifikasi
+      debugPrint(
+        '[SosService] familyUid=$familyUid '
+        'status=${response.statusCode} '
+        'success=$success '
+        'body=${response.body}',
+      );
 
       if (success) {
-        return [workerSentCount ?? 1, workerFailedCount ?? 0];
+        return [1, 0];
       } else {
-        return [0, workerFailedCount ?? 1];
+        return [0, 1];
       }
-    } catch (_) {
+    } catch (e) {
+      // TODO(debug): hapus setelah masalah partial delivery teridentifikasi
+      debugPrint('[SosService] familyUid=$familyUid exception: $e');
       return [0, 1];
     }
   }
