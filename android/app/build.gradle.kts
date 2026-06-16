@@ -49,6 +49,11 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
+            // Explicit false to prevent R8 from stripping Firebase/FCM classes.
+            // Flutter Gradle plugin defaults to false but we make it explicit
+            // to avoid breakage if the default ever changes.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

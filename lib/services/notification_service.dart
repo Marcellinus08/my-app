@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' hide Int64List;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../utils/constants.dart';
@@ -338,6 +339,24 @@ class NotificationService {
       debugPrint(
         '[NotificationService] full-screen intent permission check failed: $e',
       );
+    }
+
+    // Request battery optimization exemption so FCM background handler
+    // is not killed by Doze mode on release APK.
+    await _requestBatteryOptimizationExemption();
+  }
+
+  // Asks Android to exempt this app from battery optimization.
+  // Required so FCM HIGH priority messages reliably wake the background
+  // isolate on release APK; flutter run bypasses this due to debugger.
+  Future<void> _requestBatteryOptimizationExemption() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      const channel = MethodChannel('com.example.my_app/battery');
+      await channel.invokeMethod<void>('requestIgnoreBatteryOptimizations');
+    } catch (e) {
+      // Channel not available (e.g. iOS or older setup) — non-fatal.
+      debugPrint('[NotificationService] battery exemption request: $e');
     }
   }
 
