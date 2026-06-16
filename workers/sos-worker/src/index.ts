@@ -17,6 +17,7 @@ type SosRequestBody = {
   lat?: unknown;
   lng?: unknown;
   batteryLevel?: unknown;
+  smartCaneBatteryLevel?: unknown;
   currentTripId?: unknown;
   sosId?: unknown;
 };
@@ -581,24 +582,16 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
       lat: optionalStringValue(data.lat),
       lng: optionalStringValue(data.lng),
       batteryLevel: optionalStringValue(data.batteryLevel),
+      smartCaneBatteryLevel: optionalStringValue(data.smartCaneBatteryLevel),
       currentTripId: getOptionalString(data.currentTripId) ?? '',
       sosId: getOptionalString(data.sosId) ?? '',
     },
+    // Pesan data-only (tanpa android.notification) agar Flutter background
+    // handler dipanggil dan bisa menampilkan full-screen intent notification.
+    // android.notification akan bypass background handler sehingga tidak ada
+    // popup layar penuh saat HP terkunci.
     android: {
       priority: 'HIGH',
-      // notification field diperlukan agar Android menampilkan notifikasi
-      // secara native saat app di background/terminated, tanpa bergantung
-      // pada Flutter background handler yang bisa diblokir battery optimizer.
-      notification: {
-        title,
-        body,
-        channel_id: 'sos_emergency_channel_v3',
-        sound: 'sos_alert',
-        notification_priority: 'PRIORITY_MAX',
-        visibility: 'PUBLIC',
-        default_vibrate_timings: false,
-        vibrate_timings: ['0s', '1s', '0.5s', '1s', '0.5s', '1.5s'],
-      },
     },
     webpush: {
       headers: {
