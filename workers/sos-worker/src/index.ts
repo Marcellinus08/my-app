@@ -446,8 +446,7 @@ async function sendSosNotification(
       } else {
         failedCount += 1;
         if (result.stale) {
-          console.log(`[send-sos] Deleting stale FCM token: ${documentName}`);
-          await deleteStaleToken(env, documentName, authAccessToken);
+          console.log(`[send-sos] FCM token rejected (UNREGISTERED), dibiarkan — app akan refresh saat dibuka: ${documentName}`);
         }
       }
     }),
@@ -561,28 +560,6 @@ function isStaleTokenError(body: unknown): boolean {
   return status === 'UNREGISTERED' || status === 'INVALID_ARGUMENT';
 }
 
-async function deleteStaleToken(
-  env: Env,
-  documentName: string,
-  accessToken: string,
-): Promise<void> {
-  try {
-    const response = await fetch(
-      `https://firestore.googleapis.com/v1/${documentName}`,
-      {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      },
-    );
-    if (!response.ok && response.status !== 404) {
-      console.warn(
-        `[send-sos] Failed to delete stale FCM token (status=${response.status})`,
-      );
-    }
-  } catch (e) {
-    console.warn(`[send-sos] deleteStaleToken error: ${e}`);
-  }
-}
 
 function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
   const userId = getRequiredString(data.userId);
