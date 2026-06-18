@@ -345,6 +345,7 @@ class SmartCaneStatusNotificationService {
           ? TtsPriority.critical
           : TtsPriority.warning,
       replacementKey: 'smart-cane-hazard',
+      detectedAt: now,
     );
   }
 
@@ -783,6 +784,7 @@ class SmartCaneStatusNotificationService {
     TtsPriority priority = TtsPriority.normal,
     String? replacementKey,
     VoidCallback? onBeforeSpeak,
+    DateTime? detectedAt,
   }) {
     if (priority == TtsPriority.warning || priority == TtsPriority.critical) {
       _announcementGeneration++;
@@ -794,6 +796,10 @@ class SmartCaneStatusNotificationService {
         .then((_) {
           if (generation != _announcementGeneration) {
             return Future<void>.value();
+          }
+          if (detectedAt != null) {
+            // ignore: avoid_print
+            print('[DELAY_TTS] ${DateTime.now().difference(detectedAt).inMilliseconds} ms');
           }
           onBeforeSpeak?.call();
           return _ttsService.speak(

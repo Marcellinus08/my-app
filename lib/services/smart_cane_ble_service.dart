@@ -21,6 +21,11 @@ class SmartCaneBleService extends ChangeNotifier {
   static final Guid _sensorCharacteristicUuid = Guid(
     '0000a002-0000-1000-8000-00805f9b34fb',
   );
+  static final Guid _imuCharacteristicUuid = Guid(
+  '0000a004-0000-1000-8000-00805f9b34fb',
+  );
+
+  
 
   StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
   StreamSubscription<List<int>>? _sensorSubscription;
@@ -30,6 +35,10 @@ class SmartCaneBleService extends ChangeNotifier {
       StreamController<SmartCaneBatteryData>.broadcast();
   final StreamController<SmartCaneButtonEvent> _buttonEventController =
       StreamController<SmartCaneButtonEvent>.broadcast();
+  final StreamController<SmartCaneFallEvent> _fallEventController =
+    StreamController<SmartCaneFallEvent>.broadcast();
+  Stream<SmartCaneFallEvent> get fallEventStream => _fallEventController.stream;
+  
 
   BluetoothDevice? _connectedDevice;
   String? _connectedBleName;
@@ -72,6 +81,19 @@ class SmartCaneBleService extends ChangeNotifier {
         _hasFreshSensorData &&
         data != null &&
         data.hasModelOutput;
+  }
+
+  BluetoothCharacteristic? _imuCharacteristic;
+
+  Future<void> sendImuData(List<double> imu) async {
+    if (_imuCharacteristic == null) return;
+    try {
+      final payload = jsonEncode({"imu": imu});
+      await _imuCharacteristic!.write(
+        utf8.encode(payload),
+        withoutResponse: true,
+      );
+    } catch (_) {}
   }
 
   bool get isSmartCaneReady => isConnected && isSensorRunning && isModelRunning;
@@ -195,6 +217,12 @@ class SmartCaneBleService extends ChangeNotifier {
       _handleSensorPayloadChunk(value, log: log);
     });
 
+    _imuCharacteristic = _findCharacteristic(
+      services: services,
+      serviceUuid: _smartCaneServiceUuid,
+      characteristicUuid: _imuCharacteristicUuid,
+    );
+
     await sensorCharacteristic.setNotifyValue(true);
     log('[SMARTCANE_BLE] ultrasonic notify subscribed');
     _shouldAutoReconnectOnDisconnect = true;
@@ -226,6 +254,13 @@ class SmartCaneBleService extends ChangeNotifier {
     if (chunk.isEmpty) return;
 
     if (_tryPublishButtonEvent(chunk)) {
+      _sensorPayloadBuffer = '';
+      return;
+    }
+
+    final fallEvent = SmartCaneFallEvent.tryParse(chunk);
+    if (fallEvent != null) {
+      _fallEventController.add(fallEvent);
       _sensorPayloadBuffer = '';
       return;
     }
@@ -279,6 +314,11 @@ class SmartCaneBleService extends ChangeNotifier {
   void _publishSensorData(SmartCaneSensorData data) {
     _latestSensorData = data;
     _latestSensorReceivedAt = DateTime.now();
+    // PENGUJIAN: hitung delay BLE (Pi sent_ms → Flutter receive_ms)
+    final sentMs = data.timestamp.millisecondsSinceEpoch;
+    final receiveMs = _latestSensorReceivedAt!.millisecondsSinceEpoch;
+    // ignore: avoid_print
+    print('[DELAY_BLE] ${receiveMs - sentMs} ms');
     _sensorController.add(data);
     notifyListeners();
   }
@@ -615,6 +655,33 @@ class SmartCaneButtonEvent {
       'sos' => 'sos',
       _ => null,
     };
+  }
+}
+
+@immutable
+class SmartCaneFallEvent {
+  const SmartCaneFallEvent({
+    required this.probability,
+    required this.timestamp,
+  });
+
+  final double probability;
+  final DateTime timestamp;
+
+  static SmartCaneFallEvent? tryParse(String payload) {
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is! Map<String, dynamic>) return null;
+      final event = decoded['e']?.toString();
+      if (event != 'fall') return null;
+      final prob = SmartCaneSensorData._readDouble(decoded['prob']) ?? 0.0;
+      return SmartCaneFallEvent(
+        probability: prob,
+        timestamp: DateTime.now(),
+      );
+    } catch (_) {
+      return null;
+    }
   }
 }
 
