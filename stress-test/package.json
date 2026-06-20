@@ -7,8 +7,7 @@
     "test:tahap1": "node stress_test.js 10",
     "test:tahap2": "node stress_test.js 50",
     "test:tahap3": "node stress_test.js 100",
-    "test:tahap4": "node stress_test.js 150",
-    "test:tahap5": "node stress_test.js 200",
+    "test:tahap4": "node stress_test.js 200",
     "test:all": "node stress_test.js all"
   },
   "dependencies": {

@@ -27,12 +27,23 @@ class TTSService {
   bool get isSpeaking => _currentRequest != null;
   int get speechGeneration => _speechGeneration;
 
+  // Hook untuk mengukur response time — dipanggil saat TTS engine mulai bersuara.
+  // Parameter string adalah teks yang sedang diucapkan.
+  static void Function(String text)? onSpeechStartHook;
+
+  // Hook untuk mengukur response time — dipanggil tepat sebelum _tts.speak() dipanggil.
+  static void Function(String text)? onSpeechSendHook;
+
   Future<void> init() async {
     if (_isInit) return;
 
     await _tts.setLanguage('id-ID');
     await _tts.setPitch(1.0);
     await _tts.awaitSpeakCompletion(true);
+    _tts.setStartHandler(() {
+      final text = _currentRequest?.text ?? '';
+      onSpeechStartHook?.call(text);
+    });
 
     _isInit = true;
   }
@@ -160,6 +171,7 @@ class TTSService {
             continue;
           }
 
+          onSpeechSendHook?.call(request.text);
           await _tts.speak(request.text);
           if (generation == _speechGeneration && !_isSttActive) {
             _recentlyCompleted[request.deduplicationKey] = DateTime.now();

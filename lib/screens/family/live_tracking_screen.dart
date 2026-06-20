@@ -288,6 +288,22 @@ class _LiveTrackingScreenState extends State<LiveTrackingScreen> {
 
           final data = snapshot.data;
 
+          // PENGUJIAN: debug data stream
+          // ignore: avoid_print
+          print('[DEBUG_STREAM] data: $data');
+          // ignore: avoid_print
+          print('[DEBUG_STREAM] updatedAt raw: ${data?['updatedAt']}');
+
+          // PENGUJIAN: hitung delay live tracking
+          final _trackingUpdatedAt = _parseTimestamp(data?['updatedAt']);
+          if (_trackingUpdatedAt != null) {
+            final _receiveMs = DateTime.now().millisecondsSinceEpoch;
+            final _sendMs = _trackingUpdatedAt.millisecondsSinceEpoch;
+            final _delayMs = _receiveMs - _sendMs;
+            // ignore: avoid_print
+            print('[DELAY_TRACKING] ${_delayMs} ms');
+          }
+
           final lat = _parseDouble(data?['lat']);
           final lng = _parseDouble(data?['lng']);
           final heading = _parseDouble(data?['heading']) ?? 0.0;

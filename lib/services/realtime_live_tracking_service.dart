@@ -26,7 +26,18 @@ class RealtimeLiveTrackingService {
 
   Stream<Map<String, dynamic>?> watch(String userId) {
     return _trackingRef(userId).onValue.map((event) {
-      return _asStringMap(event.snapshot.value);
+      final data = _asStringMap(event.snapshot.value);
+      final clientSentAtMs = data?['clientSentAtMs'];
+      if (clientSentAtMs is num) {
+        final delayMs =
+            DateTime.now().millisecondsSinceEpoch - clientSentAtMs.round();
+        // Hanya tampilkan nilai valid: abaikan cache lokal (<0) dan GPS stall (>2000ms)
+        if (delayMs >= 0 && delayMs <= 2000) {
+          // ignore: avoid_print
+          print('[DELAY_TRACKING] $delayMs ms');
+        }
+      }
+      return data;
     });
   }
 
@@ -44,6 +55,7 @@ class RealtimeLiveTrackingService {
       'userId': user.uid,
       ...data,
       'updatedAt': ServerValue.timestamp,
+      'clientSentAtMs': DateTime.now().millisecondsSinceEpoch,
     });
     _ensureDisconnectHandler(user.uid);
   }

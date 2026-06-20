@@ -197,8 +197,19 @@ class NotificationService {
     await _handleLocalNotificationLaunchDetails();
 
     FirebaseMessaging.onMessage.listen((message) {
+      // ignore: avoid_print
+      print('[DEBUG_FCM] pesan masuk: ${message.data}');
       if (_isSosMessage(message)) {
         final data = Map<String, dynamic>.from(message.data);
+        // PENGUJIAN: hitung delay SOS notification
+        final _triggeredAt = int.tryParse(data['triggeredAt']?.toString() ?? '');
+        // ignore: avoid_print
+        print('[DEBUG_FCM] triggeredAt: $_triggeredAt');
+        if (_triggeredAt != null) {
+          final _receiveMs = DateTime.now().millisecondsSinceEpoch;
+          // ignore: avoid_print
+          print('[DELAY_SOS] ${_receiveMs - _triggeredAt} ms');
+        }
         unawaited(_handleForegroundSosMessage(message, data));
       }
     });

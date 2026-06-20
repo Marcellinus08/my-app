@@ -20,6 +20,7 @@ type SosRequestBody = {
   smartCaneBatteryLevel?: unknown;
   currentTripId?: unknown;
   sosId?: unknown;
+  triggeredAt?: unknown;
 };
 
 type TestFcmRequestBody = {
@@ -585,6 +586,7 @@ function createSosFcmPayload(data: SosRequestBody): Record<string, unknown> {
       smartCaneBatteryLevel: optionalStringValue(data.smartCaneBatteryLevel),
       currentTripId: getOptionalString(data.currentTripId) ?? '',
       sosId: getOptionalString(data.sosId) ?? '',
+      triggeredAt: optionalStringValue(data.triggeredAt),
     },
     // Pesan data-only (tanpa android.notification) agar Flutter background
     // handler dipanggil dan bisa menampilkan full-screen intent notification.

@@ -21,6 +21,7 @@ import '../../services/stt_service.dart';
 import '../../services/tts_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
 import '../../widgets/app_dialog.dart';
+import 'package:teman_arah/response_time/obstacle_tts_response_time.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -83,6 +84,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   StreamSubscription<GyroscopeEvent>? _gyroscopeSubscription;
   StreamSubscription<SmartCaneSensorData>? _smartCaneSensorSubscription;
   StreamSubscription<SmartCaneButtonEvent>? _smartCaneButtonSubscription;
+  StreamSubscription<SmartCaneFallEvent>? _fallEventSubscription;
   Timer? _predictionTimer;
   DateTime? _lastGpsUpdateAt;
   DateTime? _lastGyroEventAt;
@@ -208,6 +210,8 @@ class _NavigationScreenState extends State<NavigationScreen>
     _lastSpokenSensorMessage = message;
     _lastSensorTtsAt = now;
 
+    ObstacleTtsTimer.onTtsCall(message);
+
     unawaited(
       speakSafe(
         message,
@@ -246,6 +250,8 @@ class _NavigationScreenState extends State<NavigationScreen>
   @override
   void initState() {
     super.initState();
+    TTSService.onSpeechStartHook = ObstacleTtsTimer.onTtsStart;
+    TTSService.onSpeechSendHook = ObstacleTtsTimer.onTtsSend;
     WidgetsBinding.instance.addObserver(this);
     _mapController = MapController();
     _locationAnimationController = AnimationController(
@@ -257,12 +263,16 @@ class _NavigationScreenState extends State<NavigationScreen>
     _smartCaneSensorSubscription = _smartCaneBleService.sensorDataStream.listen(
       (data) {
         if (!mounted) return;
+        ObstacleTtsTimer.onBleData(data.status, data.timestamp);
         setState(() => _latestSmartCaneSensorData = data);
         _handleSensorTts(data);
       },
     );
     _smartCaneButtonSubscription = _smartCaneBleService.buttonEventStream
         .listen(_handleSmartCaneButtonEvent);
+
+    _fallEventSubscription = _smartCaneBleService.fallEventStream
+    .listen(_onFallDetected);
 
     // Wait for widget to render, then load places
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -641,6 +651,52 @@ class _NavigationScreenState extends State<NavigationScreen>
     } finally {
       _isSendingSos = false;
     }
+  }
+
+  Future<void> _onFallDetected(SmartCaneFallEvent event) async {
+    if (!mounted) return;
+
+    // TTS langsung — tidak perlu cek _isNavigating,
+    // jatuh tetap diumumkan meski navigasi belum aktif
+    unawaited(
+      speakSafe(
+        'Peringatan! Terdeteksi jatuh. Apakah Anda baik-baik saja?',
+        priority: TtsPriority.critical,
+        deduplicationKey: 'fall-detected',
+        replacementKey: 'sensor-hazard',
+      ),
+    );
+
+    // Tunda dialog 1.5 detik supaya TTS sempat mulai dulu
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('Terdeteksi Jatuh'),
+        content: Text(
+          'Sistem mendeteksi kemungkinan jatuh '
+          '(${(event.probability * 100).toStringAsFixed(0)}%).\n\n'
+          'Apakah Anda membutuhkan bantuan?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Saya Baik-Baik Saja'),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            onPressed: () {
+              Navigator.pop(context);
+              unawaited(_triggerNavigationSos());
+            },
+            child: const Text('Kirim SOS'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _announceSosStatus(String message) async {
@@ -2306,6 +2362,8 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   @override
   void dispose() {
+    TTSService.onSpeechStartHook = null;
+    TTSService.onSpeechSendHook = null;
     WidgetsBinding.instance.removeObserver(this);
     _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
     if (_currentTripId != null) {
@@ -2326,6 +2384,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     _durationUpdateTimer?.cancel(); // Cancel duration update timer
     _smartCaneSensorSubscription?.cancel();
     _smartCaneButtonSubscription?.cancel();
+    _fallEventSubscription?.cancel();
     _locationAnimationController
       ..removeListener(_onLocationAnimationTick)
       ..dispose();

@@ -190,6 +190,7 @@ class SosService {
               'smartCaneBatteryLevel': smartCaneBatteryLevel,
               'currentTripId': currentTripId,
               'sosId': sosId,
+              'triggeredAt': DateTime.now().millisecondsSinceEpoch,
             }),
           )
           .timeout(const Duration(seconds: 15));

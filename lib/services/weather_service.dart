@@ -132,10 +132,13 @@ class WeatherService {
         '$_openMeteoUrl?latitude=$latitude&longitude=$longitude&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&timezone=auto',
       );
 
+      final _weatherStart = DateTime.now().millisecondsSinceEpoch;
       final response = await http.get(url).timeout(
         const Duration(seconds: 20),
         onTimeout: () => throw Exception('Weather API timeout'),
       );
+      // ignore: avoid_print
+      print('[DELAY_WEATHER] ${DateTime.now().millisecondsSinceEpoch - _weatherStart} ms (status: ${response.statusCode})');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
