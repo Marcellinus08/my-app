@@ -262,6 +262,22 @@ class PairingService {
         .snapshots();
   }
 
+  Stream<DocumentSnapshot<Map<String, dynamic>>> watchPairingRequest(
+    String requestId,
+  ) {
+    return _firestore
+        .collection('pairing_requests')
+        .doc(requestId)
+        .snapshots();
+  }
+
+  Future<void> expirePairingRequest(String requestId) async {
+    await _firestore.collection('pairing_requests').doc(requestId).update({
+      'status': 'expired',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   Future<bool> isConnectionActive({
     required String familyUid,
     required String tunaNetraUid,

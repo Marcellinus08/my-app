@@ -189,6 +189,20 @@ class _RegisterScreenState extends State<RegisterScreen>
     if (mounted) setState(() => _isLoading = true);
 
     try {
+      // Solusi 2: pending kadaluarsa (>10 menit) → hapus akun + beri kesempatan daftar ulang
+      if (pending.isExpired) {
+        await _pendingRegistrationService.clear();
+        await _authService.deleteAccount();
+        if (mounted) {
+          AppFeedback.show(
+            context,
+            'Waktu verifikasi habis. Silakan daftar kembali.',
+            type: AppFeedbackType.warning,
+          );
+        }
+        return;
+      }
+
       var verified = await _authService.isEmailVerified();
       if (!verified && mounted) {
         _showVerificationDialog(email: pending.email);

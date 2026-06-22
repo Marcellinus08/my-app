@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
+import '../../services/notification_service.dart';
 import '../../utils/constants.dart';
 import '../tunanetra/password_settings_screen.dart';
 import 'family_connected_tunanetra_screen.dart';
@@ -447,6 +448,7 @@ class _FamilySettingsScreenState extends State<FamilySettingsScreen> {
                     final navigator = Navigator.of(this.context);
 
                     try {
+                      await NotificationService.instance.removeFcmToken();
                       await _authService.logout();
                     } catch (_) {
                       // ignore logout errors, still navigate to login

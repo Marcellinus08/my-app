@@ -8,14 +8,19 @@ class PendingRegistration {
   final String name;
   final String phoneNumber;
   final String pairingCode;
+  final DateTime createdAt;
 
-  const PendingRegistration({
+  PendingRegistration({
     required this.userType,
     required this.email,
     required this.name,
     required this.phoneNumber,
     this.pairingCode = '',
-  });
+    DateTime? createdAt,
+  }) : createdAt = createdAt ?? DateTime.now();
+
+  bool get isExpired =>
+      DateTime.now().difference(createdAt).inMinutes >= 10;
 
   Map<String, dynamic> toMap() => {
     'userType': userType,
@@ -23,6 +28,7 @@ class PendingRegistration {
     'name': name,
     'phoneNumber': phoneNumber,
     'pairingCode': pairingCode,
+    'createdAt': createdAt.toIso8601String(),
   };
 
   factory PendingRegistration.fromMap(Map<String, dynamic> map) {
@@ -32,6 +38,9 @@ class PendingRegistration {
       name: map['name'] as String? ?? '',
       phoneNumber: map['phoneNumber'] as String? ?? '',
       pairingCode: map['pairingCode'] as String? ?? '',
+      createdAt: map['createdAt'] != null
+          ? DateTime.tryParse(map['createdAt'] as String) ?? DateTime.now()
+          : DateTime.now(),
     );
   }
 }

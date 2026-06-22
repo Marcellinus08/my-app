@@ -60,6 +60,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   Timer? _weatherRefreshTimer;
   final Set<String> _shownPairingRequestIds = {};
   bool _isPairingDialogOpen = false;
+  QuerySnapshot<Map<String, dynamic>>? _lastPairingSnapshot;
   final TTSService _ttsService = TTSService();
   final STTService _sttService = STTService();
   bool _isSpeaking = false;
@@ -1595,14 +1596,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         .watchPendingRequestsForTunaNetra(uid)
         .listen(
           (snapshot) {
-            if (!mounted || _isPairingDialogOpen) return;
-
-            for (final doc in snapshot.docs) {
-              if (_shownPairingRequestIds.contains(doc.id)) continue;
-              _shownPairingRequestIds.add(doc.id);
-              _showPairingRequestDialog(doc.id, doc.data());
-              break;
-            }
+            _lastPairingSnapshot = snapshot;
+            _processPairingSnapshot(snapshot);
           },
           onError: (error) {
             debugPrint(
@@ -1610,6 +1605,34 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
             );
           },
         );
+  }
+
+  void _processPairingSnapshot(
+    QuerySnapshot<Map<String, dynamic>> snapshot,
+  ) {
+    if (!mounted || _isPairingDialogOpen) return;
+
+    // Bersihkan ID yang sudah tidak ada di snapshot (Fix masalah 2)
+    final activeIds = snapshot.docs.map((d) => d.id).toSet();
+    _shownPairingRequestIds.removeWhere((id) => !activeIds.contains(id));
+
+    final expiryLimit = DateTime.now().subtract(const Duration(hours: 24));
+
+    for (final doc in snapshot.docs) {
+      if (_shownPairingRequestIds.contains(doc.id)) continue;
+
+      // Tandai expired jika request lebih dari 24 jam
+      final createdAt = (doc.data()['createdAt'] as Timestamp?)?.toDate();
+      if (createdAt != null && createdAt.isBefore(expiryLimit)) {
+        _shownPairingRequestIds.add(doc.id);
+        unawaited(_pairingService.expirePairingRequest(doc.id));
+        continue;
+      }
+
+      _shownPairingRequestIds.add(doc.id);
+      _showPairingRequestDialog(doc.id, doc.data());
+      break;
+    }
   }
 
   Future<void> _showPairingRequestDialog(
@@ -1625,14 +1648,6 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
     // Hentikan STT home agar TTS dapat langsung berbicara
     await _stopHomeStt();
-
-    // 1. TTS - informasikan permintaan pairing masuk
-    await speakSafe(
-      '$displayName ingin terhubung dan memonitor akun Anda. '
-      'Ucapkan terima untuk menerima, atau tolak untuk menolak.',
-      priority: TtsPriority.warning,
-      maxAge: const Duration(seconds: 25),
-    );
 
     // 2. STT auto-start + button subscription untuk re-trigger setelah timeout
     bool sttCommandHandled = false;
@@ -1691,10 +1706,28 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           unawaited(startPairingStt());
         });
 
-    // Auto-start STT segera setelah TTS selesai
-    unawaited(startPairingStt());
+    // 1. TTS mulai berbicara, STT auto-start setelah TTS selesai
+    unawaited(
+      speakSafe(
+        '$displayName ingin terhubung dan memonitor akun Anda. '
+        'Ucapkan terima untuk menerima, atau tolak untuk menolak.',
+        priority: TtsPriority.warning,
+        maxAge: const Duration(seconds: 25),
+      ).then((_) => startPairingStt()),
+    );
 
-    // 3. Tampilkan dialog konfirmasi
+    // 3. Listener pembatalan: tutup dialog otomatis jika request dibatalkan keluarga (Fix masalah 3)
+    final cancelSub = _pairingService.watchPairingRequest(requestId).listen(
+      (doc) {
+        if (!mounted) return;
+        if (!doc.exists || doc.data()?['status'] != 'pending') {
+          sttCommandHandled = true;
+          Navigator.of(context, rootNavigator: true).pop(null);
+        }
+      },
+    );
+
+    // 4. Tampilkan dialog konfirmasi bersamaan dengan TTS
     final accepted = await showAppConfirmDialog(
       context: context,
       title: 'Konfirmasi Keluarga',
@@ -1707,12 +1740,23 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       barrierDismissible: false,
     );
 
-    // Bersihkan resources setelah dialog tertutup
+    // Hentikan TTS, STT, dan listener pembatalan saat dialog ditutup
+    unawaited(_ttsService.stop());
+    await cancelSub.cancel();
     await pairingButtonSub.cancel();
     await _sttService.stopListening();
 
-    if (!mounted || accepted == null) {
+    if (!mounted) {
       _isPairingDialogOpen = false;
+      return;
+    }
+
+    // Request dibatalkan keluarga (accepted == null dari cancelSub)
+    if (accepted == null) {
+      _isPairingDialogOpen = false;
+      if (_lastPairingSnapshot != null) {
+        _processPairingSnapshot(_lastPairingSnapshot!);
+      }
       return;
     }
 
@@ -1724,7 +1768,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
       if (!mounted) return;
 
-      // 4. TTS konfirmasi hasil
+      // 5. TTS konfirmasi hasil
       await speakSafe(
         accepted
             ? '$displayName berhasil terhubung dengan akun Anda.'
@@ -1753,6 +1797,10 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
       );
     } finally {
       _isPairingDialogOpen = false;
+      // Proses request berikutnya dari snapshot terakhir (Fix masalah 1)
+      if (mounted && _lastPairingSnapshot != null) {
+        _processPairingSnapshot(_lastPairingSnapshot!);
+      }
     }
   }
 

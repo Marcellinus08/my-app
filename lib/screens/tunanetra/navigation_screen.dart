@@ -166,49 +166,77 @@ class _NavigationScreenState extends State<NavigationScreen>
   int _arrivalConfirmationCount = 0;
   String _destinationName = '';
 
+  // Level terakhir yang diumumkan (0=none, 1=safe/ml, 2=warning, 3=danger)
+  int _lastSensorLevel = 0;
+
   void _handleSensorTts(SmartCaneSensorData data) {
-    // Hanya bunyi saat navigasi aktif dan fitur hazard diaktifkan
     if (!_smartCaneBleService.navigationHazardAnnouncementsEnabled) return;
     if (!_isNavigating) return;
 
     final message = data.message.trim();
     if (message.isEmpty) return;
 
-    // Jangan ulangi pesan yang sama dalam 3 detik
-    final now = DateTime.now();
-    final lastAt = _lastSensorTtsAt;
-    if (message == _lastSpokenSensorMessage &&
-        lastAt != null &&
-        now.difference(lastAt) < const Duration(seconds: 3)) {
-      return;
-    }
+    final isDanger = data.isDanger || data.hasDangerDetection;
+    final isWarning = data.isWarning;
+    final isNavigationSpeaking =
+        _ttsService.currentPriority == TtsPriority.navigation;
 
-    // Tentukan priority berdasarkan status sensor + deteksi ML
-    final TtsPriority priority;
-    final String replacementKey;
-
-    if (data.isDanger || data.hasDangerDetection) {
-      // Bahaya langsung (ultrasonik danger ATAU pothole/obstacle/stair/road)
-      // → warning priority, bisa interrupt TTS normal tapi tidak interrupt navigasi
-      priority = TtsPriority.warning;
-      replacementKey = 'sensor-hazard';
-    } else if (data.isWarning) {
-      // Ultrasonik warning (hambatan dalam 50–150 cm)
-      priority = TtsPriority.normal;
-      replacementKey = 'sensor-info';
+    // Tentukan level saat ini (3=danger, 2=warning, 1=safe/ml, 0=tidak ada)
+    final int currentLevel;
+    if (isDanger) {
+      currentLevel = 3;
+    } else if (isWarning) {
+      currentLevel = 2;
     } else {
-      // Safe — hanya bunyi jika ada info ML (kendaraan, walkable, dll)
-      // Jangan bunyi "Jalur aman, lanjutkan" tiap detik saat tidak ada info
       final hasUsefulMl = data.detections.any(
         (d) => !const {'road', 'walkable'}.contains(d.label),
       );
-      if (!hasUsefulMl && message == 'Jalur aman, lanjutkan.') return;
+      currentLevel = hasUsefulMl ? 1 : 0;
+    }
+
+    if (currentLevel == 0) return;
+
+    // Suppress warning/info saat navigasi sedang bicara — danger tetap lanjut
+    if (currentLevel < 3 && isNavigationSpeaking) return;
+
+    final now = DateTime.now();
+    final lastAt = _lastSensorTtsAt;
+    final isMoving = _estimatedSpeedMs >= _minimumWalkingSpeedMs;
+
+    // Cooldown global per level (bukan per pesan):
+    // level naik (eskalasi) → bypass cooldown, langsung bunyi
+    // level sama atau turun → terapkan cooldown
+    final bool isEscalating = currentLevel > _lastSensorLevel;
+    if (!isEscalating && lastAt != null) {
+      final Duration cooldown = switch (currentLevel) {
+        3 => const Duration(seconds: 3),
+        2 => isMoving
+            ? const Duration(seconds: 5)
+            : const Duration(seconds: 8),
+        _ => isMoving
+            ? const Duration(seconds: 8)
+            : const Duration(seconds: 12),
+      };
+      if (now.difference(lastAt) < cooldown) return;
+    }
+
+    final TtsPriority priority;
+    final String replacementKey;
+
+    if (isDanger) {
+      priority = TtsPriority.warning;
+      replacementKey = 'sensor-hazard';
+    } else if (isWarning) {
+      priority = TtsPriority.normal;
+      replacementKey = 'sensor-info';
+    } else {
       priority = TtsPriority.low;
       replacementKey = 'sensor-info';
     }
 
     _lastSpokenSensorMessage = message;
     _lastSensorTtsAt = now;
+    _lastSensorLevel = currentLevel;
 
     ObstacleTtsTimer.onTtsCall(message);
 

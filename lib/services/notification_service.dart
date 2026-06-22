@@ -137,6 +137,12 @@ class NotificationService {
         ongoing: true,
         autoCancel: false,
       ),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        interruptionLevel: InterruptionLevel.critical,
+      ),
     );
   }
 
@@ -159,6 +165,12 @@ class NotificationService {
         ongoing: false,
         autoCancel: true,
       ),
+      iOS: const DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        interruptionLevel: InterruptionLevel.critical,
+      ),
     );
   }
 
@@ -178,6 +190,11 @@ class NotificationService {
           onlyAlertOnce: true,
           ongoing: true,
           autoCancel: false,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: false,
         ),
       );
 
@@ -356,6 +373,21 @@ class NotificationService {
     });
   }
 
+  Future<void> removeFcmToken() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final token = await _messaging.getToken();
+    if (token == null) return;
+
+    await _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('fcmTokens')
+        .doc(token)
+        .delete();
+  }
+
   void listenTokenRefresh() {
     if (_tokenRefreshSubscription != null) return;
 
@@ -371,8 +403,14 @@ class NotificationService {
     const initializationSettingsAndroid = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
+    const initializationSettingsDarwin = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
     const initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
     );
 
     await _localNotifications.initialize(
@@ -527,8 +565,14 @@ class NotificationService {
     const initializationSettingsAndroid = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
+    const initializationSettingsDarwin = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
     const initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
     );
     await plugin.initialize(initializationSettings);
 
@@ -563,8 +607,14 @@ class NotificationService {
     const initializationSettingsAndroid = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
+    const initializationSettingsDarwin = DarwinInitializationSettings(
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
+    );
     const initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
     );
     await plugin.initialize(initializationSettings);
 

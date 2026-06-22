@@ -26,6 +26,7 @@ class TTSService {
   bool get isSttActive => _isSttActive;
   bool get isSpeaking => _currentRequest != null;
   int get speechGeneration => _speechGeneration;
+  TtsPriority? get currentPriority => _currentRequest?.priority;
 
   // Hook untuk mengukur response time — dipanggil saat TTS engine mulai bersuara.
   // Parameter string adalah teks yang sedang diucapkan.

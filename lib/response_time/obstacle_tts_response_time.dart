@@ -20,7 +20,7 @@
 //     ObstacleTtsTimer.onTtsCall(message)
 //
 // MELIHAT HASIL (terminal kedua saat app berjalan):
-//   & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" logcat flutter:V *:S | Select-String "RT_OBSTACLE"
+//   & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" logcat -c ; & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" logcat flutter:V *:S | Select-String "RT_OBSTACLE"
 //
 // CATATAN: Akurasi Pi->BLE bergantung pada sinkronisasi NTP antara Pi dan HP.
 

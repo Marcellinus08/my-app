@@ -45,5 +45,24 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Teman Arah membutuhkan akses lokasi untuk membantu navigasi tunanetra.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Teman Arah membutuhkan akses lokasi di latar belakang agar navigasi dan pelacakan posisi tetap berjalan saat aplikasi diminimize.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Teman Arah membutuhkan akses lokasi di latar belakang agar navigasi dan pelacakan posisi tetap berjalan saat aplikasi diminimize.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Teman Arah membutuhkan akses Bluetooth untuk terhubung ke SmartCane dan mendeteksi rintangan.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Teman Arah membutuhkan akses mikrofon agar perintah suara dapat digunakan untuk navigasi.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Teman Arah menggunakan pengenalan suara untuk menerima perintah navigasi dari pengguna tunanetra.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>location</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

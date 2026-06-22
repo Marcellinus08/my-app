@@ -302,6 +302,7 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
         case 'email-already-in-use':
+          // Solusi 1: coba login dengan kredensial yang sama
           try {
             final existingCredential = await _auth
                 .signInWithEmailAndPassword(email: email, password: password)
@@ -315,14 +316,22 @@ class AuthService {
                   .get()
                   .timeout(const Duration(seconds: 15));
 
-              if (!profile.exists) {
-                final refreshedUser = _auth.currentUser;
-                if (refreshedUser != null && !refreshedUser.emailVerified) {
-                  await refreshedUser.sendEmailVerification().timeout(
+              // Akun belum selesai daftar (Firestore kosong) → hapus dan buat ulang
+              if (!profile.exists && !existingUser.emailVerified) {
+                await existingUser.delete();
+                final newCredential = await _auth
+                    .createUserWithEmailAndPassword(
+                      email: email,
+                      password: password,
+                    )
+                    .timeout(const Duration(seconds: 30));
+                final newUser = newCredential.user;
+                if (newUser != null) {
+                  await newUser.sendEmailVerification().timeout(
                     const Duration(seconds: 30),
                   );
+                  return newUser;
                 }
-                return refreshedUser ?? existingUser;
               }
             }
           } catch (_) {
