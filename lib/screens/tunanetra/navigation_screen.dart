@@ -52,6 +52,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   bool _navigationSttActive = false;
   bool _navigationSttStarting = false;
   bool _isSendingSos = false;
+  bool _isFreeMode = false;
   static const double _pedestrianSpeedMs = 1.4;
   static const double _arrivalThresholdMeters = 10.0;
   static const double _routeEndArrivalThresholdMeters = 5.0;
@@ -171,7 +172,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   void _handleSensorTts(SmartCaneSensorData data) {
     if (!_smartCaneBleService.navigationHazardAnnouncementsEnabled) return;
-    if (!_isNavigating) return;
+    if (!_isNavigating && !_isFreeMode) return;
 
     final message = data.message.trim();
     if (message.isEmpty) return;
@@ -465,9 +466,19 @@ class _NavigationScreenState extends State<NavigationScreen>
       return;
     }
 
+    if (!_isFreeMode && !_isNavigating && cleanedCommand.contains('jelajah')) {
+      _enterFreeMode();
+      return;
+    }
+
     if (cleanedCommand.contains('hentikan')) {
-      await speakSafe('Navigasi dihentikan');
-      await _endNavigationSession();
+      if (_isFreeMode) {
+        _exitFreeMode();
+        await speakSafe('Mode jelajah dihentikan. Kembali ke halaman pilih tempat.');
+      } else {
+        await speakSafe('Navigasi dihentikan');
+        await _endNavigationSession();
+      }
       return;
     }
 
@@ -477,9 +488,14 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
 
     if (TunaNetraVoiceCommands.isBackCommand(cleanedCommand)) {
-      _suppressTtsStopOnDispose = true;
-      if (!mounted) return;
-      Navigator.of(context).pop();
+      if (_isFreeMode) {
+        _exitFreeMode();
+        await speakSafe('Kembali ke halaman pilih tempat.');
+      } else {
+        _suppressTtsStopOnDispose = true;
+        if (!mounted) return;
+        Navigator.of(context).pop();
+      }
       return;
     }
 
@@ -686,45 +702,45 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     // TTS langsung — tidak perlu cek _isNavigating,
     // jatuh tetap diumumkan meski navigasi belum aktif
-    unawaited(
-      speakSafe(
-        'Peringatan! Terdeteksi jatuh. Apakah Anda baik-baik saja?',
-        priority: TtsPriority.critical,
-        deduplicationKey: 'fall-detected',
-        replacementKey: 'sensor-hazard',
-      ),
-    );
+    // unawaited(
+    //   speakSafe(
+    //     'Peringatan! Terdeteksi jatuh. Apakah Anda baik-baik saja?',
+    //     priority: TtsPriority.critical,
+    //     deduplicationKey: 'fall-detected',
+    //     replacementKey: 'sensor-hazard',
+    //   ),
+    // );
 
     // Tunda dialog 1.5 detik supaya TTS sempat mulai dulu
-    await Future.delayed(const Duration(milliseconds: 1500));
-    if (!mounted) return;
+    // await Future.delayed(const Duration(milliseconds: 1500));
+    // if (!mounted) return;
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Terdeteksi Jatuh'),
-        content: Text(
-          'Sistem mendeteksi kemungkinan jatuh '
-          '(${(event.probability * 100).toStringAsFixed(0)}%).\n\n'
-          'Apakah Anda membutuhkan bantuan?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Saya Baik-Baik Saja'),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            onPressed: () {
-              Navigator.pop(context);
-              unawaited(_triggerNavigationSos());
-            },
-            child: const Text('Kirim SOS'),
-          ),
-        ],
-      ),
-    );
+    // showDialog(
+    //   context: context,
+    //   barrierDismissible: false,
+    //   builder: (_) => AlertDialog(
+    //     title: const Text('Terdeteksi Jatuh'),
+    //     content: Text(
+    //       'Sistem mendeteksi kemungkinan jatuh '
+    //       '(${(event.probability * 100).toStringAsFixed(0)}%).\n\n'
+    //       'Apakah Anda membutuhkan bantuan?',
+    //     ),
+    //     actions: [
+    //       TextButton(
+    //         onPressed: () => Navigator.pop(context),
+    //         child: const Text('Saya Baik-Baik Saja'),
+    //       ),
+    //       TextButton(
+    //         style: TextButton.styleFrom(foregroundColor: Colors.red),
+    //         onPressed: () {
+    //           Navigator.pop(context);
+    //           unawaited(_triggerNavigationSos());
+    //         },
+    //         child: const Text('Kirim SOS'),
+    //       ),
+    //     ],
+    //   ),
+    // );
   }
 
   Future<void> _announceSosStatus(String message) async {
@@ -2434,7 +2450,21 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (data == null) {
       return 'Menunggu data dari SmartCane.';
     }
-    return data.displayText;
+
+    final base = data.displayText;
+    if (data.detections.isEmpty) return base;
+
+    final detectedLabels = data.detections
+        .map((d) => d.localizedLabel)
+        .toSet()
+        .join(', ');
+
+    // Hindari duplikasi jika label sudah muncul di teks dasar
+    final baseLower = base.toLowerCase();
+    final firstLabel = detectedLabels.split(',').first.trim().toLowerCase();
+    if (firstLabel.isNotEmpty && baseLower.contains(firstLabel)) return base;
+
+    return '$base\nObjek: $detectedLabels';
   }
 
   void _goToCurrentLocation() {
@@ -3277,6 +3307,10 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isFreeMode) {
+      return _buildFreeModeScreen();
+    }
+
     // Jika belum memilih place, tampilkan list
     if (_selectedPlace == null) {
       return _buildPlacesListScreen();
@@ -3296,14 +3330,31 @@ class _NavigationScreenState extends State<NavigationScreen>
             _buildPlacesHeader(),
             Expanded(
               child: _isLoadingPlaces
-                  ? _buildPlacesLoadingState()
+                  ? Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                          child: _buildFreeModeCard(),
+                        ),
+                        Expanded(child: _buildPlacesLoadingState()),
+                      ],
+                    )
                   : _places.isEmpty
-                  ? _buildPlacesEmptyState()
+                  ? Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                          child: _buildFreeModeCard(),
+                        ),
+                        Expanded(child: _buildPlacesEmptyState()),
+                      ],
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                      itemCount: _places.length,
+                      itemCount: _places.length + 1,
                       itemBuilder: (context, index) {
-                        return _buildPlaceListItem(_places[index]);
+                        if (index == 0) return _buildFreeModeCard();
+                        return _buildPlaceListItem(_places[index - 1]);
                       },
                     ),
             ),
@@ -3454,6 +3505,500 @@ class _NavigationScreenState extends State<NavigationScreen>
         ),
       ),
     );
+  }
+
+  void _enterFreeMode() {
+    setState(() => _isFreeMode = true);
+    _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(true);
+    unawaited(
+      speakSafe('Mode jelajah aktif.'),
+    );
+  }
+
+  void _exitFreeMode() {
+    _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
+    _lastSensorTtsAt = null;
+    _lastSensorLevel = 0;
+    setState(() => _isFreeMode = false);
+  }
+
+  Widget _buildFreeModeCard() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _enterFreeMode,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primaryDark,
+                  AppColors.primaryDark.withValues(alpha: 0.82),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primaryDark.withValues(alpha: 0.22),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+            child: Row(
+              children: [
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(
+                    Icons.sensors_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Mode Jelajah',
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Deteksi rintangan tanpa navigasi ke tujuan',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.white.withValues(alpha: 0.78),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: Colors.white.withValues(alpha: 0.7),
+                  size: 16,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFreeModeScreen() {
+    final data = _latestSmartCaneSensorData;
+    final isConnected = _smartCaneBleService.isConnected;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7FAFD),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Header
+            Container(
+              margin: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.textPrimary.withValues(alpha: 0.045),
+                    blurRadius: 14,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Material(
+                    color: AppColors.primaryDark,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: () {
+                        _exitFreeMode();
+                        unawaited(_ttsService.stop());
+                        unawaited(
+                          speakSafe('Kembali ke halaman pilih tempat.'),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: const SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Icon(
+                          Icons.arrow_back_rounded,
+                          color: Colors.white,
+                          size: 24,
+                          semanticLabel: 'Kembali',
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mode Jelajah',
+                          style: AppTextStyles.heading3.copyWith(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'Deteksi lingkungan aktif',
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                child: Column(
+                  children: [
+                    // Connection & sensor status card
+                    _buildFreeModeStatusCard(
+                      isConnected: isConnected,
+                      data: data,
+                    ),
+
+                    // Detections card
+                    if (data != null && data.detections.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      _buildFreeModeDetectionsCard(data),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFreeModeStatusCard({
+    required bool isConnected,
+    required SmartCaneSensorData? data,
+  }) {
+    final statusColor = !isConnected
+        ? AppColors.textSecondary
+        : data == null
+        ? AppColors.textSecondary
+        : data.isDanger || data.hasDangerDetection
+        ? const Color(0xFFDC2626)
+        : data.isWarning
+        ? const Color(0xFFD97706)
+        : const Color(0xFF16A34A);
+
+    final statusLabel = !isConnected
+        ? 'SmartCane belum terhubung'
+        : data == null
+        ? 'Menunggu data sensor...'
+        : data.isDanger || data.hasDangerDetection
+        ? 'Bahaya terdeteksi'
+        : data.isWarning
+        ? 'Hati-hati'
+        : 'Aman';
+
+    final statusIcon = !isConnected
+        ? Icons.bluetooth_disabled_rounded
+        : data == null
+        ? Icons.hourglass_empty_rounded
+        : data.isDanger || data.hasDangerDetection
+        ? Icons.warning_rounded
+        : data.isWarning
+        ? Icons.warning_amber_rounded
+        : Icons.check_circle_rounded;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Status row
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Icon(statusIcon, color: statusColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      statusLabel,
+                      style: AppTextStyles.bodyLarge.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (data != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Diperbarui ${_formatTimestamp(data.timestamp)}',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Sensor distances
+          if (data != null &&
+              (data.leftCm != null ||
+                  data.centerCm != null ||
+                  data.rightCm != null)) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: Color(0xFFEFF3F7)),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildFreeModeDistanceChip('Kiri', data.leftCm),
+                _buildFreeModeDistanceChip('Tengah', data.centerCm),
+                _buildFreeModeDistanceChip('Kanan', data.rightCm),
+              ],
+            ),
+          ],
+
+          // Decision
+          if (data != null && data.guidanceDecisionText != null) ...[
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: Color(0xFFEFF3F7)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Icon(
+                  Icons.navigation_rounded,
+                  size: 17,
+                  color: AppColors.primaryDark,
+                ),
+                const SizedBox(width: 7),
+                Text(
+                  'Saran: ${data.guidanceDecisionText}',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFreeModeDistanceChip(String label, double? valueCm) {
+    final hasValue = valueCm != null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          hasValue ? '${valueCm!.round()} cm' : '-',
+          style: AppTextStyles.bodyLarge.copyWith(
+            color: hasValue ? AppColors.textPrimary : AppColors.textSecondary,
+            fontWeight: FontWeight.w800,
+            fontSize: 18,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          label,
+          style: AppTextStyles.caption.copyWith(
+            color: AppColors.textSecondary,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFreeModeDetectionsCard(SmartCaneSensorData data) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.textPrimary.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Objek Terdeteksi',
+            style: AppTextStyles.bodyLarge.copyWith(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 10),
+          ...data.detections.map(
+            (detection) => _buildDetectionRow(detection),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetectionRow(SmartCaneDetection detection) {
+    final isDangerLabel = const {
+      'pothole',
+      'obstacle',
+      'stair',
+      'road',
+    }.contains(detection.label);
+    final labelColor = isDangerLabel
+        ? const Color(0xFFDC2626)
+        : const Color(0xFF16A34A);
+    final bgColor = isDangerLabel
+        ? const Color(0xFFFEF2F2)
+        : const Color(0xFFF0FDF4);
+
+    final positionLabel = switch (detection.position.toLowerCase()) {
+      'kiri' || 'left' => 'Kiri',
+      'kanan' || 'right' => 'Kanan',
+      _ => 'Tengah',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isDangerLabel ? Icons.warning_rounded : Icons.visibility_rounded,
+              color: labelColor,
+              size: 16,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    detection.localizedLabel,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: labelColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    positionLabel,
+                    style: AppTextStyles.caption.copyWith(
+                      color: labelColor.withValues(alpha: 0.75),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (detection.confidence > 0)
+              Text(
+                '${(detection.confidence * 100).toStringAsFixed(0)}%',
+                style: AppTextStyles.caption.copyWith(
+                  color: labelColor.withValues(alpha: 0.75),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatTimestamp(DateTime time) {
+    final now = DateTime.now();
+    final diff = now.difference(time).inSeconds;
+    if (diff < 5) return 'baru saja';
+    if (diff < 60) return '$diff detik lalu';
+    return '${(diff / 60).floor()} menit lalu';
   }
 
   Widget _buildPlaceListItem(PlaceModel place) {
@@ -4081,6 +4626,10 @@ class _NavigationScreenState extends State<NavigationScreen>
                       borderRadius: BorderRadius.circular(12),
                       child: InkWell(
                         onTap: () {
+                          unawaited(_ttsService.stop());
+                          unawaited(
+                            speakSafe('Kembali ke halaman pilih tempat.'),
+                          );
                           unawaited(_endNavigationSession());
                         },
                         borderRadius: BorderRadius.circular(12),
