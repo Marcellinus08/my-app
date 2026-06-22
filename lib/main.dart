@@ -6,7 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'firebase_options.dart';
 import 'services/auth_service.dart';
-import 'services/fall_detection_service.dart';
+// import 'services/fall_detection_service.dart';
 import 'services/notification_service.dart';
 import 'services/smart_cane_ble_service.dart';
 import 'services/smart_cane_status_notification_service.dart';
@@ -139,7 +139,7 @@ class _MyAppState extends State<MyApp> {
       _smartCaneStatusNotificationService.markPermissionsReady();
       unawaited(_startBleAutoReconnect());
       unawaited(_smartCaneStatusNotificationService.beginStartupFlow());
-      _startFallDetection();
+      // _startFallDetection();
     };
     _onSmartCaneManuallyPaired = () {
       _smartCaneStatusNotificationService.forceBeginStartupFlowIfNeeded();
@@ -152,7 +152,7 @@ class _MyAppState extends State<MyApp> {
         _bleAutoReconnectDelayTimer = null;
         _isStartingBleAutoReconnect = false;
         _smartCaneStatusNotificationService.stop();
-        FallDetectionService.instance.stop();
+        // FallDetectionService.instance.stop();
         return;
       }
 
@@ -175,7 +175,7 @@ class _MyAppState extends State<MyApp> {
     _authStateSubscription?.cancel();
     _bleAutoReconnectDelayTimer?.cancel();
     _smartCaneStatusNotificationService.stop();
-    FallDetectionService.instance.stop();
+    // FallDetectionService.instance.stop();
     _onTunaNetraHomeReady = null;
     _onSmartCaneManuallyPaired = null;
     super.dispose();
@@ -223,9 +223,9 @@ class _MyAppState extends State<MyApp> {
     _smartCaneStatusNotificationService.start();
   }
 
-  void _startFallDetection() {
-    FallDetectionService.instance.start(navigatorKey: appNavigatorKey);
-  }
+  // void _startFallDetection() {
+  //   FallDetectionService.instance.start(navigatorKey: appNavigatorKey);
+  // }
 
   @override
   Widget build(BuildContext context) {

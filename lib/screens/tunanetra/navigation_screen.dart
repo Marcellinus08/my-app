@@ -85,7 +85,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   StreamSubscription<GyroscopeEvent>? _gyroscopeSubscription;
   StreamSubscription<SmartCaneSensorData>? _smartCaneSensorSubscription;
   StreamSubscription<SmartCaneButtonEvent>? _smartCaneButtonSubscription;
-  StreamSubscription<SmartCaneFallEvent>? _fallEventSubscription;
+  // StreamSubscription<SmartCaneFallEvent>? _fallEventSubscription;
   Timer? _predictionTimer;
   DateTime? _lastGpsUpdateAt;
   DateTime? _lastGyroEventAt;
@@ -300,8 +300,8 @@ class _NavigationScreenState extends State<NavigationScreen>
     _smartCaneButtonSubscription = _smartCaneBleService.buttonEventStream
         .listen(_handleSmartCaneButtonEvent);
 
-    _fallEventSubscription = _smartCaneBleService.fallEventStream
-    .listen(_onFallDetected);
+    // _fallEventSubscription = _smartCaneBleService.fallEventStream
+    //     .listen(_onFallDetected);
 
     // Wait for widget to render, then load places
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -697,8 +697,8 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
   }
 
-  Future<void> _onFallDetected(SmartCaneFallEvent event) async {
-    if (!mounted) return;
+  // Future<void> _onFallDetected(SmartCaneFallEvent event) async {
+  //   if (!mounted) return;
 
     // TTS langsung — tidak perlu cek _isNavigating,
     // jatuh tetap diumumkan meski navigasi belum aktif
@@ -741,7 +741,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     //     ],
     //   ),
     // );
-  }
+  // }
 
   Future<void> _announceSosStatus(String message) async {
     await Future.delayed(const Duration(milliseconds: 600));
@@ -2428,7 +2428,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     _durationUpdateTimer?.cancel(); // Cancel duration update timer
     _smartCaneSensorSubscription?.cancel();
     _smartCaneButtonSubscription?.cancel();
-    _fallEventSubscription?.cancel();
+    // _fallEventSubscription?.cancel();
     _locationAnimationController
       ..removeListener(_onLocationAnimationTick)
       ..dispose();
