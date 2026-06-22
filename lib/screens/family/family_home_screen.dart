@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 import '../../models/family_location_model.dart';
 import '../../services/family_location_service.dart';
@@ -12,6 +13,7 @@ import '../../services/notification_service.dart';
 import '../../services/pairing_service.dart';
 import '../../services/user_service.dart';
 import '../../utils/constants.dart';
+import '../../widgets/app_dialog.dart';
 import 'family_history_screen.dart';
 import 'family_manage_places_screen.dart';
 import 'family_settings_screen.dart';
@@ -51,10 +53,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   _activeSosSubscription;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _pairingRequestSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _familyDocSub;
-  DocumentSnapshot<Map<String, dynamic>>? _activeSosDoc;
-  Map<String, dynamic>? _activeSosData;
+  List<DocumentSnapshot<Map<String, dynamic>>> _activeSosDocs = [];
   final Set<String> _handledPairingRequestIds = {};
-  String? _lastNotifiedSosId;
+  final Set<String> _notifiedSosIds = {};
   bool _hasLoadedFamilyDocSnapshot = false;
 
   String _familyName = 'Keluarga';
@@ -70,7 +71,6 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   @override
   void initState() {
     super.initState();
-    _activeSosData = widget.initialSosData;
     _initializeAnimations();
     AnalyticsService().logScreenView(screenName: 'FamilyHome');
     NotificationService.instance.initializeForFamilyUser();
@@ -269,31 +269,35 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
         .listen(
           (snapshot) {
             if (!mounted) return;
-            final activeDoc = _latestActiveSosDoc(snapshot.docs);
-            Map<String, dynamic>? activeData;
-
-            if (activeDoc != null) {
-              final docData = activeDoc.data();
-              if (docData != null) {
-                activeData = {
-                  ...docData,
-                  'type': 'sos',
-                  'sosId': activeDoc.id,
-                  'familyUid': familyId,
-                };
-              }
-            }
+            final activeDocs = snapshot.docs
+                .where((doc) => doc.data()['status'] == 'active')
+                .toList()
+              ..sort((a, b) {
+                final aTs = _parseTimestamp(a.data()['createdAt']);
+                final bTs = _parseTimestamp(b.data()['createdAt']);
+                final aMs = aTs?.toDate().millisecondsSinceEpoch ?? 0;
+                final bMs = bTs?.toDate().millisecondsSinceEpoch ?? 0;
+                return bMs.compareTo(aMs);
+              });
 
             setState(() {
-              _activeSosDoc = activeDoc;
-              _activeSosData = activeData;
+              _activeSosDocs = activeDocs;
             });
 
-            if (activeDoc != null && activeData != null) {
+            if (activeDocs.isNotEmpty) {
               NotificationService.instance.stopSosAlarmLoop();
-              _notifyActiveSos(activeDoc.id, activeData);
+              for (final doc in activeDocs) {
+                final docData = doc.data();
+                final data = {
+                  ...docData,
+                  'type': 'sos',
+                  'sosId': doc.id,
+                  'familyUid': familyId,
+                };
+                _notifyActiveSos(doc.id, data);
+              }
             } else {
-              _lastNotifiedSosId = null;
+              _notifiedSosIds.clear();
             }
           },
           onError: (Object error) {
@@ -312,28 +316,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     return widget.familyId.trim();
   }
 
-  DocumentSnapshot<Map<String, dynamic>>? _latestActiveSosDoc(
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
-  ) {
-    final activeDocs = docs.where((doc) => doc.data()['status'] == 'active');
-    DocumentSnapshot<Map<String, dynamic>>? latestDoc;
-    var latestMillis = -1;
-
-    for (final doc in activeDocs) {
-      final createdAt = _parseTimestamp(doc.data()['createdAt']);
-      final millis = createdAt?.toDate().millisecondsSinceEpoch ?? 0;
-      if (latestDoc == null || millis > latestMillis) {
-        latestDoc = doc;
-        latestMillis = millis;
-      }
-    }
-
-    return latestDoc;
-  }
-
   void _notifyActiveSos(String sosId, Map<String, dynamic> data) {
-    if (_lastNotifiedSosId == sosId) return;
-    _lastNotifiedSosId = sosId;
+    if (_notifiedSosIds.contains(sosId)) return;
+    _notifiedSosIds.add(sosId);
 
     NotificationService.instance.stopSosAlarmLoop(cancelNotification: true);
     unawaited(NotificationService.instance.showSosOneShotNotification(data));
@@ -712,10 +697,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     );
   }
 
-  Future<void> _openSosLocation() async {
+  Future<void> _openSosLocation(Map<String, dynamic> sosData) async {
     final userId =
-        _readString(_activeSosData?['userId']) ??
-        _readString(widget.initialSosData?['userId']) ??
+        _readString(sosData['userId']) ??
         widget.targetUid ??
         '';
 
@@ -737,92 +721,33 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       return;
     }
 
-    final didResolveSos = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (ctx) => FamilyHistoryScreen(
           targetUid: userId,
           familyId: _resolvedFamilyId,
-          initialSosData: _activeSosData,
+          initialSosData: sosData,
         ),
       ),
     );
-
-    if (!mounted) return;
-    if (didResolveSos == true) {
-      setState(() {
-        _activeSosDoc = null;
-        _activeSosData = null;
-        _lastNotifiedSosId = null;
-      });
-    }
-    await _refreshActiveSosOnce();
   }
 
-  Future<void> _refreshActiveSosOnce() async {
-    final familyId = _currentFamilyId();
-
-    if (familyId.isEmpty) return;
-
+  Future<void> resolveSosAlert(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
     try {
-      final snapshot = await _firestore
-          .collection('sos_alerts')
-          .where('familyUids', arrayContains: familyId)
-          .get(const GetOptions(source: Source.server));
-
-      if (!mounted) return;
-
-      final activeDoc = _latestActiveSosDoc(snapshot.docs);
-      if (activeDoc == null) {
-        setState(() {
-          _activeSosDoc = null;
-          _activeSosData = null;
-        });
-        return;
-      }
-
-      final docData = activeDoc.data();
-      if (docData == null) {
-        return;
-      }
-
-      final activeData = {
-        ...docData,
-        'type': 'sos',
-        'sosId': activeDoc.id,
-        'familyUid': familyId,
-      };
-
-      setState(() {
-        _activeSosDoc = activeDoc;
-        _activeSosData = activeData;
+      await doc.reference.update({
+        'status': 'resolved',
+        'resolvedAt': FieldValue.serverTimestamp(),
       });
-
-      NotificationService.instance.stopSosAlarmLoop();
-    } catch (error) {
-      debugPrint('[FamilyHome] Refresh active SOS failed: $error');
-    }
-  }
-
-  Future<void> resolveSosAlert() async {
-    try {
-      final doc = _activeSosDoc;
-      if (doc == null) {
-        await _resolveLatestSosAlertFallback();
-      } else {
-        await doc.reference.update({
-          'status': 'resolved',
-          'resolvedAt': FieldValue.serverTimestamp(),
-        });
-      }
 
       debugPrint('[FamilyHome] SOS resolved');
-      NotificationService.instance.stopSosAlarmLoop();
+      _notifiedSosIds.remove(doc.id);
+      if (_activeSosDocs.length <= 1) {
+        NotificationService.instance.stopSosAlarmLoop();
+      }
       if (!mounted) return;
-      setState(() {
-        _activeSosDoc = null;
-        _activeSosData = null;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -857,30 +782,23 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     }
   }
 
-  Future<void> _resolveLatestSosAlertFallback() async {
-    final familyId = _currentFamilyId();
-    if (familyId.isEmpty) {
-      throw Exception('Family UID kosong');
+  Future<void> _confirmResolveSosAlert(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) async {
+    final confirmed = await showAppConfirmDialog(
+      context: context,
+      title: 'Tandai SOS ditangani?',
+      description: 'Pastikan keluarga sudah merespons kondisi pengguna.',
+      icon: Icons.check_circle_rounded,
+      iconColor: AppColors.success,
+      cancelText: 'Batal',
+      confirmText: 'Ya, Tandai',
+      confirmButtonColor: AppColors.primaryDark,
+    );
+
+    if (confirmed == true) {
+      await resolveSosAlert(doc);
     }
-
-    final userId = _readString(_activeSosData?['userId']);
-    final snapshot = await _firestore
-        .collection('sos_alerts')
-        .where('familyUids', arrayContains: familyId)
-        .get();
-
-    final docs = userId == null
-        ? snapshot.docs
-        : snapshot.docs.where((doc) => doc.data()['userId'] == userId).toList();
-    final activeDoc = _latestActiveSosDoc(docs);
-    if (activeDoc == null) {
-      throw Exception('SOS aktif tidak ditemukan');
-    }
-
-    await activeDoc.reference.update({
-      'status': 'resolved',
-      'resolvedAt': FieldValue.serverTimestamp(),
-    });
   }
 
   @override
@@ -920,9 +838,9 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
             _buildFamilyOverviewCard(),
             const SizedBox(height: 14),
             _buildAddUserAction(),
-            if (_activeSosData != null) ...[
+            if (_activeSosDocs.isNotEmpty) ...[
               const SizedBox(height: 14),
-              _buildActiveSosBanner(),
+              _buildActiveSosSection(),
             ],
             const SizedBox(height: 18),
             Text(
@@ -1179,12 +1097,11 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     );
   }
 
-  Widget _buildActiveSosBanner() {
-    final userName = _readString(_activeSosData?['userName']) ?? 'Pengguna';
+  Widget _buildActiveSosSection() {
+    final count = _activeSosDocs.length;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFFEF4444),
         borderRadius: BorderRadius.circular(16),
@@ -1199,47 +1116,147 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              const Icon(Icons.warning_rounded, color: Colors.white, size: 28),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'SOS Aktif - $userName membutuhkan bantuan',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.bodyLarge.copyWith(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    height: 1.35,
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, count > 1 ? 8 : 0),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_rounded, color: Colors.white, size: 28),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    count == 1
+                        ? 'SOS Aktif'
+                        : 'SOS Aktif ($count)',
+                    style: AppTextStyles.bodyLarge.copyWith(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: _buildSosActionButton(
-                  icon: Icons.location_on_rounded,
-                  label: 'Lihat Lokasi',
-                  onTap: _openSosLocation,
-                  isFilled: true,
+          if (count > 1)
+            Divider(
+              color: Colors.white.withValues(alpha: 0.25),
+              thickness: 1,
+              height: 1,
+            ),
+          ...List.generate(_activeSosDocs.length, (i) {
+            final doc = _activeSosDocs[i];
+            final data = {
+              ...doc.data()!,
+              'sosId': doc.id,
+              'familyUid': _resolvedFamilyId,
+            };
+            final userName = _readString(data['userName']) ?? 'Pengguna';
+            final isLast = i == _activeSosDocs.length - 1;
+            final sosTime = _formatSosSentTime(
+              _parseTimestamp(data['createdAt']),
+            );
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, isLast ? 16 : 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (count > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.person_rounded,
+                                color: Colors.white70,
+                                size: 16,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                userName,
+                                style: AppTextStyles.bodyLarge.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(
+                            '$userName membutuhkan bantuan',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      if (sosTime.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.access_time_rounded,
+                                color: Colors.white.withValues(alpha: 0.75),
+                                size: 13,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                sosTime,
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.75),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildSosActionButton(
+                              icon: Icons.location_on_rounded,
+                              label: 'Lihat Lokasi',
+                              onTap: () => _openSosLocation(data),
+                              isFilled: true,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _buildSosActionButton(
+                              icon: Icons.check_circle_rounded,
+                              label: 'Ditangani',
+                              onTap: () => _confirmResolveSosAlert(doc),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildSosActionButton(
-                  icon: Icons.check_circle_rounded,
-                  label: 'Tandai Ditangani',
-                  onTap: resolveSosAlert,
-                ),
-              ),
-            ],
-          ),
+                if (!isLast)
+                  Divider(
+                    color: Colors.white.withValues(alpha: 0.25),
+                    thickness: 1,
+                    height: 1,
+                  ),
+              ],
+            );
+          }),
         ],
       ),
     );
@@ -1805,6 +1822,16 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   bool _isLiveTrackingFresh(Timestamp? updatedAt) {
     if (updatedAt == null) return false;
     return _liveTrackingNow.difference(updatedAt.toDate()).inSeconds <= 60;
+  }
+
+  String _formatSosSentTime(Timestamp? createdAt) {
+    if (createdAt == null) return '';
+    final sentAt = createdAt.toDate();
+    final duration = DateTime.now().difference(sentAt);
+    if (duration.inSeconds < 60) return 'Baru saja';
+    if (duration.inMinutes < 60) return '${duration.inMinutes} menit lalu';
+    if (duration.inHours < 24) return '${duration.inHours} jam lalu';
+    return DateFormat('d MMM, HH:mm').format(sentAt);
   }
 
   String _formatTimeAgo(DateTime dateTime) {

@@ -793,7 +793,7 @@ class NotificationService {
 
     navigator.pushNamedAndRemoveUntil(
       AppRoutes.familyMonitoring,
-      (route) => false,
+      (route) => route.settings.name == AppRoutes.familyHome,
       arguments: args,
     );
   }

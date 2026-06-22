@@ -152,10 +152,7 @@ service cloud.firestore {
       allow read: if isSignedIn() &&
         (
           request.auth.uid == resource.data.userId ||
-          (
-            resource.data.familyUids is list &&
-            request.auth.uid in resource.data.familyUids
-          )
+          request.auth.uid in resource.data.familyUids
         );
 
       allow create: if isSignedIn() &&
