@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'fall_detection_service.dart';
 
 class SmartCaneBleService extends ChangeNotifier {
   SmartCaneBleService._();
@@ -22,10 +23,8 @@ class SmartCaneBleService extends ChangeNotifier {
     '0000a002-0000-1000-8000-00805f9b34fb',
   );
   static final Guid _imuCharacteristicUuid = Guid(
-  '0000a004-0000-1000-8000-00805f9b34fb',
+    '0000a004-0000-1000-8000-00805f9b34fb',
   );
-
-  
 
   StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
   StreamSubscription<List<int>>? _sensorSubscription;
@@ -36,12 +35,13 @@ class SmartCaneBleService extends ChangeNotifier {
   final StreamController<SmartCaneButtonEvent> _buttonEventController =
       StreamController<SmartCaneButtonEvent>.broadcast();
   final StreamController<SmartCaneFallEvent> _fallEventController =
-    StreamController<SmartCaneFallEvent>.broadcast();
+      StreamController<SmartCaneFallEvent>.broadcast();
   Stream<SmartCaneFallEvent> get fallEventStream => _fallEventController.stream;
-  
 
   BluetoothDevice? _connectedDevice;
   String? _connectedBleName;
+  String _imuPayloadBuffer = '';
+  StreamSubscription<List<int>>? _imuSubscription;
   SmartCaneSensorData? _latestSensorData;
   DateTime? _latestSensorReceivedAt;
   SmartCaneBatteryData? _latestBatteryData;
@@ -85,15 +85,16 @@ class SmartCaneBleService extends ChangeNotifier {
 
   BluetoothCharacteristic? _imuCharacteristic;
 
-  Future<void> sendImuData(List<double> imu) async {
+  Future<void> sendImuData(String jsonPayload) async {
     if (_imuCharacteristic == null) return;
     try {
-      final payload = jsonEncode({"imu": imu});
       await _imuCharacteristic!.write(
-        utf8.encode(payload),
+        utf8.encode(jsonPayload),
         withoutResponse: true,
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[BLE] sendImuData error: $e');
+    }
   }
 
   bool get isSmartCaneReady => isConnected && isSensorRunning && isModelRunning;
@@ -165,6 +166,7 @@ class SmartCaneBleService extends ChangeNotifier {
 
       if (device.isDisconnected) {
         await device.connect(timeout: const Duration(seconds: 15), mtu: null);
+        await device.requestMtu(512);
       }
 
       _connectedDevice = device;
@@ -199,6 +201,7 @@ class SmartCaneBleService extends ChangeNotifier {
     required List<BluetoothService> services,
     required void Function(String message) log,
   }) async {
+    // ── a002: sensor data (tidak berubah) ─────────────────────────────────
     final sensorCharacteristic = _findCharacteristic(
       services: services,
       serviceUuid: _smartCaneServiceUuid,
@@ -217,14 +220,41 @@ class SmartCaneBleService extends ChangeNotifier {
       _handleSensorPayloadChunk(value, log: log);
     });
 
+    await sensorCharacteristic.setNotifyValue(true);
+    log('[SMARTCANE_BLE] sensor a002 notify subscribed');
+
+    // ── a004: IMU characteristic (BARU — notify + write) ──────────────────
     _imuCharacteristic = _findCharacteristic(
       services: services,
       serviceUuid: _smartCaneServiceUuid,
       characteristicUuid: _imuCharacteristicUuid,
     );
 
-    await sensorCharacteristic.setNotifyValue(true);
-    log('[SMARTCANE_BLE] ultrasonic notify subscribed');
+    if (_imuCharacteristic != null) {
+      debugPrint('[BLE] IMU char properties: ${_imuCharacteristic!.properties}');
+      debugPrint('[BLE] IMU char canWrite: ${_imuCharacteristic!.properties.writeWithoutResponse}');
+      debugPrint('[BLE] IMU char canNotify: ${_imuCharacteristic!.properties.notify}');
+      // Subscribe notify a004 untuk terima fusion window dari RPi
+      await _imuSubscription?.cancel();
+      _imuPayloadBuffer = '';
+
+      _imuSubscription = _imuCharacteristic!.onValueReceived.listen((value) {
+        _handleImuPayloadChunk(value, log: log);
+      });
+
+      await _imuCharacteristic!.setNotifyValue(true);
+      log('[SMARTCANE_BLE] IMU a004 notify subscribed');
+
+      // Pasang callback agar FallDetectionService bisa kirim phone IMU ke RPi
+      FallDetectionService.instance.onSendPhoneImu = (String jsonPayload) {
+        unawaited(sendImuData(jsonPayload));
+      };
+
+      await FallDetectionService.instance.start();
+    } else {
+      log('[SMARTCANE_BLE] characteristic IMU a004 tidak ditemukan');
+    }
+
     _shouldAutoReconnectOnDisconnect = true;
   }
 
@@ -242,6 +272,48 @@ class SmartCaneBleService extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  void _handleImuPayloadChunk(
+    List<int> value, {
+    required void Function(String message) log,
+  }) {
+    if (value.isEmpty) return;
+
+    final chunk = utf8.decode(value, allowMalformed: true).trim();
+    if (chunk.isEmpty) return;
+
+    _imuPayloadBuffer += chunk;
+
+    final startIndex = _imuPayloadBuffer.indexOf('{');
+    final endIndex = _imuPayloadBuffer.lastIndexOf('}');
+
+    if (startIndex < 0 || endIndex <= startIndex) {
+      // Belum lengkap, tunggu chunk berikutnya
+      if (_imuPayloadBuffer.length > 4096) {
+        // Buffer terlalu panjang tanpa JSON valid → reset
+        _imuPayloadBuffer = '';
+      }
+      return;
+    }
+
+    final jsonStr = _imuPayloadBuffer.substring(startIndex, endIndex + 1);
+    _imuPayloadBuffer = _imuPayloadBuffer.substring(endIndex + 1);
+
+    try {
+      final decoded = jsonDecode(jsonStr);
+      if (decoded is! Map<String, dynamic>) return;
+
+      final event = decoded['e']?.toString();
+
+      if (event == 'fusion_window') {
+        log('[FALL] Fusion window diterima dari RPi');
+        FallDetectionService.instance.onFusionWindowReceived(decoded);
+      }
+      // Event lain dari a004 di sini bisa ditambahkan nanti
+    } catch (e) {
+      log('[FALL] Gagal parse IMU payload: $e');
+    }
   }
 
   void _handleSensorPayloadChunk(
@@ -581,6 +653,10 @@ class SmartCaneBleService extends ChangeNotifier {
     try {
       await device.disconnect();
       await _sensorSubscription?.cancel();
+      await _imuSubscription?.cancel();
+      _imuSubscription = null;
+      _imuPayloadBuffer = '';
+      FallDetectionService.instance.onSendPhoneImu = null;
       _sensorSubscription = null;
       _connectedDevice = null;
       _connectedBleName = null;
@@ -675,10 +751,7 @@ class SmartCaneFallEvent {
       final event = decoded['e']?.toString();
       if (event != 'fall') return null;
       final prob = SmartCaneSensorData._readDouble(decoded['prob']) ?? 0.0;
-      return SmartCaneFallEvent(
-        probability: prob,
-        timestamp: DateTime.now(),
-      );
+      return SmartCaneFallEvent(probability: prob, timestamp: DateTime.now());
     } catch (_) {
       return null;
     }
@@ -753,7 +826,7 @@ class SmartCaneDetection {
   });
 
   final String label;
-  final String position;   // "kiri" | "tengah" | "kanan"
+  final String position; // "kiri" | "tengah" | "kanan"
   final double confidence;
 
   /// Label dalam Bahasa Indonesia untuk ditampilkan di UI.
@@ -762,18 +835,21 @@ class SmartCaneDetection {
   static SmartCaneDetection? tryParse(dynamic raw) {
     if (raw is! Map<String, dynamic>) return null;
     final label = raw['label']?.toString().trim();
-    final pos   = (raw['pos'] ?? raw['position'])?.toString().trim();
-    final conf  = SmartCaneSensorData._readDouble(raw['conf'] ?? raw['confidence']);
+    final pos = (raw['pos'] ?? raw['position'])?.toString().trim();
+    final conf = SmartCaneSensorData._readDouble(
+      raw['conf'] ?? raw['confidence'],
+    );
     if (label == null || label.isEmpty) return null;
     return SmartCaneDetection(
-      label:      label,
-      position:   pos ?? 'tengah',
+      label: label,
+      position: pos ?? 'tengah',
       confidence: conf ?? 0.0,
     );
   }
 
   @override
-  String toString() => 'SmartCaneDetection($label @ $position, conf=$confidence)';
+  String toString() =>
+      'SmartCaneDetection($label @ $position, conf=$confidence)';
 }
 
 @immutable
@@ -817,7 +893,7 @@ class SmartCaneSensorData {
 
   bool get hasModelOutput {
     final modelDecision = decision?.trim();
-    final objectLabel   = mlLabel?.trim();
+    final objectLabel = mlLabel?.trim();
     return (modelDecision != null && modelDecision.isNotEmpty) ||
         (objectLabel != null && objectLabel.isNotEmpty) ||
         mlConfidence != null ||
