@@ -1,19 +1,22 @@
 // Response time measurement: Obstacle detection -> TTS voice output
 //
-// Mengukur 5 segmen latency end-to-end:
-//   Pi->BLE       : Pi kirim data -> Flutter terima via BLE
-//   BLE->TTS call : Flutter terima -> speakSafe() dipanggil (Dart processing, ~0ms)
-//   Queue wait    : speakSafe() dipanggil -> giliran TTS tiba (_tts.speak() dipanggil)
-//   TTS engine    : _tts.speak() dipanggil -> suara benar-benar keluar dari speaker
-//   Total         : Pi -> suara keluar (end-to-end)
+// Mengukur 6 segmen latency end-to-end:
+//   Pi->BLE         : Pi kirim data -> Flutter terima via BLE
+//   BLE->TTS call   : Flutter terima -> speakSafe() dipanggil (Dart processing)
+//   Queue wait      : speakSafe() dipanggil -> giliran tiba (_tts.stop() akan dipanggil)
+//   Stop overhead   : _tts.stop() dipanggil -> selesai (platform call overhead)
+//   TTS engine      : _tts.speak() dipanggil -> suara benar-benar keluar dari speaker
+//   Total           : Pi -> suara keluar (end-to-end)
 //
 // HOW TO USE di navigation_screen.dart:
 //   initState:
-//     TTSService.onSpeechStartHook = ObstacleTtsTimer.onTtsStart;
-//     TTSService.onSpeechSendHook  = ObstacleTtsTimer.onTtsSend;
+//     TTSService.onSpeechStartHook   = ObstacleTtsTimer.onTtsStart;
+//     TTSService.onSpeechSendHook    = ObstacleTtsTimer.onTtsSend;
+//     TTSService.onTtsStopStartHook  = ObstacleTtsTimer.onTtsStopStart;
 //   dispose:
-//     TTSService.onSpeechStartHook = null;
-//     TTSService.onSpeechSendHook  = null;
+//     TTSService.onSpeechStartHook   = null;
+//     TTSService.onSpeechSendHook    = null;
+//     TTSService.onTtsStopStartHook  = null;
 //   sensorDataStream.listen:
 //     ObstacleTtsTimer.onBleData(data.status, data.timestamp)
 //   _handleSensorTts sebelum speakSafe():
@@ -32,6 +35,7 @@ class ObstacleTtsTimer {
   static DateTime? _piTimestamp;
   static DateTime? _bleArrivalTime;
   static DateTime? _ttsCallTime;
+  static DateTime? _ttsStopStartTime;
   static DateTime? _ttsSendTime;
   static String? _pendingMessage;
   static int? _pendingBleMs;
@@ -41,6 +45,7 @@ class ObstacleTtsTimer {
   static int _totalBleMs = 0;
   static int _totalProcessMs = 0;
   static int _totalQueueMs = 0;
+  static int _totalStopMs = 0;
   static int _totalEngineMs = 0;
   static int _totalEndToEndMs = 0;
   static int _minEndToEndMs = 999999;
@@ -71,30 +76,56 @@ class ObstacleTtsTimer {
     _piTimestamp = null;
   }
 
-  // Stage 3: _tts.speak() dipanggil (pesan keluar dari antrian TTS)
+  // Stage 3: giliran item ini tiba di _processQueue — _tts.stop() akan dipanggil
+  static void onTtsStopStart(String speakingText) {
+    if (!kDebugMode) return;
+    if (speakingText != _pendingMessage) return;
+    _ttsStopStartTime = DateTime.now();
+  }
+
+  // Stage 4: _tts.speak() dipanggil (stop selesai, pesan keluar dari antrian)
   static void onTtsSend(String speakingText) {
     if (!kDebugMode) return;
     if (speakingText != _pendingMessage) return;
     _ttsSendTime = DateTime.now();
   }
 
-  // Stage 4: TTS engine mulai bersuara
+  // Stage 5: TTS engine mulai bersuara
   static void onTtsStart(String speakingText) {
     if (!kDebugMode) return;
     final tCall = _ttsCallTime;
+    final tStopStart = _ttsStopStartTime;
     final tSend = _ttsSendTime;
     final msg = _pendingMessage;
     final bleMs = _pendingBleMs;
     final processMs = _pendingProcessMs;
-    if (tCall == null || tSend == null || msg == null || bleMs == null || processMs == null) return;
+    if (tCall == null ||
+        tSend == null ||
+        msg == null ||
+        bleMs == null ||
+        processMs == null) return;
     if (speakingText != msg) return;
 
     final now = DateTime.now();
-    final queueMs = tSend.difference(tCall).inMilliseconds;
+    // tStopStart bersifat opsional — jika tidak tersedia (mis. message expired/dedup),
+    // queue+stop dilaporkan gabungan sebagai "Queue wait".
+    final int queueMs;
+    final int stopMs;
+    final String stopTag;
+    if (tStopStart != null) {
+      queueMs = tStopStart.difference(tCall).inMilliseconds;
+      stopMs = tSend.difference(tStopStart).inMilliseconds;
+      stopTag = '${stopMs}ms';
+    } else {
+      queueMs = tSend.difference(tCall).inMilliseconds;
+      stopMs = 0;
+      stopTag = 'n/a';
+    }
     final engineMs = now.difference(tSend).inMilliseconds;
-    final totalMs = bleMs + processMs + queueMs + engineMs;
+    final totalMs = bleMs + processMs + queueMs + stopMs + engineMs;
 
     _ttsCallTime = null;
+    _ttsStopStartTime = null;
     _ttsSendTime = null;
     _pendingMessage = null;
     _pendingBleMs = null;
@@ -104,6 +135,7 @@ class ObstacleTtsTimer {
     _totalBleMs += bleMs;
     _totalProcessMs += processMs;
     _totalQueueMs += queueMs;
+    _totalStopMs += stopMs;
     _totalEngineMs += engineMs;
     _totalEndToEndMs += totalMs;
     if (totalMs < _minEndToEndMs) _minEndToEndMs = totalMs;
@@ -114,6 +146,7 @@ class ObstacleTtsTimer {
       'Pi->BLE: ${bleMs}ms | '
       'BLE->TTS call: ${processMs}ms | '
       'Queue wait: ${queueMs}ms | '
+      'Stop overhead: $stopTag | '
       'TTS engine: ${engineMs}ms | '
       'Total: ${totalMs}ms | '
       'msg: "$msg"',
@@ -132,20 +165,23 @@ class ObstacleTtsTimer {
     final avgBle = (_totalBleMs / _sampleCount).round();
     final avgProcess = (_totalProcessMs / _sampleCount).round();
     final avgQueue = (_totalQueueMs / _sampleCount).round();
+    final avgStop = (_totalStopMs / _sampleCount).round();
     final avgEngine = (_totalEngineMs / _sampleCount).round();
     final avgTotal = (_totalEndToEndMs / _sampleCount).round();
     debugPrint('[RT_OBSTACLE] -- SUMMARY ($_sampleCount samples) --');
-    debugPrint('[RT_OBSTACLE]   Pi->BLE      : avg ${avgBle}ms');
-    debugPrint('[RT_OBSTACLE]   BLE->TTS call: avg ${avgProcess}ms');
-    debugPrint('[RT_OBSTACLE]   Queue wait   : avg ${avgQueue}ms');
-    debugPrint('[RT_OBSTACLE]   TTS engine   : avg ${avgEngine}ms');
-    debugPrint('[RT_OBSTACLE]   Total        : avg ${avgTotal}ms  (min: ${_minEndToEndMs}ms, max: ${_maxEndToEndMs}ms)');
+    debugPrint('[RT_OBSTACLE]   Pi->BLE       : avg ${avgBle}ms');
+    debugPrint('[RT_OBSTACLE]   BLE->TTS call : avg ${avgProcess}ms');
+    debugPrint('[RT_OBSTACLE]   Queue wait    : avg ${avgQueue}ms');
+    debugPrint('[RT_OBSTACLE]   Stop overhead : avg ${avgStop}ms');
+    debugPrint('[RT_OBSTACLE]   TTS engine    : avg ${avgEngine}ms');
+    debugPrint('[RT_OBSTACLE]   Total         : avg ${avgTotal}ms  (min: ${_minEndToEndMs}ms, max: ${_maxEndToEndMs}ms)');
   }
 
   static void reset() {
     _piTimestamp = null;
     _bleArrivalTime = null;
     _ttsCallTime = null;
+    _ttsStopStartTime = null;
     _ttsSendTime = null;
     _pendingMessage = null;
     _pendingBleMs = null;
@@ -154,6 +190,7 @@ class ObstacleTtsTimer {
     _totalBleMs = 0;
     _totalProcessMs = 0;
     _totalQueueMs = 0;
+    _totalStopMs = 0;
     _totalEngineMs = 0;
     _totalEndToEndMs = 0;
     _minEndToEndMs = 999999;

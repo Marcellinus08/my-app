@@ -262,13 +262,13 @@ class _NavigationScreenState extends State<NavigationScreen>
       if (alertDets.length >= 2) {
         final l1 = _labelId(alertDets[0].label);
         final l2 = _labelId(alertDets[1].label);
-        return '$l1 dan $l2, waspada.';
+        return 'Waspada, $l1 dan $l2.';
       }
       final d = alertDets.first;
       final labelText = _labelId(d.label);
       final pos = _posSuffix(d.position);
       if (direction.isNotEmpty) return '$labelText$pos. Belok $direction.';
-      return '$labelText$pos, waspada.';
+      return 'Waspada, $labelText$pos.';
     }
 
     // Warning + arah (tanpa label bahaya)
@@ -281,14 +281,14 @@ class _NavigationScreenState extends State<NavigationScreen>
     // Level 4 — info lingkungan
     for (final d in dets) {
       final label = d.label.toLowerCase();
-      if (label.contains('zebra')) return 'Zebra cross, waspada.';
+      if (label.contains('zebra')) return 'Waspada, zebra cross.';
       if (label == 'puddle') {
         final pos = _posSuffix(d.position);
-        return 'Genangan$pos, waspada.';
+        return 'Waspada, genangan$pos.';
       }
       if (label != 'walkable' && label != 'road') {
         final pos = _posSuffix(d.position);
-        return '${_labelId(d.label)}$pos, waspada.';
+        return 'Waspada, ${_labelId(d.label)}$pos.';
       }
     }
 
@@ -336,8 +336,8 @@ class _NavigationScreenState extends State<NavigationScreen>
           unawaited(
             speakSafe(
               'Jalur aman.',
-              priority: TtsPriority.normal,
-              replacementKey: 'sensor-info',
+              priority: TtsPriority.warning,
+              replacementKey: 'sensor-hazard',
               maxAge: const Duration(seconds: 4),
             ),
           );
@@ -382,16 +382,21 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     final TtsPriority priority;
     final String replacementKey;
+    final Duration maxAge;
 
     if (isDanger) {
       priority = TtsPriority.warning;
       replacementKey = 'sensor-hazard';
+      maxAge = const Duration(seconds: 4);
     } else if (isWarning) {
-      priority = TtsPriority.normal;
-      replacementKey = 'sensor-info';
+      // Hambatan fisik harus bisa interrupt ML speech (low) — pakai warning priority
+      priority = TtsPriority.warning;
+      replacementKey = 'sensor-hazard';
+      maxAge = const Duration(seconds: 3);
     } else {
       priority = TtsPriority.low;
       replacementKey = 'sensor-info';
+      maxAge = const Duration(seconds: 2);
     }
 
     _lastSpokenSensorMessage = message;
@@ -406,7 +411,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         priority: priority,
         deduplicationKey: 'sensor-$message',
         replacementKey: replacementKey,
-        maxAge: const Duration(seconds: 4),
+        maxAge: maxAge,
       ),
     );
   }
@@ -438,8 +443,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   @override
   void initState() {
     super.initState();
-    TTSService.onSpeechStartHook = ObstacleTtsTimer.onTtsStart;
-    TTSService.onSpeechSendHook = ObstacleTtsTimer.onTtsSend;
+    TTSService.onSpeechStartHook  = ObstacleTtsTimer.onTtsStart;
+    TTSService.onSpeechSendHook   = ObstacleTtsTimer.onTtsSend;
+    TTSService.onTtsStopStartHook = ObstacleTtsTimer.onTtsStopStart;
+    unawaited(_ttsService.init());
     WidgetsBinding.instance.addObserver(this);
     _mapController = MapController();
     _locationAnimationController = AnimationController(
@@ -2565,8 +2572,9 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   @override
   void dispose() {
-    TTSService.onSpeechStartHook = null;
-    TTSService.onSpeechSendHook = null;
+    TTSService.onSpeechStartHook  = null;
+    TTSService.onSpeechSendHook   = null;
+    TTSService.onTtsStopStartHook = null;
     WidgetsBinding.instance.removeObserver(this);
     _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
     if (_currentTripId != null) {

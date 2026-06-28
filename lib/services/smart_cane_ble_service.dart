@@ -85,17 +85,6 @@ class SmartCaneBleService extends ChangeNotifier {
 
   BluetoothCharacteristic? _imuCharacteristic;
 
-  Future<void> sendImuData(String jsonPayload) async {
-    if (_imuCharacteristic == null) return;
-    try {
-      await _imuCharacteristic!.write(
-        utf8.encode(jsonPayload),
-        withoutResponse: true,
-      );
-    } catch (e) {
-      debugPrint('[BLE] sendImuData error: $e');
-    }
-  }
 
   bool get isSmartCaneReady => isConnected && isSensorRunning && isModelRunning;
 
@@ -245,11 +234,6 @@ class SmartCaneBleService extends ChangeNotifier {
       await _imuCharacteristic!.setNotifyValue(true);
       log('[SMARTCANE_BLE] IMU a004 notify subscribed');
 
-      // Pasang callback agar FallDetectionService bisa kirim phone IMU ke RPi
-      FallDetectionService.instance.onSendPhoneImu = (String jsonPayload) {
-        unawaited(sendImuData(jsonPayload));
-      };
-
       await FallDetectionService.instance.start();
     } else {
       log('[SMARTCANE_BLE] characteristic IMU a004 tidak ditemukan');
@@ -306,11 +290,7 @@ class SmartCaneBleService extends ChangeNotifier {
 
       final event = decoded['e']?.toString();
 
-      if (event == 'fusion_window') {
-        log('[FALL] Fusion window diterima dari RPi');
-        FallDetectionService.instance.onFusionWindowReceived(decoded);
-      }
-      // Event lain dari a004 di sini bisa ditambahkan nanti
+      // Event dari a004 di sini bisa ditambahkan nanti
     } catch (e) {
       log('[FALL] Gagal parse IMU payload: $e');
     }
@@ -656,7 +636,6 @@ class SmartCaneBleService extends ChangeNotifier {
       await _imuSubscription?.cancel();
       _imuSubscription = null;
       _imuPayloadBuffer = '';
-      FallDetectionService.instance.onSendPhoneImu = null;
       _sensorSubscription = null;
       _connectedDevice = null;
       _connectedBleName = null;

@@ -35,6 +35,10 @@ class TTSService {
   // Hook untuk mengukur response time — dipanggil tepat sebelum _tts.speak() dipanggil.
   static void Function(String text)? onSpeechSendHook;
 
+  // Hook untuk mengukur response time — dipanggil tepat sebelum _tts.stop() dipanggil
+  // (sebelum giliran item ini diproses). Memisahkan stop overhead dari queue wait murni.
+  static void Function(String text)? onTtsStopStartHook;
+
   Future<void> init() async {
     if (_isInit) return;
 
@@ -165,6 +169,7 @@ class TTSService {
         _currentRequest = request;
 
         try {
+          onTtsStopStartHook?.call(request.text);
           await _tts.stop();
           if (_isSttActive ||
               generation != _speechGeneration ||
@@ -216,8 +221,10 @@ class TTSService {
     final current = _currentRequest;
     if (current == null) return false;
     if (request.priority == TtsPriority.critical) return true;
+    // warning interrupts warning and below — ensures latest bahaya/hambatan/jalur aman
+    // always preempts the previous one without waiting for it to finish.
     return request.priority == TtsPriority.warning &&
-        current.priority.index < TtsPriority.warning.index;
+        current.priority.index <= TtsPriority.warning.index;
   }
 
   Future<void> _interruptCurrentSpeech() async {
