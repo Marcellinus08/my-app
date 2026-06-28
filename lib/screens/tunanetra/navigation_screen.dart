@@ -169,13 +169,141 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   // Level terakhir yang diumumkan (0=none, 1=safe/ml, 2=warning, 3=danger)
   int _lastSensorLevel = 0;
+  DateTime? _safePathDetectedAt;
+
+  // Terjemahan label ML ke Bahasa Indonesia (termasuk label yang tidak ada
+  // di SmartCaneSensorData._translateObjectLabel seperti pothole/stair/road).
+  String _labelId(String label) => switch (label.toLowerCase()) {
+    'pothole' => 'lubang',
+    'obstacle' => 'hambatan',
+    'stair' || 'stairs' => 'tangga',
+    'road' => 'jalur kendaraan',
+    'puddle' => 'genangan',
+    'zebra_cross' || 'zebracross' || 'zebra cross' => 'zebra cross',
+    'person' => 'orang',
+    'bicycle' => 'sepeda',
+    'car' => 'mobil',
+    'motorcycle' || 'motorbike' => 'motor',
+    'bus' => 'bus',
+    'truck' => 'truk',
+    'traffic light' => 'lampu lalu lintas',
+    _ => label,
+  };
+
+  // Suffix posisi — hanya untuk non-tengah.
+  String _posSuffix(String pos) => switch (pos.toLowerCase()) {
+    'kiri' || 'left' => ' kiri',
+    'kanan' || 'right' => ' kanan',
+    _ => '',
+  };
+
+  /// Membangun pesan TTS singkat (≤5 kata) untuk mode jelajah.
+  /// Satu pesan = satu informasi paling kritis, hierarki ketat:
+  ///   1. Sensor danger (ultrasonik)
+  ///   2. Road / pothole (label bahaya fisik)
+  ///   3. Obstacle / stair / kendaraan (waspada)
+  ///   4. Info lingkungan (zebra cross, genangan)
+  ///   5. Arah dari decision RPi
+  String _buildSimpleObstacleMessage(SmartCaneSensorData data) {
+    final decisionRaw = data.decision?.trim().toLowerCase() ?? '';
+    final direction = switch (decisionRaw) {
+      'kiri' || 'belok kiri' || 'left' ||
+      'pindah kiri' || 'pindah ke kiri' ||
+      'geser kiri' || 'geser ke kiri' => 'kiri',
+      'kanan' || 'belok kanan' || 'right' ||
+      'pindah kanan' || 'pindah ke kanan' ||
+      'geser kanan' || 'geser ke kanan' => 'kanan',
+      _ => '',
+    };
+    final isStop = decisionRaw == 'stop' ||
+        decisionRaw == 'berhenti' ||
+        decisionRaw == 'berhenti sementara';
+
+    // Level 1 — sensor ultrasonik danger
+    if (data.isDanger) {
+      if (direction.isNotEmpty) return 'Bahaya! Belok $direction.';
+      if (isStop) return 'Bahaya! Berhenti.';
+      // belum ada label → cek deteksi dulu, fallback di bawah
+    }
+
+    final dets = data.detections;
+
+    // Level 2 — road / pothole (bahaya fisik langsung)
+    for (final d in dets) {
+      switch (d.label.toLowerCase()) {
+        case 'road':
+          final pos = _posSuffix(d.position);
+          return pos.isEmpty ? 'Jalur kendaraan! Mundur.' : 'Jalur kendaraan$pos!';
+        case 'pothole':
+          final pos = _posSuffix(d.position);
+          return pos.isEmpty ? 'Lubang di depan.' : 'Lubang$pos.';
+      }
+    }
+
+    // Sensor danger tanpa label spesifik
+    if (data.isDanger) return 'Bahaya! Berhenti.';
+
+    // Level 3 — obstacle / stair / kendaraan
+    const alertSet = {
+      'obstacle',
+      'stair',
+      'stairs',
+      'person',
+      'bicycle',
+      'car',
+      'motorcycle',
+      'motorbike',
+      'bus',
+      'truck',
+    };
+    final alertDets =
+        dets.where((d) => alertSet.contains(d.label.toLowerCase())).toList();
+    if (alertDets.isNotEmpty) {
+      if (alertDets.length >= 2) {
+        final l1 = _labelId(alertDets[0].label);
+        final l2 = _labelId(alertDets[1].label);
+        return '$l1 dan $l2, waspada.';
+      }
+      final d = alertDets.first;
+      final labelText = _labelId(d.label);
+      final pos = _posSuffix(d.position);
+      if (direction.isNotEmpty) return '$labelText$pos. Belok $direction.';
+      return '$labelText$pos, waspada.';
+    }
+
+    // Warning + arah (tanpa label bahaya)
+    if (data.isWarning) {
+      if (direction.isNotEmpty) return 'Hambatan, belok $direction.';
+      if (isStop) return 'Hambatan, berhenti.';
+      return 'Hati-hati! Hambatan.';
+    }
+
+    // Level 4 — info lingkungan
+    for (final d in dets) {
+      final label = d.label.toLowerCase();
+      if (label.contains('zebra')) return 'Zebra cross, waspada.';
+      if (label == 'puddle') {
+        final pos = _posSuffix(d.position);
+        return 'Genangan$pos, waspada.';
+      }
+      if (label != 'walkable' && label != 'road') {
+        final pos = _posSuffix(d.position);
+        return '${_labelId(d.label)}$pos, waspada.';
+      }
+    }
+
+    // Level 5 — hanya arah dari decision
+    if (direction.isNotEmpty) return 'Belok $direction.';
+
+    // Fallback berbasis status — raw message RPi tidak pernah dipakai
+    if (data.isDanger || data.hasDangerDetection) return 'Bahaya! Berhenti.';
+    if (data.isWarning) return 'Hati-hati! Hambatan.';
+    return '';
+  }
 
   void _handleSensorTts(SmartCaneSensorData data) {
     if (!_smartCaneBleService.navigationHazardAnnouncementsEnabled) return;
     if (!_isNavigating && !_isFreeMode) return;
-
-    final message = data.message.trim();
-    if (message.isEmpty) return;
 
     final isDanger = data.isDanger || data.hasDangerDetection;
     final isWarning = data.isWarning;
@@ -195,30 +323,61 @@ class _NavigationScreenState extends State<NavigationScreen>
       currentLevel = hasUsefulMl ? 1 : 0;
     }
 
-    if (currentLevel == 0) return;
+    // Tidak ada bahaya/warning
+    if (currentLevel < 2) {
+      // Transisi dari bahaya/warning ke aman — tunggu 1.5s stabil lalu ucapkan
+      if (_lastSensorLevel >= 2) {
+        final now = DateTime.now();
+        _safePathDetectedAt ??= now;
+        if (now.difference(_safePathDetectedAt!) >=
+            const Duration(milliseconds: 1000)) {
+          _safePathDetectedAt = null;
+          _lastSensorLevel = 0;
+          unawaited(
+            speakSafe(
+              'Jalur aman.',
+              priority: TtsPriority.normal,
+              replacementKey: 'sensor-info',
+              maxAge: const Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+      if (currentLevel == 0) return;
+      // level 1 (ML info) lanjut ke bawah
+    } else {
+      // Ada bahaya/warning — reset timer safe path
+      _safePathDetectedAt = null;
+    }
+
+    final message = _buildSimpleObstacleMessage(data);
+    if (message.isEmpty) return;
 
     // Suppress warning/info saat navigasi sedang bicara — danger tetap lanjut
     if (currentLevel < 3 && isNavigationSpeaking) return;
 
     final now = DateTime.now();
-    final lastAt = _lastSensorTtsAt;
-    final isMoving = _estimatedSpeedMs >= _minimumWalkingSpeedMs;
 
-    // Cooldown global per level (bukan per pesan):
-    // level naik (eskalasi) → bypass cooldown, langsung bunyi
-    // level sama atau turun → terapkan cooldown
-    final bool isEscalating = currentLevel > _lastSensorLevel;
-    if (!isEscalating && lastAt != null) {
-      final Duration cooldown = switch (currentLevel) {
-        3 => const Duration(seconds: 3),
-        2 => isMoving
-            ? const Duration(seconds: 5)
-            : const Duration(seconds: 8),
-        _ => isMoving
-            ? const Duration(seconds: 8)
-            : const Duration(seconds: 12),
-      };
-      if (now.difference(lastAt) < cooldown) return;
+    // Mode jelajah: tanpa cooldown — deduplikasi ditangani oleh deduplicationKey
+    // (duplicateWindow 2s mencegah pesan identik spam).
+    // Mode navigasi: terapkan cooldown supaya navigasi tidak tenggelam.
+    if (!_isFreeMode) {
+      final lastAt = _lastSensorTtsAt;
+      final isMoving = _estimatedSpeedMs >= _minimumWalkingSpeedMs;
+      final bool isEscalating = currentLevel > _lastSensorLevel;
+      if (!isEscalating && lastAt != null) {
+        final Duration cooldown = switch (currentLevel) {
+          3 => const Duration(seconds: 3),
+          2 => isMoving
+              ? const Duration(seconds: 5)
+              : const Duration(seconds: 8),
+          _ => isMoving
+              ? const Duration(seconds: 8)
+              : const Duration(seconds: 12),
+        };
+        if (now.difference(lastAt) < cooldown) return;
+      }
     }
 
     final TtsPriority priority;
@@ -3519,6 +3678,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
     _lastSensorTtsAt = null;
     _lastSensorLevel = 0;
+    _safePathDetectedAt = null;
     setState(() => _isFreeMode = false);
   }
 
