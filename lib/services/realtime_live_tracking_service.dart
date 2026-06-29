@@ -7,6 +7,9 @@ import 'package:firebase_database/firebase_database.dart';
 class RealtimeLiveTrackingService {
   RealtimeLiveTrackingService._();
 
+  // Response time measurement hook — set oleh GpsRtTimer, null di production
+  static void Function()? onRtdbWriteDone;
+
   static const String databaseUrl =
       'https://smarthcane-11b47-default-rtdb.asia-southeast1.firebasedatabase.app';
 
@@ -31,7 +34,6 @@ class RealtimeLiveTrackingService {
       if (clientSentAtMs is num) {
         final delayMs =
             DateTime.now().millisecondsSinceEpoch - clientSentAtMs.round();
-        // Hanya tampilkan nilai valid: abaikan cache lokal (<0) dan GPS stall (>2000ms)
         if (delayMs >= 0 && delayMs <= 2000) {
           // ignore: avoid_print
           print('[DELAY_TRACKING] $delayMs ms');
@@ -57,6 +59,7 @@ class RealtimeLiveTrackingService {
       'updatedAt': ServerValue.timestamp,
       'clientSentAtMs': DateTime.now().millisecondsSinceEpoch,
     });
+    onRtdbWriteDone?.call();
     _ensureDisconnectHandler(user.uid);
   }
 

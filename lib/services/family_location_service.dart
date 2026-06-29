@@ -9,6 +9,9 @@ import 'analytics_service.dart';
 import 'realtime_live_tracking_service.dart';
 
 class FamilyLocationService {
+  // Response time measurement hook — set oleh GpsRtTimer, null di production
+  static void Function(int sampleNum, int batteryMs, int rtdbAndPropMs, int totalMs)? onFamilyReceived;
+
   final FirebaseDatabase _db = FirebaseDatabase.instanceFor(
     app: Firebase.app(),
     databaseURL: RealtimeLiveTrackingService.databaseUrl,
@@ -65,7 +68,21 @@ class FamilyLocationService {
     return _db.ref('live_tracking/$uid').onValue.map((event) {
       final value = event.snapshot.value;
       if (value is! Map) return null;
-      return value.map((key, entry) => MapEntry(key.toString(), entry));
+      final data = value.map((key, entry) => MapEntry(key.toString(), entry));
+      final rtStartMs = data['_rt_start_ms'];
+      final rtSampleNum = data['_rt_sample_num'];
+      final clientSentAtMs = data['clientSentAtMs'];
+      if (rtStartMs is num && clientSentAtMs is num && rtSampleNum is num) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final batteryMs = clientSentAtMs.round() - rtStartMs.round();
+        final rtdbAndPropMs = now - clientSentAtMs.round();
+        final totalMs = now - rtStartMs.round();
+        // abaikan data cache lama atau clock skew
+        if (batteryMs >= 0 && rtdbAndPropMs >= 0 && totalMs < 30000) {
+          onFamilyReceived?.call(rtSampleNum.round(), batteryMs, rtdbAndPropMs, totalMs);
+        }
+      }
+      return data;
     });
   }
 

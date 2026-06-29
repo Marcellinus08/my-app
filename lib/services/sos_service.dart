@@ -47,6 +47,11 @@ class SosService {
   static const String workerSendSosUrl =
       'https://teman-arah-sos-worker.teman-arah.workers.dev/send-sos';
 
+  // Response time measurement hooks — set oleh SosRtTimer, null di production
+  static void Function()? onAuthDone;
+  static void Function()? onFirestoreDone;
+  static void Function(int successCount, int failedCount)? onWorkerDone;
+
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final http.Client _httpClient;
@@ -70,6 +75,7 @@ class SosService {
       if (idToken == null || idToken.trim().isEmpty) {
         throw Exception('Token autentikasi tidak tersedia');
       }
+      onAuthDone?.call();
 
       final uid = currentUser.uid;
       final profile = await getTunaNetraProfile(uid);
@@ -123,6 +129,7 @@ class SosService {
           lng: lng,
         );
       }
+      onFirestoreDone?.call();
 
       // Kirim notifikasi ke semua keluarga secara paralel
       final deliveryResults = await Future.wait(
@@ -148,6 +155,7 @@ class SosService {
         successCount += result[0];
         failedCount += result[1];
       }
+      onWorkerDone?.call(successCount, failedCount);
 
       return SosSendResult(
         sosId: sosId,

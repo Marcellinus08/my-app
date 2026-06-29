@@ -17,6 +17,7 @@ import '../../widgets/app_dialog.dart';
 import 'family_history_screen.dart';
 import 'family_manage_places_screen.dart';
 import 'family_settings_screen.dart';
+import '../../response_time/gps_tracking_response_time.dart';
 
 class FamilyHomeScreen extends StatefulWidget {
   final String?
@@ -71,6 +72,8 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
   @override
   void initState() {
     super.initState();
+    GpsRtTimer.reset();
+    FamilyLocationService.onFamilyReceived = GpsRtTimer.onFamilyReceived;
     _initializeAnimations();
     AnalyticsService().logScreenView(screenName: 'FamilyHome');
     NotificationService.instance.initializeForFamilyUser();
@@ -815,6 +818,7 @@ class _FamilyHomeScreenState extends State<FamilyHomeScreen>
     _liveTrackingFreshnessTimer?.cancel();
     _fadeController.dispose();
     _locationService.dispose();
+    FamilyLocationService.onFamilyReceived = null;
     super.dispose();
   }
 

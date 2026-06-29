@@ -13,6 +13,12 @@ class LiveTrackingService {
   factory LiveTrackingService() => _instance;
   LiveTrackingService._internal();
 
+  // Response time measurement hooks — set oleh GpsRtTimer, null di production
+  static void Function()? onWriteStart;
+  static void Function()? onBatteryDone;
+  static int? Function()? onGetWriteStartMs;
+  static int? Function()? onGetSampleNum;
+
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final Battery _battery = Battery();
   final RealtimeLiveTrackingService _realtimeTracking =
@@ -277,15 +283,20 @@ class LiveTrackingService {
   }
 
   Future<void> updateHomeLocationOnly({required Position position}) async {
+    debugPrint('[RT_GPS_DEBUG] updateHomeLocationOnly called, user=${_auth.currentUser?.uid}');
     final user = _auth.currentUser;
     if (user == null) {
       return;
     }
 
     try {
+      onWriteStart?.call();
       final batteryLevel = await _battery.batteryLevel;
+      onBatteryDone?.call();
       final smartCaneBatteryLevel =
           SmartCaneBleService.instance.latestBatteryData?.percentage;
+      final rtStartMs = onGetWriteStartMs?.call();
+      final rtSampleNum = onGetSampleNum?.call();
 
       await _realtimeTracking.setOwnTracking({
         'lat': position.latitude,
@@ -301,6 +312,8 @@ class LiveTrackingService {
         'connectionStatus': 'online',
         'batteryLevel': batteryLevel,
         'smartCaneBatteryLevel': smartCaneBatteryLevel,
+        if (rtStartMs != null) '_rt_start_ms': rtStartMs,
+        if (rtSampleNum != null) '_rt_sample_num': rtSampleNum,
       });
 
     } catch (_) {
@@ -333,14 +346,20 @@ class LiveTrackingService {
     final user = _auth.currentUser;
     if (user == null) return;
 
+    onWriteStart?.call();
     final batteryLevel = await _battery.batteryLevel;
+    onBatteryDone?.call();
     final smartCaneBatteryLevel =
         SmartCaneBleService.instance.latestBatteryData?.percentage;
+    final rtStartMs = onGetWriteStartMs?.call();
+    final rtSampleNum = onGetSampleNum?.call();
 
     await _realtimeTracking.setOwnTracking({
       ...data,
       'batteryLevel': batteryLevel,
       'smartCaneBatteryLevel': smartCaneBatteryLevel,
+      if (rtStartMs != null) '_rt_start_ms': rtStartMs,
+      if (rtSampleNum != null) '_rt_sample_num': rtSampleNum,
     });
   }
 

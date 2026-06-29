@@ -22,6 +22,8 @@ import '../../services/stt_service.dart';
 import '../../services/tts_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
 import '../../widgets/app_dialog.dart';
+import '../../response_time/sos_notification_response_time.dart';
+import '../../response_time/gps_tracking_response_time.dart';
 
 class TunaNetraHomeScreen extends StatefulWidget {
   const TunaNetraHomeScreen({super.key});
@@ -91,6 +93,15 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   @override
   void initState() {
     super.initState();
+    SosService.onAuthDone      = SosRtTimer.onAuthDone;
+    SosService.onFirestoreDone = SosRtTimer.onFirestoreDone;
+    SosService.onWorkerDone    = SosRtTimer.onWorkerDone;
+    GpsRtTimer.reset();
+    LiveTrackingService.onWriteStart      = GpsRtTimer.onWriteStart;
+    LiveTrackingService.onBatteryDone     = GpsRtTimer.onBatteryDone;
+    LiveTrackingService.onGetWriteStartMs = GpsRtTimer.getWriteStartMs;
+    LiveTrackingService.onGetSampleNum    = GpsRtTimer.getSampleNum;
+    RealtimeLiveTrackingService.onRtdbWriteDone = GpsRtTimer.onRtdbWriteDone;
     WidgetsBinding.instance.addObserver(this);
     _initializeAnimations();
     _firestore = FirebaseFirestore.instance;
@@ -1499,6 +1510,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   Future<void> _triggerEmergency() async {
     if (_isSendingSos) return;
     if (!TunaNetraVoiceCommands.claimSosTrigger()) return;
+    SosRtTimer.onTrigger();
 
     setState(() {
       _isSendingSos = true;
@@ -1513,6 +1525,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         priority: TtsPriority.critical,
         deduplicationKey: 'home-sos-sending',
       );
+      SosRtTimer.onSendStart();
       sosResult = await _sosService.sendSosAlert();
     } catch (e) {
       sosError = e;
@@ -2177,6 +2190,14 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     routeObserver.unsubscribe(this);
     _pairingRequestSub?.cancel();
     _fadeController.dispose();
+    SosService.onAuthDone      = null;
+    SosService.onFirestoreDone = null;
+    SosService.onWorkerDone    = null;
+    LiveTrackingService.onWriteStart      = null;
+    LiveTrackingService.onBatteryDone     = null;
+    LiveTrackingService.onGetWriteStartMs = null;
+    LiveTrackingService.onGetSampleNum    = null;
+    RealtimeLiveTrackingService.onRtdbWriteDone = null;
     super.dispose();
   }
 }

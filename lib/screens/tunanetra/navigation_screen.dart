@@ -14,6 +14,7 @@ import '../../services/places_service.dart';
 import '../../services/routing_service.dart';
 import '../../services/analytics_service.dart';
 import '../../services/live_tracking_service.dart';
+import '../../services/realtime_live_tracking_service.dart';
 import '../../services/navigation_history_service.dart';
 import '../../services/smart_cane_ble_service.dart';
 import '../../services/sos_service.dart';
@@ -22,6 +23,8 @@ import '../../services/tts_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
 import '../../widgets/app_dialog.dart';
 import 'package:teman_arah/response_time/obstacle_tts_response_time.dart';
+import 'package:teman_arah/response_time/sos_notification_response_time.dart';
+import 'package:teman_arah/response_time/gps_tracking_response_time.dart';
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -61,7 +64,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const double _maximumCueGpsAccuracyMeters = 20.0;
   static const double _maximumNowCueGpsAccuracyMeters = 10.0;
   static const double _turnCompletionHeadingToleranceDegrees = 45.0;
-  static const double _turnAreaDistanceMeters = 5.0;
+  static const double _turnAreaDistanceMeters = 10.0;
   static const double _minimumWalkingSpeedMs = 0.2;
   static const double _maximumWalkingCueSpeedMs = 3.0;
   static const double _turnAnchorSearchRadiusMeters = 35.0;
@@ -221,7 +224,7 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     // Level 1 — sensor ultrasonik danger
     if (data.isDanger) {
-      if (direction.isNotEmpty) return 'Bahaya! Belok $direction.';
+      if (direction.isNotEmpty) return 'Bahaya! Pindah $direction.';
       if (isStop) return 'Bahaya! Berhenti.';
       // belum ada label → cek deteksi dulu, fallback di bawah
     }
@@ -267,13 +270,13 @@ class _NavigationScreenState extends State<NavigationScreen>
       final d = alertDets.first;
       final labelText = _labelId(d.label);
       final pos = _posSuffix(d.position);
-      if (direction.isNotEmpty) return '$labelText$pos. Belok $direction.';
+      if (direction.isNotEmpty) return '$labelText$pos. Pindah $direction.';
       return 'Waspada, $labelText$pos.';
     }
 
     // Warning + arah (tanpa label bahaya)
     if (data.isWarning) {
-      if (direction.isNotEmpty) return 'Hambatan, belok $direction.';
+      if (direction.isNotEmpty) return 'Hambatan, pindah $direction.';
       if (isStop) return 'Hambatan, berhenti.';
       return 'Hati-hati! Hambatan.';
     }
@@ -293,7 +296,7 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
 
     // Level 5 — hanya arah dari decision
-    if (direction.isNotEmpty) return 'Belok $direction.';
+    if (direction.isNotEmpty) return 'Pindah $direction.';
 
     // Fallback berbasis status — raw message RPi tidak pernah dipakai
     if (data.isDanger || data.hasDangerDetection) return 'Bahaya! Berhenti.';
@@ -358,27 +361,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (currentLevel < 3 && isNavigationSpeaking) return;
 
     final now = DateTime.now();
-
-    // Mode jelajah: tanpa cooldown — deduplikasi ditangani oleh deduplicationKey
-    // (duplicateWindow 2s mencegah pesan identik spam).
-    // Mode navigasi: terapkan cooldown supaya navigasi tidak tenggelam.
-    if (!_isFreeMode) {
-      final lastAt = _lastSensorTtsAt;
-      final isMoving = _estimatedSpeedMs >= _minimumWalkingSpeedMs;
-      final bool isEscalating = currentLevel > _lastSensorLevel;
-      if (!isEscalating && lastAt != null) {
-        final Duration cooldown = switch (currentLevel) {
-          3 => const Duration(seconds: 3),
-          2 => isMoving
-              ? const Duration(seconds: 5)
-              : const Duration(seconds: 8),
-          _ => isMoving
-              ? const Duration(seconds: 8)
-              : const Duration(seconds: 12),
-        };
-        if (now.difference(lastAt) < cooldown) return;
-      }
-    }
 
     final TtsPriority priority;
     final String replacementKey;
@@ -446,6 +428,15 @@ class _NavigationScreenState extends State<NavigationScreen>
     TTSService.onSpeechStartHook  = ObstacleTtsTimer.onTtsStart;
     TTSService.onSpeechSendHook   = ObstacleTtsTimer.onTtsSend;
     TTSService.onTtsStopStartHook = ObstacleTtsTimer.onTtsStopStart;
+    SosService.onAuthDone      = SosRtTimer.onAuthDone;
+    SosService.onFirestoreDone = SosRtTimer.onFirestoreDone;
+    SosService.onWorkerDone    = SosRtTimer.onWorkerDone;
+    GpsRtTimer.reset();
+    LiveTrackingService.onWriteStart      = GpsRtTimer.onWriteStart;
+    LiveTrackingService.onBatteryDone     = GpsRtTimer.onBatteryDone;
+    LiveTrackingService.onGetWriteStartMs = GpsRtTimer.getWriteStartMs;
+    LiveTrackingService.onGetSampleNum    = GpsRtTimer.getSampleNum;
+    RealtimeLiveTrackingService.onRtdbWriteDone = GpsRtTimer.onRtdbWriteDone;
     unawaited(_ttsService.init());
     WidgetsBinding.instance.addObserver(this);
     _mapController = MapController();
@@ -827,6 +818,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   Future<void> _triggerNavigationSos() async {
     if (_isSendingSos) return;
     if (!TunaNetraVoiceCommands.claimSosTrigger()) return;
+    SosRtTimer.onTrigger();
 
     _isSendingSos = true;
     await _stopNavigationStt();
@@ -838,6 +830,7 @@ class _NavigationScreenState extends State<NavigationScreen>
         priority: TtsPriority.critical,
         deduplicationKey: 'navigation-sos-sending',
       );
+      SosRtTimer.onSendStart();
       final result = await _sosService.sendSosAlert();
       if (!mounted) return;
       AppFeedback.show(
@@ -1767,12 +1760,12 @@ class _NavigationScreenState extends State<NavigationScreen>
     _maneuverConfirmationCounts[_currentInstructionIndex] = 0;
     _lastManeuverConfirmationAt.remove(_currentInstructionIndex);
 
-    final cueMeters = conservativeDistance <= 10
-        ? 10
-        : conservativeDistance <= 20
+    final cueMeters = conservativeDistance <= 20
         ? 20
         : conservativeDistance <= 30
         ? 30
+        : conservativeDistance <= 50
+        ? 50
         : null;
     if (cueMeters == null) return;
 
@@ -1780,11 +1773,8 @@ class _NavigationScreenState extends State<NavigationScreen>
       _currentInstructionIndex,
       () => <int>{},
     );
-    if (cueMeters == 30 &&
-        (announcedCueMeters.contains(20) || announcedCueMeters.contains(10))) {
-      return;
-    }
-    if (cueMeters == 20 && announcedCueMeters.contains(10)) return;
+    if (cueMeters == 50 && announcedCueMeters.contains(30)) return;
+    if (cueMeters == 30 && announcedCueMeters.contains(20)) return;
     if (!announcedCueMeters.add(cueMeters)) return;
 
     unawaited(
@@ -2575,6 +2565,14 @@ class _NavigationScreenState extends State<NavigationScreen>
     TTSService.onSpeechStartHook  = null;
     TTSService.onSpeechSendHook   = null;
     TTSService.onTtsStopStartHook = null;
+    SosService.onAuthDone      = null;
+    SosService.onFirestoreDone = null;
+    SosService.onWorkerDone    = null;
+    LiveTrackingService.onWriteStart      = null;
+    LiveTrackingService.onBatteryDone     = null;
+    LiveTrackingService.onGetWriteStartMs = null;
+    LiveTrackingService.onGetSampleNum    = null;
+    RealtimeLiveTrackingService.onRtdbWriteDone = null;
     WidgetsBinding.instance.removeObserver(this);
     _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
     if (_currentTripId != null) {
