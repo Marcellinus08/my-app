@@ -126,6 +126,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   DateTime? _offRouteSince;
   DateTime? _lastRerouteAt;
   bool _isOffRouteWarningVisible = false;
+  bool _hasAnnouncedGpsWeakSignal = false;
 
   // Route info (distance, duration) - Walking mode
   double _routeDistanceKm = 0.0;
@@ -1335,6 +1336,23 @@ class _NavigationScreenState extends State<NavigationScreen>
       debugPrint(
         '[NAVIGATION] GPS low accuracy: ${position.accuracy.toStringAsFixed(1)}m',
       );
+      if (!_hasAnnouncedGpsWeakSignal) {
+        _hasAnnouncedGpsWeakSignal = true;
+        unawaited(
+          speakSafe(
+            'Sinyal GPS lemah.',
+            priority: TtsPriority.warning,
+            deduplicationKey: 'navigation-gps-weak',
+            replacementKey: 'navigation-guidance',
+            maxAge: const Duration(seconds: 10),
+          ),
+        );
+        if (mounted) {
+          AppFeedback.warning(context, 'Sinyal GPS lemah.');
+        }
+      }
+    } else {
+      _hasAnnouncedGpsWeakSignal = false;
     }
 
     final now = DateTime.now();
@@ -2534,6 +2552,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _offRouteSince = null;
       _lastRerouteAt = null;
       _isOffRouteWarningVisible = false;
+      _hasAnnouncedGpsWeakSignal = false;
       _navigationInstructions = [];
       _currentInstructionIndex = 0;
       _currentInstructionRemainingMeters = null;
@@ -2975,6 +2994,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _offRouteSince = null;
       _lastRerouteAt = null;
       _isOffRouteWarningVisible = false;
+      _hasAnnouncedGpsWeakSignal = false;
       _routeDistanceKm = 0.0;
       _routeDurationMinutes = 0.0;
       _routeLoadError = '';
@@ -3029,6 +3049,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           _offRouteSince = null;
           _lastRerouteAt = null;
           _isOffRouteWarningVisible = false;
+          _hasAnnouncedGpsWeakSignal = false;
           _isLoadingRoute = false;
           _routeLoadError = '';
           _navigationInstructions = instructions;
@@ -3115,11 +3136,29 @@ class _NavigationScreenState extends State<NavigationScreen>
           _routeLoadError = userFriendlyMsg;
         });
 
+        final isConnectivityError = error
+            .toString()
+            .toLowerCase()
+            .contains('tidak ada koneksi internet');
+
+        if (wasNavigating && isConnectivityError) {
+          unawaited(
+            speakSafe(
+              'Tidak ada koneksi internet. Rute tidak dapat dihitung ulang. '
+              'Harap berhati-hati, panduan mungkin tidak sesuai dengan posisi Anda saat ini.',
+              priority: TtsPriority.warning,
+              deduplicationKey: 'navigation-reroute-offline',
+              replacementKey: 'navigation-guidance',
+              maxAge: const Duration(seconds: 10),
+            ),
+          );
+        }
+
         AppFeedback.show(
           context,
           userFriendlyMsg,
           type: AppFeedbackType.error,
-          announce: true,
+          announce: !(wasNavigating && isConnectivityError),
         );
       }
     }

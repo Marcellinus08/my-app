@@ -46,6 +46,7 @@ dependencies:
   flutter_tts: ^4.2.0
   flutter_blue_plus: ^1.35.5
   permission_handler: ^11.4.0
+  path_provider: ^2.1.5
   
   # State Management
   provider: ^6.1.2
