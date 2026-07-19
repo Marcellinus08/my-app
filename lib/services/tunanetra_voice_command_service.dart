@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../utils/constants.dart';
+import 'app_exit_service.dart';
 import 'smart_cane_ble_service.dart';
 import 'sos_service.dart';
 import 'stt_service.dart';
@@ -64,6 +65,14 @@ class TunaNetraVoiceCommands {
   static bool isPageStatusCommand(String command) {
     final text = command.toLowerCase();
     return text.contains('status halaman') || text.contains('halaman apa');
+  }
+
+  static bool isCloseAppCommand(String command) {
+    final text = command.toLowerCase();
+    return text.contains('tutup aplikasi') ||
+        text.contains('keluar aplikasi') ||
+        text.contains('akhiri aplikasi') ||
+        text.contains('matikan aplikasi');
   }
 
   static bool isPairingCodeCommand(String command) {
@@ -201,6 +210,10 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
 
         final text = result.toLowerCase();
         if (onCommand != null) {
+          if (TunaNetraVoiceCommands.isCloseAppCommand(text)) {
+            _handleCloseAppVoiceCommand();
+            return;
+          }
           onCommand(text).then((handled) {
             if (handled) return;
             if (TunaNetraVoiceCommands.isReconnectSmartCaneCommand(text)) {
@@ -228,6 +241,11 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
 
         if (TunaNetraVoiceCommands.isReconnectSmartCaneCommand(text)) {
           _handleReconnectSmartCaneCommand();
+          return;
+        }
+
+        if (TunaNetraVoiceCommands.isCloseAppCommand(text)) {
+          _handleCloseAppVoiceCommand();
           return;
         }
 
@@ -378,6 +396,64 @@ mixin TunaNetraHomeVoiceCommandMixin<T extends StatefulWidget> on State<T> {
       _isHomeCommandSpeaking = false;
       _hasHandledHomeCommand = false;
     }
+  }
+
+  Future<void> _handleCloseAppVoiceCommand() async {
+    if (_hasHandledHomeCommand) return;
+    _hasHandledHomeCommand = true;
+    _homeCommandListenerActive = false;
+    await _homeCommandSttService.stopListening();
+
+    _isHomeCommandSpeaking = true;
+    await _homeCommandTtsService.speak(
+      'Apakah Anda yakin ingin menutup aplikasi? Jawab ya untuk menutup, atau tidak untuk batal.',
+      replacementKey: _screenTtsKey,
+    );
+    _isHomeCommandSpeaking = false;
+
+    if (!mounted) {
+      _hasHandledHomeCommand = false;
+      return;
+    }
+
+    await _homeCommandSttService.startListening(
+      (answer) async {
+        final text = answer.toLowerCase();
+        await _homeCommandSttService.stopListening();
+
+        if (TunaNetraVoiceCommands.isAcceptCommand(text)) {
+          _isHomeCommandSpeaking = true;
+          await _homeCommandTtsService.speak(
+            'Menutup aplikasi. Semua layanan dihentikan.',
+            replacementKey: _screenTtsKey,
+          );
+          await AppExitService.closeApp();
+          return;
+        }
+
+        _isHomeCommandSpeaking = true;
+        await _homeCommandTtsService.speak(
+          'Batal menutup aplikasi.',
+          replacementKey: _screenTtsKey,
+        );
+        _isHomeCommandSpeaking = false;
+        _hasHandledHomeCommand = false;
+      },
+      onNoSpeechDetected: () {
+        _isHomeCommandSpeaking = true;
+        _homeCommandTtsService
+            .speak(
+              'Tidak ada jawaban. Batal menutup aplikasi.',
+              replacementKey: _screenTtsKey,
+            )
+            .whenComplete(() {
+              _isHomeCommandSpeaking = false;
+              _hasHandledHomeCommand = false;
+            });
+      },
+      pauseFor: const Duration(seconds: 4),
+      finalResultsOnly: true,
+    );
   }
 
   Future<void> _handleBackVoiceCommand() async {

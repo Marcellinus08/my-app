@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../utils/constants.dart';
+import '../../services/app_exit_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/tunanetra_voice_command_service.dart';
 import 'tunanetra_profile_screen.dart';
@@ -31,34 +32,26 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
 
   Future<bool> _handleSettingsVoiceCommand(String command) async {
     if (command.contains('profil') || command.contains('profile')) {
-      await _openSettingsSubPage(
-        page: const TunaNetraProfileScreen(),
-      );
+      await _openSettingsSubPage(page: const TunaNetraProfileScreen());
       return true;
     }
 
     if (command.contains('kata sandi') ||
         command.contains('password') ||
         command.contains('sandi')) {
-      await _openSettingsSubPage(
-        page: const PasswordSettingsScreen(),
-      );
+      await _openSettingsSubPage(page: const PasswordSettingsScreen());
       return true;
     }
 
     if (command.contains('keluarga') || command.contains('akun keluarga')) {
-      await _openSettingsSubPage(
-        page: const ConnectedFamilyAccountsScreen(),
-      );
+      await _openSettingsSubPage(page: const ConnectedFamilyAccountsScreen());
       return true;
     }
 
     return false;
   }
 
-  Future<void> _openSettingsSubPage({
-    required Widget page,
-  }) async {
+  Future<void> _openSettingsSubPage({required Widget page}) async {
     await stopHomeVoiceCommandListener();
     if (!mounted) return;
 
@@ -146,6 +139,14 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
                         color: AppColors.error,
                         onTap: _showLogoutDialog,
                       ),
+                      const _SettingsDivider(),
+                      _SettingsItem(
+                        icon: Icons.power_settings_new_rounded,
+                        title: 'Tutup Aplikasi',
+                        subtitle: 'Hentikan layanan dan tutup aplikasi',
+                        color: AppColors.error,
+                        onTap: _showCloseAppDialog,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 14),
@@ -177,20 +178,25 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
       ),
       child: Row(
         children: [
-          Material(
-            color: AppColors.primaryDark,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: () => Navigator.pop(context),
+          Semantics(
+            button: true,
+            label: 'Kembali',
+            child: Material(
+              color: AppColors.primaryDark,
               borderRadius: BorderRadius.circular(12),
-              child: const SizedBox(
-                width: 48,
-                height: 48,
-                child: Icon(
-                  Icons.arrow_back_rounded,
-                  color: Colors.white,
-                  size: 23,
-                  semanticLabel: 'Kembali',
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                borderRadius: BorderRadius.circular(12),
+                child: const ExcludeSemantics(
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Icon(
+                      Icons.arrow_back_rounded,
+                      color: Colors.white,
+                      size: 23,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -429,6 +435,24 @@ class _TunaNetraSettingsScreenState extends State<TunaNetraSettingsScreen>
 
     if (!mounted) return;
     navigator.pushNamedAndRemoveUntil(AppRoutes.login, (route) => false);
+  }
+
+  Future<void> _showCloseAppDialog() async {
+    final confirmed = await showAppConfirmDialog(
+      context: context,
+      title: 'Tutup Aplikasi',
+      description:
+          'Apakah Anda yakin ingin menutup aplikasi dan menghentikan layanan latar belakang?',
+      icon: Icons.power_settings_new_rounded,
+      iconColor: AppColors.error,
+      cancelText: 'Batal',
+      confirmText: 'Tutup',
+      confirmButtonColor: AppColors.error,
+      isDangerous: true,
+    );
+
+    if (confirmed != true) return;
+    await AppExitService.closeApp();
   }
 }
 

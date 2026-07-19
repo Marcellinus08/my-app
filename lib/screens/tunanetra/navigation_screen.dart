@@ -13,6 +13,7 @@ import '../../models/navigation_instruction_model.dart';
 import '../../services/places_service.dart';
 import '../../services/routing_service.dart';
 import '../../services/analytics_service.dart';
+import '../../services/app_exit_service.dart';
 import '../../services/live_tracking_service.dart';
 import '../../services/realtime_live_tracking_service.dart';
 import '../../services/navigation_history_service.dart';
@@ -25,6 +26,8 @@ import '../../widgets/app_dialog.dart';
 import 'package:teman_arah/response_time/obstacle_tts_response_time.dart';
 import 'package:teman_arah/response_time/sos_notification_response_time.dart';
 import 'package:teman_arah/response_time/gps_tracking_response_time.dart';
+
+enum _GpsAccuracyStatus { good, fair, weak }
 
 class NavigationScreen extends StatefulWidget {
   const NavigationScreen({super.key});
@@ -60,9 +63,8 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const double _arrivalThresholdMeters = 10.0;
   static const double _routeEndArrivalThresholdMeters = 5.0;
   static const double _routeEndDestinationToleranceMeters = 20.0;
-  static const double _maximumAcceptedGpsAccuracyMeters = 25.0;
-  static const double _maximumCueGpsAccuracyMeters = 20.0;
-  static const double _maximumNowCueGpsAccuracyMeters = 10.0;
+  static const double _goodGpsAccuracyMeters = 10.0;
+  static const double _fairGpsAccuracyMeters = 20.0;
   static const double _turnCompletionHeadingToleranceDegrees = 45.0;
   static const double _turnAreaDistanceMeters = 10.0;
   static const double _minimumWalkingSpeedMs = 0.2;
@@ -71,7 +73,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const double _turnAnchorMinimumAngleDegrees = 20.0;
   static const int _requiredArrivalConfirmations = 3;
   static const int _requiredManeuverConfirmations = 2;
+  static const int _requiredFairAccuracyManeuverConfirmations = 3;
+  static const int _requiredGpsStatusChangeSamples = 3;
   static const int _gpsCueWindowSize = 5;
+  static const Duration _gpsWeakAnnouncementInterval = Duration(seconds: 5);
   static const Duration _maneuverConfirmationInterval = Duration(
     milliseconds: 500,
   );
@@ -126,7 +131,11 @@ class _NavigationScreenState extends State<NavigationScreen>
   DateTime? _offRouteSince;
   DateTime? _lastRerouteAt;
   bool _isOffRouteWarningVisible = false;
-  bool _hasAnnouncedGpsWeakSignal = false;
+  DateTime? _lastGpsWeakAnnouncementAt;
+  bool _wasGpsWeak = false;
+  _GpsAccuracyStatus? _stableGpsAccuracyStatus;
+  _GpsAccuracyStatus? _pendingGpsAccuracyStatus;
+  int _pendingGpsAccuracyStatusCount = 0;
 
   // Route info (distance, duration) - Walking mode
   double _routeDistanceKm = 0.0;
@@ -211,15 +220,24 @@ class _NavigationScreenState extends State<NavigationScreen>
   String _buildSimpleObstacleMessage(SmartCaneSensorData data) {
     final decisionRaw = data.decision?.trim().toLowerCase() ?? '';
     final direction = switch (decisionRaw) {
-      'kiri' || 'belok kiri' || 'left' ||
-      'pindah kiri' || 'pindah ke kiri' ||
-      'geser kiri' || 'geser ke kiri' => 'kiri',
-      'kanan' || 'belok kanan' || 'right' ||
-      'pindah kanan' || 'pindah ke kanan' ||
-      'geser kanan' || 'geser ke kanan' => 'kanan',
+      'kiri' ||
+      'belok kiri' ||
+      'left' ||
+      'pindah kiri' ||
+      'pindah ke kiri' ||
+      'geser kiri' ||
+      'geser ke kiri' => 'kiri',
+      'kanan' ||
+      'belok kanan' ||
+      'right' ||
+      'pindah kanan' ||
+      'pindah ke kanan' ||
+      'geser kanan' ||
+      'geser ke kanan' => 'kanan',
       _ => '',
     };
-    final isStop = decisionRaw == 'stop' ||
+    final isStop =
+        decisionRaw == 'stop' ||
         decisionRaw == 'berhenti' ||
         decisionRaw == 'berhenti sementara';
 
@@ -237,7 +255,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       switch (d.label.toLowerCase()) {
         case 'road':
           final pos = _posSuffix(d.position);
-          return pos.isEmpty ? 'Jalur kendaraan! Mundur.' : 'Jalur kendaraan$pos!';
+          return pos.isEmpty
+              ? 'Jalur kendaraan! Mundur.'
+              : 'Jalur kendaraan$pos!';
         case 'pothole':
           final pos = _posSuffix(d.position);
           return pos.isEmpty ? 'Lubang di depan.' : 'Lubang$pos.';
@@ -260,8 +280,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       'bus',
       'truck',
     };
-    final alertDets =
-        dets.where((d) => alertSet.contains(d.label.toLowerCase())).toList();
+    final alertDets = dets
+        .where((d) => alertSet.contains(d.label.toLowerCase()))
+        .toList();
     if (alertDets.isNotEmpty) {
       if (alertDets.length >= 2) {
         final l1 = _labelId(alertDets[0].label);
@@ -426,17 +447,17 @@ class _NavigationScreenState extends State<NavigationScreen>
   @override
   void initState() {
     super.initState();
-    TTSService.onSpeechStartHook  = ObstacleTtsTimer.onTtsStart;
-    TTSService.onSpeechSendHook   = ObstacleTtsTimer.onTtsSend;
+    TTSService.onSpeechStartHook = ObstacleTtsTimer.onTtsStart;
+    TTSService.onSpeechSendHook = ObstacleTtsTimer.onTtsSend;
     TTSService.onTtsStopStartHook = ObstacleTtsTimer.onTtsStopStart;
-    SosService.onAuthDone      = SosRtTimer.onAuthDone;
+    SosService.onAuthDone = SosRtTimer.onAuthDone;
     SosService.onFirestoreDone = SosRtTimer.onFirestoreDone;
-    SosService.onWorkerDone    = SosRtTimer.onWorkerDone;
+    SosService.onWorkerDone = SosRtTimer.onWorkerDone;
     GpsRtTimer.reset();
-    LiveTrackingService.onWriteStart      = GpsRtTimer.onWriteStart;
-    LiveTrackingService.onBatteryDone     = GpsRtTimer.onBatteryDone;
+    LiveTrackingService.onWriteStart = GpsRtTimer.onWriteStart;
+    LiveTrackingService.onBatteryDone = GpsRtTimer.onBatteryDone;
     LiveTrackingService.onGetWriteStartMs = GpsRtTimer.getWriteStartMs;
-    LiveTrackingService.onGetSampleNum    = GpsRtTimer.getSampleNum;
+    LiveTrackingService.onGetSampleNum = GpsRtTimer.getSampleNum;
     RealtimeLiveTrackingService.onRtdbWriteDone = GpsRtTimer.onRtdbWriteDone;
     unawaited(_ttsService.init());
     WidgetsBinding.instance.addObserver(this);
@@ -445,12 +466,16 @@ class _NavigationScreenState extends State<NavigationScreen>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     )..addListener(_onLocationAnimationTick);
-    _latestSmartCaneSensorData = _smartCaneBleService.latestSensorData;
+    _latestSmartCaneSensorData = _smartCaneBleService.isConnected
+        ? _smartCaneBleService.latestSensorData
+        : null;
+    _smartCaneBleService.addListener(_handleSmartCaneConnectionChanged);
     _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
     _smartCaneSensorSubscription = _smartCaneBleService.sensorDataStream.listen(
       (data) {
         if (!mounted) return;
         ObstacleTtsTimer.onBleData(data.status, data.timestamp);
+        if (!_smartCaneBleService.isConnected) return;
         setState(() => _latestSmartCaneSensorData = data);
         _handleSensorTts(data);
       },
@@ -550,7 +575,6 @@ class _NavigationScreenState extends State<NavigationScreen>
             final text = result.toString().toLowerCase();
             if (text.trim().isEmpty) return;
 
-
             _handleNavigationCommand(text);
           },
           onNoSpeechDetected: () {
@@ -588,11 +612,35 @@ class _NavigationScreenState extends State<NavigationScreen>
     _navigationSttStarting = false;
   }
 
+  void _handleSmartCaneConnectionChanged() {
+    if (!mounted) return;
+
+    final nextSensorData = _smartCaneBleService.isConnected
+        ? _smartCaneBleService.latestSensorData
+        : null;
+
+    if (identical(_latestSmartCaneSensorData, nextSensorData)) return;
+
+    setState(() {
+      _latestSmartCaneSensorData = nextSensorData;
+      if (nextSensorData == null) {
+        _lastSensorTtsAt = null;
+        _lastSensorLevel = 0;
+        _safePathDetectedAt = null;
+      }
+    });
+  }
+
   Future<void> _handleNavigationCommand(String command) async {
     final cleanedCommand = command.trim();
     if (cleanedCommand.length < 2) return;
 
     await _stopNavigationStt();
+
+    if (TunaNetraVoiceCommands.isCloseAppCommand(cleanedCommand)) {
+      await _confirmCloseAppFromNavigationVoice();
+      return;
+    }
 
     if (TunaNetraVoiceCommands.isHomeCommand(cleanedCommand)) {
       _suppressTtsStopOnDispose = true;
@@ -632,7 +680,9 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (cleanedCommand.contains('hentikan')) {
       if (_isFreeMode) {
         _exitFreeMode();
-        await speakSafe('Mode jelajah dihentikan. Kembali ke halaman pilih tempat.');
+        await speakSafe(
+          'Mode jelajah dihentikan. Kembali ke halaman pilih tempat.',
+        );
       } else {
         await speakSafe('Navigasi dihentikan');
         await _endNavigationSession();
@@ -708,6 +758,38 @@ class _NavigationScreenState extends State<NavigationScreen>
       _smartCaneBleService.isConnected
           ? 'SmartCane berhasil terhubung kembali.'
           : 'SmartCane belum dapat terhubung. Pastikan SmartCane menyala dan berada di dekat Anda.',
+    );
+  }
+
+  Future<void> _confirmCloseAppFromNavigationVoice() async {
+    await speakSafe(
+      'Apakah Anda yakin ingin menutup aplikasi? Jawab ya untuk menutup, atau tidak untuk batal.',
+    );
+
+    await _sttService.startListening(
+      (answer) async {
+        await _stopNavigationStt();
+        final text = answer.toLowerCase();
+        if (TunaNetraVoiceCommands.isAcceptCommand(text)) {
+          await speakSafe('Menutup aplikasi. Semua layanan dihentikan.');
+          await _endNavigationSession();
+          await AppExitService.closeApp();
+          return;
+        }
+
+        await speakSafe('Batal menutup aplikasi.');
+      },
+      onNoSpeechDetected: () {
+        unawaited(speakSafe('Tidak ada jawaban. Batal menutup aplikasi.'));
+      },
+      onStatus: (status) {
+        _navigationSttActive = status == 'listening';
+      },
+      onError: (_) {
+        _navigationSttActive = false;
+      },
+      pauseFor: const Duration(seconds: 4),
+      finalResultsOnly: true,
     );
   }
 
@@ -860,47 +942,47 @@ class _NavigationScreenState extends State<NavigationScreen>
   // Future<void> _onFallDetected(SmartCaneFallEvent event) async {
   //   if (!mounted) return;
 
-    // TTS langsung — tidak perlu cek _isNavigating,
-    // jatuh tetap diumumkan meski navigasi belum aktif
-    // unawaited(
-    //   speakSafe(
-    //     'Peringatan! Terdeteksi jatuh. Apakah Anda baik-baik saja?',
-    //     priority: TtsPriority.critical,
-    //     deduplicationKey: 'fall-detected',
-    //     replacementKey: 'sensor-hazard',
-    //   ),
-    // );
+  // TTS langsung — tidak perlu cek _isNavigating,
+  // jatuh tetap diumumkan meski navigasi belum aktif
+  // unawaited(
+  //   speakSafe(
+  //     'Peringatan! Terdeteksi jatuh. Apakah Anda baik-baik saja?',
+  //     priority: TtsPriority.critical,
+  //     deduplicationKey: 'fall-detected',
+  //     replacementKey: 'sensor-hazard',
+  //   ),
+  // );
 
-    // Tunda dialog 1.5 detik supaya TTS sempat mulai dulu
-    // await Future.delayed(const Duration(milliseconds: 1500));
-    // if (!mounted) return;
+  // Tunda dialog 1.5 detik supaya TTS sempat mulai dulu
+  // await Future.delayed(const Duration(milliseconds: 1500));
+  // if (!mounted) return;
 
-    // showDialog(
-    //   context: context,
-    //   barrierDismissible: false,
-    //   builder: (_) => AlertDialog(
-    //     title: const Text('Terdeteksi Jatuh'),
-    //     content: Text(
-    //       'Sistem mendeteksi kemungkinan jatuh '
-    //       '(${(event.probability * 100).toStringAsFixed(0)}%).\n\n'
-    //       'Apakah Anda membutuhkan bantuan?',
-    //     ),
-    //     actions: [
-    //       TextButton(
-    //         onPressed: () => Navigator.pop(context),
-    //         child: const Text('Saya Baik-Baik Saja'),
-    //       ),
-    //       TextButton(
-    //         style: TextButton.styleFrom(foregroundColor: Colors.red),
-    //         onPressed: () {
-    //           Navigator.pop(context);
-    //           unawaited(_triggerNavigationSos());
-    //         },
-    //         child: const Text('Kirim SOS'),
-    //       ),
-    //     ],
-    //   ),
-    // );
+  // showDialog(
+  //   context: context,
+  //   barrierDismissible: false,
+  //   builder: (_) => AlertDialog(
+  //     title: const Text('Terdeteksi Jatuh'),
+  //     content: Text(
+  //       'Sistem mendeteksi kemungkinan jatuh '
+  //       '(${(event.probability * 100).toStringAsFixed(0)}%).\n\n'
+  //       'Apakah Anda membutuhkan bantuan?',
+  //     ),
+  //     actions: [
+  //       TextButton(
+  //         onPressed: () => Navigator.pop(context),
+  //         child: const Text('Saya Baik-Baik Saja'),
+  //       ),
+  //       TextButton(
+  //         style: TextButton.styleFrom(foregroundColor: Colors.red),
+  //         onPressed: () {
+  //           Navigator.pop(context);
+  //           unawaited(_triggerNavigationSos());
+  //         },
+  //         child: const Text('Kirim SOS'),
+  //       ),
+  //     ],
+  //   ),
+  // );
   // }
 
   Future<void> _announceSosStatus(String message) async {
@@ -958,6 +1040,58 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   double _headingDifference(double first, double second) {
     return (((first - second + 540) % 360) - 180).abs();
+  }
+
+  _GpsAccuracyStatus _gpsAccuracyStatus(double accuracy) {
+    if (!accuracy.isFinite) return _GpsAccuracyStatus.weak;
+    if (accuracy <= _goodGpsAccuracyMeters) return _GpsAccuracyStatus.good;
+    if (accuracy <= _fairGpsAccuracyMeters) return _GpsAccuracyStatus.fair;
+    return _GpsAccuracyStatus.weak;
+  }
+
+  _GpsAccuracyStatus _stableGpsAccuracyStatusFor(double accuracy) {
+    final rawStatus = _gpsAccuracyStatus(accuracy);
+    final stableStatus = _stableGpsAccuracyStatus;
+
+    if (stableStatus == null) {
+      _stableGpsAccuracyStatus = rawStatus;
+      _pendingGpsAccuracyStatus = null;
+      _pendingGpsAccuracyStatusCount = 0;
+      return rawStatus;
+    }
+
+    if (rawStatus == stableStatus) {
+      _pendingGpsAccuracyStatus = null;
+      _pendingGpsAccuracyStatusCount = 0;
+      return stableStatus;
+    }
+
+    if (_pendingGpsAccuracyStatus == rawStatus) {
+      _pendingGpsAccuracyStatusCount++;
+    } else {
+      _pendingGpsAccuracyStatus = rawStatus;
+      _pendingGpsAccuracyStatusCount = 1;
+    }
+
+    if (_pendingGpsAccuracyStatusCount >= _requiredGpsStatusChangeSamples) {
+      _stableGpsAccuracyStatus = rawStatus;
+      _pendingGpsAccuracyStatus = null;
+      _pendingGpsAccuracyStatusCount = 0;
+      return rawStatus;
+    }
+
+    return stableStatus;
+  }
+
+  void _resetGpsAccuracyStatusStabilizer() {
+    _stableGpsAccuracyStatus = null;
+    _pendingGpsAccuracyStatus = null;
+    _pendingGpsAccuracyStatusCount = 0;
+  }
+
+  bool _canUseGpsForNavigation(double accuracy) {
+    return (_stableGpsAccuracyStatus ?? _gpsAccuracyStatus(accuracy)) !=
+        _GpsAccuracyStatus.weak;
   }
 
   void _addGpsCueSample(LatLng location) {
@@ -1137,13 +1271,37 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   double _maneuverZoneMeters(double gpsAccuracy) {
-    if (gpsAccuracy <= _maximumNowCueGpsAccuracyMeters) {
-      return _turnAreaDistanceMeters;
-    }
-    return 0;
+    final accuracyStatus =
+        _stableGpsAccuracyStatus ?? _gpsAccuracyStatus(gpsAccuracy);
+    return switch (accuracyStatus) {
+      _GpsAccuracyStatus.good => _turnAreaDistanceMeters,
+      _GpsAccuracyStatus.fair => _turnAreaDistanceMeters * 0.8,
+      _GpsAccuracyStatus.weak => 0,
+    };
   }
 
-  String _turnAreaInstruction(String instruction) {
+  String _turnAreaInstruction(TurnType turnType, String instruction) {
+    switch (turnType) {
+      case TurnType.uturn:
+        return 'area balik arah';
+      case TurnType.sharpRight:
+        return 'area belok kanan tajam';
+      case TurnType.right:
+        return 'area belok kanan';
+      case TurnType.slightRight:
+        return 'area belok kanan sedikit';
+      case TurnType.straight:
+        return 'area lanjut lurus';
+      case TurnType.slightLeft:
+        return 'area belok kiri sedikit';
+      case TurnType.left:
+        return 'area belok kiri';
+      case TurnType.sharpLeft:
+        return 'area belok kiri tajam';
+      case TurnType.unknown:
+        break;
+    }
+
     final normalized = instruction.toLowerCase();
     if (normalized.contains('balik arah')) return 'area untuk balik arah';
     if (normalized.contains('belok kanan tajam')) {
@@ -1154,7 +1312,10 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
     if (normalized.contains('belok kanan')) return 'area belok kanan';
     if (normalized.contains('belok kiri')) return 'area belok kiri';
-    return 'area perubahan arah';
+    if (normalized.contains('lurus') || normalized.contains('lanjut')) {
+      return 'area lanjut lurus';
+    }
+    return 'area manuver berikutnya';
   }
 
   double _currentMovementHeading() {
@@ -1328,34 +1489,54 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   void _onGpsPositionUpdate(Position position) {
-    final hasReliableAccuracy =
-        !position.accuracy.isFinite ||
-        position.accuracy <= _maximumAcceptedGpsAccuracyMeters;
-    if (!hasReliableAccuracy) {
+    final accuracyStatus = _stableGpsAccuracyStatusFor(position.accuracy);
+    final canUseGpsForNavigation = accuracyStatus != _GpsAccuracyStatus.weak;
+    final hasGoodAccuracy = accuracyStatus == _GpsAccuracyStatus.good;
+    final now = DateTime.now();
+    String? gpsRecoveryMessage;
+
+    if (!canUseGpsForNavigation) {
       _arrivalConfirmationCount = 0;
       debugPrint(
         '[NAVIGATION] GPS low accuracy: ${position.accuracy.toStringAsFixed(1)}m',
       );
-      if (!_hasAnnouncedGpsWeakSignal) {
-        _hasAnnouncedGpsWeakSignal = true;
+      final shouldAnnounceWeakGps =
+          _lastGpsWeakAnnouncementAt == null ||
+          now.difference(_lastGpsWeakAnnouncementAt!) >=
+              _gpsWeakAnnouncementInterval;
+      if (shouldAnnounceWeakGps) {
+        final isFirstWeakAnnouncement = !_wasGpsWeak;
+        final weakGpsMessage = isFirstWeakAnnouncement
+            ? 'GPS lemah. Mohon berpindah ke area terbuka.'
+            : 'GPS masih lemah.';
+        _lastGpsWeakAnnouncementAt = now;
         unawaited(
           speakSafe(
-            'Sinyal GPS lemah.',
+            weakGpsMessage,
             priority: TtsPriority.warning,
-            deduplicationKey: 'navigation-gps-weak',
+            deduplicationKey: 'navigation-gps-weak-$weakGpsMessage',
             replacementKey: 'navigation-guidance',
             maxAge: const Duration(seconds: 10),
           ),
         );
         if (mounted) {
-          AppFeedback.warning(context, 'Sinyal GPS lemah.');
+          AppFeedback.warning(context, weakGpsMessage);
         }
       }
+      _wasGpsWeak = true;
     } else {
-      _hasAnnouncedGpsWeakSignal = false;
+      _lastGpsWeakAnnouncementAt = null;
+      if (_wasGpsWeak) {
+        _wasGpsWeak = false;
+        gpsRecoveryMessage = hasGoodAccuracy
+            ? 'Akurasi GPS baik. Navigasi dilanjutkan.'
+            : 'Akurasi GPS cukup. Navigasi dilanjutkan.';
+        if (mounted) {
+          AppFeedback.success(context, gpsRecoveryMessage);
+        }
+      }
     }
 
-    final now = DateTime.now();
     final updatedLocation = LatLng(position.latitude, position.longitude);
 
     if (_lastGpsUpdateAt != null && _lastGpsLocation != null) {
@@ -1381,18 +1562,23 @@ class _NavigationScreenState extends State<NavigationScreen>
     _lastPredictionTickAt = now;
     _predictedDistanceSinceLastGps = 0.0;
 
+    final snapThresholdMeters = switch (accuracyStatus) {
+      _GpsAccuracyStatus.good => _routeSnapThresholdMeters,
+      _GpsAccuracyStatus.fair => _routeSnapThresholdMeters * 0.6,
+      _GpsAccuracyStatus.weak => 0.0,
+    };
     final snapResult = _snapPositionToRoute(
       updatedLocation,
-      thresholdMeters: hasReliableAccuracy ? _routeSnapThresholdMeters : 0,
+      thresholdMeters: snapThresholdMeters,
     );
-    final displayLocation = hasReliableAccuracy
+    final displayLocation = canUseGpsForNavigation
         ? snapResult.position
         : updatedLocation;
 
     setState(() {
       _userLocation = updatedLocation;
       _isUsingPredictedPosition = false;
-      _currentSnappedRoutePoint = hasReliableAccuracy && snapResult.snapped
+      _currentSnappedRoutePoint = canUseGpsForNavigation && snapResult.snapped
           ? displayLocation
           : null;
       if (position.heading >= 0) {
@@ -1409,19 +1595,25 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     _animateUserLocation(displayLocation);
 
-    if (hasReliableAccuracy) {
+    if (canUseGpsForNavigation) {
       _addGpsCueSample(updatedLocation);
       final stabilizedCueLocation = _getStabilizedCueLocation(displayLocation);
       _confirmPendingTurn(stabilizedCueLocation);
     }
 
-    if (hasReliableAccuracy && _confirmArrivalFromGps(updatedLocation)) {
+    if (hasGoodAccuracy && _confirmArrivalFromGps(updatedLocation)) {
       unawaited(_handleArrival());
       return;
     }
 
-    if (hasReliableAccuracy) {
-      _updateLiveInstructionDistance(displayLocation, allowVoiceCue: true);
+    if (canUseGpsForNavigation) {
+      _updateLiveInstructionDistance(
+        displayLocation,
+        allowVoiceCue: gpsRecoveryMessage == null,
+      );
+      if (gpsRecoveryMessage != null) {
+        _announceGpsRecoveryGuidance(gpsRecoveryMessage, displayLocation);
+      }
       _updateRouteProgress(
         snapResult.segmentIndex,
         snapResult.distanceToRouteMeters,
@@ -1672,6 +1864,40 @@ class _NavigationScreenState extends State<NavigationScreen>
     }
   }
 
+  void _announceGpsRecoveryGuidance(
+    String recoveryMessage,
+    LatLng displayLocation,
+  ) {
+    var guidanceMessage = recoveryMessage;
+
+    if (_isNavigating &&
+        _navigationInstructions.isNotEmpty &&
+        _currentInstructionIndex < _navigationInstructions.length) {
+      final instruction = _navigationInstructions[_currentInstructionIndex];
+      final remainingMeters =
+          _remainingDistanceAlongPolyline(
+            displayLocation,
+            instruction.polylinePoints,
+          ) ??
+          _currentInstructionRemainingMeters ??
+          instruction.distance;
+      final distanceText = _formatRouteDistanceSpeech(remainingMeters);
+      guidanceMessage =
+          '$recoveryMessage Instruksi saat ini, ${instruction.instruction}. '
+          'Sisa sekitar $distanceText.';
+    }
+
+    unawaited(
+      speakSafe(
+        guidanceMessage,
+        priority: TtsPriority.navigation,
+        deduplicationKey: 'navigation-gps-recovered-guidance',
+        replacementKey: 'navigation-guidance',
+        maxAge: const Duration(seconds: 10),
+      ),
+    );
+  }
+
   void _announceInstructionCueIfNeeded(
     double remainingMeters,
     LatLng displayLocation,
@@ -1681,12 +1907,13 @@ class _NavigationScreenState extends State<NavigationScreen>
     if (_isSpeaking) return;
 
     final gpsAccuracy = _lastKnownGpsPosition?.accuracy;
-    if (gpsAccuracy == null ||
-        !gpsAccuracy.isFinite ||
-        gpsAccuracy > _maximumCueGpsAccuracyMeters) {
+    if (gpsAccuracy == null || !_canUseGpsForNavigation(gpsAccuracy)) {
       _maneuverConfirmationCounts[_currentInstructionIndex] = 0;
       return;
     }
+    final isFairAccuracy =
+        (_stableGpsAccuracyStatus ?? _gpsAccuracyStatus(gpsAccuracy)) ==
+        _GpsAccuracyStatus.fair;
 
     final instruction = _navigationInstructions[_currentInstructionIndex];
     final nextInstructionIndex = _currentInstructionIndex + 1;
@@ -1746,7 +1973,10 @@ class _NavigationScreenState extends State<NavigationScreen>
       final confirmationCount =
           (_maneuverConfirmationCounts[_currentInstructionIndex] ?? 0) + 1;
       _maneuverConfirmationCounts[_currentInstructionIndex] = confirmationCount;
-      if (confirmationCount < _requiredManeuverConfirmations) {
+      final requiredConfirmations = isFairAccuracy
+          ? _requiredFairAccuracyManeuverConfirmations
+          : _requiredManeuverConfirmations;
+      if (confirmationCount < requiredConfirmations) {
         return;
       }
 
@@ -1848,8 +2078,16 @@ class _NavigationScreenState extends State<NavigationScreen>
       _pendingTurnStartLocation = displayLocation;
     }
 
+    final turnAreaInstruction =
+        nextInstructionIndex < _navigationInstructions.length
+        ? _turnAreaInstruction(
+            _navigationInstructions[nextInstructionIndex].turnType,
+            cueInstruction,
+          )
+        : _turnAreaInstruction(TurnType.unknown, cueInstruction);
+
     await speakSafe(
-      'Anda sudah masuk ${_turnAreaInstruction(cueInstruction)}.',
+      'Anda sudah masuk $turnAreaInstruction.',
       priority: TtsPriority.navigation,
       deduplicationKey: 'navigation-turn-area-$sourceInstructionIndex',
       replacementKey: 'navigation-guidance',
@@ -2552,7 +2790,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       _offRouteSince = null;
       _lastRerouteAt = null;
       _isOffRouteWarningVisible = false;
-      _hasAnnouncedGpsWeakSignal = false;
+      _lastGpsWeakAnnouncementAt = null;
+      _wasGpsWeak = false;
+      _resetGpsAccuracyStatusStabilizer();
       _navigationInstructions = [];
       _currentInstructionIndex = 0;
       _currentInstructionRemainingMeters = null;
@@ -2581,19 +2821,20 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   @override
   void dispose() {
-    TTSService.onSpeechStartHook  = null;
-    TTSService.onSpeechSendHook   = null;
+    TTSService.onSpeechStartHook = null;
+    TTSService.onSpeechSendHook = null;
     TTSService.onTtsStopStartHook = null;
-    SosService.onAuthDone      = null;
+    SosService.onAuthDone = null;
     SosService.onFirestoreDone = null;
-    SosService.onWorkerDone    = null;
-    LiveTrackingService.onWriteStart      = null;
-    LiveTrackingService.onBatteryDone     = null;
+    SosService.onWorkerDone = null;
+    LiveTrackingService.onWriteStart = null;
+    LiveTrackingService.onBatteryDone = null;
     LiveTrackingService.onGetWriteStartMs = null;
-    LiveTrackingService.onGetSampleNum    = null;
+    LiveTrackingService.onGetSampleNum = null;
     RealtimeLiveTrackingService.onRtdbWriteDone = null;
     WidgetsBinding.instance.removeObserver(this);
     _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(false);
+    _smartCaneBleService.removeListener(_handleSmartCaneConnectionChanged);
     if (_currentTripId != null) {
       final startedAt = _tripStartedAt ?? _navigationStartTime;
       final durationSeconds = startedAt == null
@@ -2994,7 +3235,9 @@ class _NavigationScreenState extends State<NavigationScreen>
       _offRouteSince = null;
       _lastRerouteAt = null;
       _isOffRouteWarningVisible = false;
-      _hasAnnouncedGpsWeakSignal = false;
+      _lastGpsWeakAnnouncementAt = null;
+      _wasGpsWeak = false;
+      _resetGpsAccuracyStatusStabilizer();
       _routeDistanceKm = 0.0;
       _routeDurationMinutes = 0.0;
       _routeLoadError = '';
@@ -3049,7 +3292,9 @@ class _NavigationScreenState extends State<NavigationScreen>
           _offRouteSince = null;
           _lastRerouteAt = null;
           _isOffRouteWarningVisible = false;
-          _hasAnnouncedGpsWeakSignal = false;
+          _lastGpsWeakAnnouncementAt = null;
+          _wasGpsWeak = false;
+          _resetGpsAccuracyStatusStabilizer();
           _isLoadingRoute = false;
           _routeLoadError = '';
           _navigationInstructions = instructions;
@@ -3136,10 +3381,9 @@ class _NavigationScreenState extends State<NavigationScreen>
           _routeLoadError = userFriendlyMsg;
         });
 
-        final isConnectivityError = error
-            .toString()
-            .toLowerCase()
-            .contains('tidak ada koneksi internet');
+        final isConnectivityError = error.toString().toLowerCase().contains(
+          'tidak ada koneksi internet',
+        );
 
         if (wasNavigating && isConnectivityError) {
           unawaited(
@@ -3178,7 +3422,6 @@ class _NavigationScreenState extends State<NavigationScreen>
         _updateRemainingDuration();
       }
     });
-
   }
 
   /// Update remaining duration based on current location
@@ -3239,7 +3482,6 @@ class _NavigationScreenState extends State<NavigationScreen>
 
             // Tandai bahwa kita perlu memicu suara SETELAH setState selesai
             forwardInstruction = true;
-
           }
           _lastDurationUpdateTime = now;
         });
@@ -3253,7 +3495,6 @@ class _NavigationScreenState extends State<NavigationScreen>
           );
           _updateLiveInstructionDistance(_userLocation, allowVoiceCue: false);
         }
-
       }
     } catch (e) {
       // Silently fail - don't show error to user during navigation
@@ -3336,92 +3577,99 @@ class _NavigationScreenState extends State<NavigationScreen>
     final routeSummary =
         '${_routeDistanceKm.toStringAsFixed(1)} km · ${_routeDurationMinutes.toStringAsFixed(0)} menit';
 
-    return GestureDetector(
-      onTap: _showRouteInfoPanel,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.textPrimary.withValues(alpha: 0.06),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+    return Semantics(
+      button: true,
+      label: 'Instruksi berikutnya: ${instruction.instruction}, $stepText',
+      hint: 'Menampilkan detail rute',
+      child: GestureDetector(
+        onTap: _showRouteInfoPanel,
+        child: ExcludeSemantics(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.textPrimary.withValues(alpha: 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: AppColors.primaryLight.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(11),
-              ),
-              child: Center(
-                child: Text(emoji, style: const TextStyle(fontSize: 21)),
-              ),
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    instruction.instruction,
-                    style: AppTextStyles.bodyLarge.copyWith(
-                      color: AppColors.textPrimary,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.fade,
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(11),
                   ),
-                  const SizedBox(height: 4),
-                  Row(
+                  child: Center(
+                    child: Text(emoji, style: const TextStyle(fontSize: 21)),
+                  ),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.directions_rounded,
-                        size: 12,
-                        color: AppColors.primaryDark,
-                      ),
-                      const SizedBox(width: 4),
                       Text(
-                        'Setelah $distanceText',
+                        instruction.instruction,
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          color: AppColors.textPrimary,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.fade,
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.directions_rounded,
+                            size: 12,
+                            color: AppColors.primaryDark,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Setelah $distanceText',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            stepText,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.primaryDark,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        routeSummary,
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        stepText,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.primaryDark,
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    routeSummary,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -3586,20 +3834,26 @@ class _NavigationScreenState extends State<NavigationScreen>
       ),
       child: Row(
         children: [
-          Material(
-            color: AppColors.primaryDark,
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: () => Navigator.pop(context),
+          Semantics(
+            button: true,
+            label: 'Kembali',
+            hint: 'Menutup pemilihan tempat',
+            child: Material(
+              color: AppColors.primaryDark,
               borderRadius: BorderRadius.circular(12),
-              child: const SizedBox(
-                width: 48,
-                height: 48,
-                child: Icon(
-                  Icons.arrow_back_rounded,
-                  color: Colors.white,
-                  size: 24,
-                  semanticLabel: 'Kembali',
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                borderRadius: BorderRadius.circular(12),
+                child: const ExcludeSemantics(
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Icon(
+                      Icons.arrow_back_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -3714,9 +3968,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   void _enterFreeMode() {
     setState(() => _isFreeMode = true);
     _smartCaneBleService.setNavigationHazardAnnouncementsEnabled(true);
-    unawaited(
-      speakSafe('Mode jelajah aktif.'),
-    );
+    unawaited(speakSafe('Mode jelajah aktif.'));
   }
 
   void _exitFreeMode() {
@@ -3730,80 +3982,87 @@ class _NavigationScreenState extends State<NavigationScreen>
   Widget _buildFreeModeCard() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _enterFreeMode,
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  AppColors.primaryDark,
-                  AppColors.primaryDark.withValues(alpha: 0.82),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primaryDark.withValues(alpha: 0.22),
-                  blurRadius: 14,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-            child: Row(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.sensors_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 13),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Mode Jelajah',
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Deteksi rintangan tanpa navigasi ke tujuan',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: Colors.white.withValues(alpha: 0.78),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+      child: Semantics(
+        button: true,
+        label: 'Mode Jelajah, deteksi rintangan tanpa navigasi ke tujuan',
+        hint: 'Mengaktifkan mode jelajah',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _enterFreeMode,
+            borderRadius: BorderRadius.circular(14),
+            child: ExcludeSemantics(
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.primaryDark,
+                      AppColors.primaryDark.withValues(alpha: 0.82),
                     ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primaryDark.withValues(alpha: 0.22),
+                      blurRadius: 14,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 8),
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: Colors.white.withValues(alpha: 0.7),
-                  size: 16,
+                padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.sensors_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Mode Jelajah',
+                            style: AppTextStyles.bodyLarge.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                              letterSpacing: 0,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Deteksi rintangan tanpa navigasi ke tujuan',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.white.withValues(alpha: 0.78),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: Colors.white.withValues(alpha: 0.7),
+                      size: 16,
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -3812,8 +4071,8 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   Widget _buildFreeModeScreen() {
-    final data = _latestSmartCaneSensorData;
     final isConnected = _smartCaneBleService.isConnected;
+    final data = isConnected ? _latestSmartCaneSensorData : null;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFD),
@@ -3838,26 +4097,32 @@ class _NavigationScreenState extends State<NavigationScreen>
               ),
               child: Row(
                 children: [
-                  Material(
-                    color: AppColors.primaryDark,
-                    borderRadius: BorderRadius.circular(12),
-                    child: InkWell(
-                      onTap: () {
-                        _exitFreeMode();
-                        unawaited(_ttsService.stop());
-                        unawaited(
-                          speakSafe('Kembali ke halaman pilih tempat.'),
-                        );
-                      },
+                  Semantics(
+                    button: true,
+                    label: 'Kembali',
+                    hint: 'Keluar dari mode jelajah',
+                    child: Material(
+                      color: AppColors.primaryDark,
                       borderRadius: BorderRadius.circular(12),
-                      child: const SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: Icon(
-                          Icons.arrow_back_rounded,
-                          color: Colors.white,
-                          size: 24,
-                          semanticLabel: 'Kembali',
+                      child: InkWell(
+                        onTap: () {
+                          _exitFreeMode();
+                          unawaited(_ttsService.stop());
+                          unawaited(
+                            speakSafe('Kembali ke halaman pilih tempat.'),
+                          );
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: const ExcludeSemantics(
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Icon(
+                              Icons.arrow_back_rounded,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -4000,7 +4265,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                     if (data != null) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'Diperbarui ${_formatTimestamp(data.timestamp)}',
+                        'Data sensor realtime',
                         style: AppTextStyles.caption.copyWith(
                           color: AppColors.textSecondary,
                           fontSize: 12,
@@ -4115,9 +4380,7 @@ class _NavigationScreenState extends State<NavigationScreen>
             ),
           ),
           const SizedBox(height: 10),
-          ...data.detections.map(
-            (detection) => _buildDetectionRow(detection),
-          ),
+          ...data.detections.map((detection) => _buildDetectionRow(detection)),
         ],
       ),
     );
@@ -4198,14 +4461,6 @@ class _NavigationScreenState extends State<NavigationScreen>
     );
   }
 
-  String _formatTimestamp(DateTime time) {
-    final now = DateTime.now();
-    final diff = now.difference(time).inSeconds;
-    if (diff < 5) return 'baru saja';
-    if (diff < 60) return '$diff detik lalu';
-    return '${(diff / 60).floor()} menit lalu';
-  }
-
   Widget _buildPlaceListItem(PlaceModel place) {
     final isFamilyPlace = place.isPrivate;
     const familyAccent = Color(0xFF0F766E);
@@ -4223,142 +4478,154 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              _selectedPlace = place;
-              _isLoadingRoute = true;
-            });
+      child: Semantics(
+        button: true,
+        label:
+            '${_formatPlaceName(place.name)}, ${_formatPlaceAddress(place.address, categoryLabel, name: place.name)}',
+        hint: 'Memilih tujuan ini',
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () {
+              setState(() {
+                _selectedPlace = place;
+                _isLoadingRoute = true;
+              });
 
-            // Start continuous location streaming immediately.
-            // Route will load automatically from first streaming GPS update.
-            _startLocationStreaming();
+              // Start continuous location streaming immediately.
+              // Route will load automatically from first streaming GPS update.
+              _startLocationStreaming();
 
-            // Center map ke lokasi user (bukan tempat tujuan)
-            Future.delayed(const Duration(milliseconds: 300), () {
-              _safeMoveMap(_userLocation, 18.0);
-            });
-          },
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: borderColor),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.textPrimary.withValues(alpha: 0.035),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                if (isFamilyPlace)
-                  Positioned.fill(
-                    left: 0,
-                    right: null,
-                    child: Container(
-                      width: 2.5,
-                      color: familyAccent.withValues(alpha: 0.82),
+              // Center map ke lokasi user (bukan tempat tujuan)
+              Future.delayed(const Duration(milliseconds: 300), () {
+                _safeMoveMap(_userLocation, 18.0);
+              });
+            },
+            borderRadius: BorderRadius.circular(14),
+            child: ExcludeSemantics(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: borderColor),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.textPrimary.withValues(alpha: 0.035),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     ),
-                  ),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    isFamilyPlace ? 16 : 13,
-                    11,
-                    12,
-                    11,
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: isFamilyPlace
-                              ? familyAccentSoft.withValues(alpha: 0.86)
-                              : AppColors.infoLight.withValues(alpha: 0.54),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          _getCategoryIcon(place.category),
-                          color: accentColor,
-                          size: 21,
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  children: [
+                    if (isFamilyPlace)
+                      Positioned.fill(
+                        left: 0,
+                        right: null,
+                        child: Container(
+                          width: 2.5,
+                          color: familyAccent.withValues(alpha: 0.82),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _formatPlaceName(place.name),
-                              maxLines: 2,
-                              overflow: TextOverflow.fade,
-                              style: AppTextStyles.bodyLarge.copyWith(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
-                                height: 1.18,
-                              ),
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        isFamilyPlace ? 16 : 13,
+                        11,
+                        12,
+                        11,
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: isFamilyPlace
+                                  ? familyAccentSoft.withValues(alpha: 0.86)
+                                  : AppColors.infoLight.withValues(alpha: 0.54),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            const SizedBox(height: 3),
-                            Text(
-                              addressText,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: AppTextStyles.bodySmall.copyWith(
-                                color: AppColors.textSecondary,
-                                fontSize: 12.5,
-                                height: 1.28,
-                              ),
+                            child: Icon(
+                              _getCategoryIcon(place.category),
+                              color: accentColor,
+                              size: 21,
                             ),
-                            const SizedBox(height: 6),
-                            Row(
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  categoryLabel.toUpperCase(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: accentColor.withValues(alpha: 0.82),
-                                    fontSize: 10.5,
+                                  _formatPlaceName(place.name),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.fade,
+                                  style: AppTextStyles.bodyLarge.copyWith(
+                                    fontSize: 15,
                                     fontWeight: FontWeight.w800,
-                                    letterSpacing: 0,
+                                    color: AppColors.textPrimary,
+                                    height: 1.18,
                                   ),
                                 ),
-                                if (isFamilyPlace) ...[
-                                  const SizedBox(width: 6),
-                                  _buildFamilyPlaceBadge(),
-                                ],
+                                const SizedBox(height: 3),
+                                Text(
+                                  addressText,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12.5,
+                                    height: 1.28,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Text(
+                                      categoryLabel.toUpperCase(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: accentColor.withValues(
+                                          alpha: 0.82,
+                                        ),
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0,
+                                      ),
+                                    ),
+                                    if (isFamilyPlace) ...[
+                                      const SizedBox(width: 6),
+                                      _buildFamilyPlaceBadge(),
+                                    ],
+                                  ],
+                                ),
                               ],
                             ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 7),
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.arrow_forward_rounded,
+                              color: AppColors.textSecondary.withValues(
+                                alpha: 0.9,
+                              ),
+                              size: 17,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 7),
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.arrow_forward_rounded,
-                          color: AppColors.textSecondary.withValues(alpha: 0.9),
-                          size: 17,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -4690,82 +4957,90 @@ class _NavigationScreenState extends State<NavigationScreen>
                         ),
                         width: 90,
                         height: 90,
-                        child: GestureDetector(
-                          onTap: () {
-                            _goToLocation(
-                              LatLng(
-                                _selectedPlace!.latitude,
-                                _selectedPlace!.longitude,
-                              ),
-                            );
-                            AppFeedback.info(
-                              context,
-                              'Peta dipusatkan ke ${_selectedPlace!.name}.',
-                              announce: true,
-                            );
-                          },
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Pin icon
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: AppColors.primaryDark,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.textPrimary.withValues(
-                                        alpha: 0.12,
+                        child: Semantics(
+                          button: true,
+                          label: 'Penanda tujuan ${_selectedPlace!.name}',
+                          hint: 'Memusatkan peta ke tujuan',
+                          child: GestureDetector(
+                            onTap: () {
+                              _goToLocation(
+                                LatLng(
+                                  _selectedPlace!.latitude,
+                                  _selectedPlace!.longitude,
+                                ),
+                              );
+                              AppFeedback.info(
+                                context,
+                                'Peta dipusatkan ke ${_selectedPlace!.name}.',
+                                announce: true,
+                              );
+                            },
+                            child: ExcludeSemantics(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Pin icon
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: AppColors.primaryDark,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppColors.textPrimary
+                                              .withValues(alpha: 0.12),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 4),
+                                        ),
+                                      ],
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
                                       ),
-                                      blurRadius: 10,
-                                      offset: const Offset(0, 4),
                                     ),
-                                  ],
-                                  border: Border.all(
-                                    color: Colors.white,
-                                    width: 2,
+                                    child: Center(
+                                      child: Icon(
+                                        _getCategoryIcon(
+                                          _selectedPlace!.category,
+                                        ),
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                child: Center(
-                                  child: Icon(
-                                    _getCategoryIcon(_selectedPlace!.category),
-                                    color: Colors.white,
-                                    size: 20,
+                                  // Pin pointer
+                                  CustomPaint(
+                                    size: const Size(0, 8),
+                                    painter: PinPointerPainter(),
                                   ),
-                                ),
-                              ),
-                              // Pin pointer
-                              CustomPaint(
-                                size: const Size(0, 8),
-                                painter: PinPointerPainter(),
-                              ),
-                              // Place name
-                              Container(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: 6,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryDark,
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  destinationName,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: 0,
+                                  // Place name
+                                  Container(
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primaryDark,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      destinationName,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                    ),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                ),
+                                ],
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       ),
@@ -4826,26 +5101,32 @@ class _NavigationScreenState extends State<NavigationScreen>
                 ),
                 child: Row(
                   children: [
-                    Material(
-                      color: AppColors.primaryDark,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        onTap: () {
-                          unawaited(_ttsService.stop());
-                          unawaited(
-                            speakSafe('Kembali ke halaman pilih tempat.'),
-                          );
-                          unawaited(_endNavigationSession());
-                        },
+                    Semantics(
+                      button: true,
+                      label: 'Kembali',
+                      hint: 'Menghentikan navigasi',
+                      child: Material(
+                        color: AppColors.primaryDark,
                         borderRadius: BorderRadius.circular(12),
-                        child: const SizedBox(
-                          width: 48,
-                          height: 48,
-                          child: Icon(
-                            Icons.arrow_back_rounded,
-                            color: Colors.white,
-                            size: 24,
-                            semanticLabel: 'Kembali',
+                        child: InkWell(
+                          onTap: () {
+                            unawaited(_ttsService.stop());
+                            unawaited(
+                              speakSafe('Kembali ke halaman pilih tempat.'),
+                            );
+                            unawaited(_endNavigationSession());
+                          },
+                          borderRadius: BorderRadius.circular(12),
+                          child: const ExcludeSemantics(
+                            child: SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: Icon(
+                                Icons.arrow_back_rounded,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -4904,17 +5185,24 @@ class _NavigationScreenState extends State<NavigationScreen>
                   ),
                 ],
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: _goToCurrentLocation,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    child: Icon(
-                      Icons.my_location_rounded,
-                      color: AppColors.primaryDark,
-                      size: 22,
+              child: Semantics(
+                button: true,
+                label: 'Posisi saya',
+                hint: 'Memusatkan peta ke lokasi Anda',
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: _goToCurrentLocation,
+                    borderRadius: BorderRadius.circular(12),
+                    child: ExcludeSemantics(
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        child: Icon(
+                          Icons.my_location_rounded,
+                          color: AppColors.primaryDark,
+                          size: 22,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -5062,105 +5350,113 @@ class _NavigationScreenState extends State<NavigationScreen>
                           ),
                         )
                       : _routeDistanceKm > 0 && !hasActiveInstruction
-                      ? GestureDetector(
-                          onTap: _showRouteInfoPanel,
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: const Color(0xFFE2E8F0),
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.textPrimary.withValues(
-                                    alpha: 0.08,
+                      ? Semantics(
+                          button: true,
+                          label:
+                              'Tujuan: $destinationName, ${_routeDistanceKm.toStringAsFixed(1)} km, ${_routeDurationMinutes.toStringAsFixed(0).split(".")[0]} menit',
+                          hint: 'Menampilkan detail rute',
+                          child: GestureDetector(
+                            onTap: _showRouteInfoPanel,
+                            child: ExcludeSemantics(
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
                                   ),
-                                  blurRadius: 14,
-                                  offset: const Offset(0, 6),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primaryLight.withValues(
-                                      alpha: 0.16,
-                                    ),
-                                    borderRadius: BorderRadius.circular(13),
-                                  ),
-                                  child: Icon(
-                                    Icons.route_rounded,
-                                    color: AppColors.primaryDark,
-                                    size: 25,
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        'Tujuan: $destinationName',
-                                        style: AppTextStyles.bodyLarge.copyWith(
-                                          color: AppColors.textPrimary,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 16,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.fade,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.textPrimary.withValues(
+                                        alpha: 0.08,
                                       ),
-                                      const SizedBox(height: 6),
-                                      Row(
+                                      blurRadius: 14,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primaryLight
+                                            .withValues(alpha: 0.16),
+                                        borderRadius: BorderRadius.circular(13),
+                                      ),
+                                      child: Icon(
+                                        Icons.route_rounded,
+                                        color: AppColors.primaryDark,
+                                        size: 25,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
-                                            '${_routeDistanceKm.toStringAsFixed(1)} km',
-                                            style: TextStyle(
-                                              color: AppColors.primaryDark,
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 14,
-                                            ),
+                                            'Tujuan: $destinationName',
+                                            style: AppTextStyles.bodyLarge
+                                                .copyWith(
+                                                  color: AppColors.textPrimary,
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 16,
+                                                ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.fade,
                                           ),
-                                          const SizedBox(width: 12),
-                                          Container(
-                                            width: 1,
-                                            height: 16,
-                                            color: const Color(0xFFE2E8F0),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Text(
-                                            '${_routeDurationMinutes.toStringAsFixed(0).split(".")[0]} menit',
-                                            style: const TextStyle(
-                                              color: Color(0xFF16A34A),
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 14,
-                                            ),
+                                          const SizedBox(height: 6),
+                                          Row(
+                                            children: [
+                                              Text(
+                                                '${_routeDistanceKm.toStringAsFixed(1)} km',
+                                                style: TextStyle(
+                                                  color: AppColors.primaryDark,
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Container(
+                                                width: 1,
+                                                height: 16,
+                                                color: const Color(0xFFE2E8F0),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Text(
+                                                '${_routeDurationMinutes.toStringAsFixed(0).split(".")[0]} menit',
+                                                style: const TextStyle(
+                                                  color: Color(0xFF16A34A),
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 14,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ],
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF8FAFC),
+                                        borderRadius: BorderRadius.circular(11),
+                                      ),
+                                      child: Icon(
+                                        Icons.chevron_right_rounded,
+                                        color: AppColors.primaryDark,
+                                        size: 26,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Container(
-                                  width: 36,
-                                  height: 36,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
-                                    borderRadius: BorderRadius.circular(11),
-                                  ),
-                                  child: Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: AppColors.primaryDark,
-                                    size: 26,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ),
                           ),
                         )

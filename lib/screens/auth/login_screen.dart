@@ -379,13 +379,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 20),
                           Center(
-                            child: GestureDetector(
+                            child: Semantics(
+                              button: true,
+                              label: 'Belum punya akun? Daftar di sini',
+                              hint: 'Membuka halaman pendaftaran',
+                              child: GestureDetector(
                               onTap: () {
                                 Navigator.pushReplacementNamed(
                                   context,
                                   AppRoutes.register,
                                 );
                               },
+                              child: ExcludeSemantics(
                               child: RichText(
                                 text: TextSpan(
                                   text: 'Belum punya akun? ',
@@ -403,6 +408,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ],
                                 ),
                               ),
+                              ),
+                            ),
                             ),
                           ),
                         ],
@@ -540,11 +547,17 @@ class _AuthRoleTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final iconColor = isSelected ? Colors.white : AppColors.primaryDark;
 
-    return Material(
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: 'Masuk sebagai $title, $subtitle',
+      hint: isSelected ? 'Sudah dipilih' : null,
+      child: Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
+        child: ExcludeSemantics(
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.all(14),
@@ -611,6 +624,8 @@ class _AuthRoleTile extends StatelessWidget {
             ],
           ),
         ),
+        ),
+      ),
       ),
     );
   }
@@ -658,11 +673,16 @@ class _AuthSubmitButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    return Semantics(
+      button: true,
+      label: label,
+      hint: isLoading ? 'Sedang memproses' : null,
+      child: Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: isLoading ? null : onTap,
         borderRadius: BorderRadius.circular(18),
+        child: ExcludeSemantics(
         child: Ink(
           height: 54,
           decoration: BoxDecoration(
@@ -702,6 +722,8 @@ class _AuthSubmitButton extends StatelessWidget {
                   ),
           ),
         ),
+        ),
+      ),
       ),
     );
   }

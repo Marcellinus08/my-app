@@ -10,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../utils/constants.dart';
 import '../../utils/app_feedback.dart';
 import '../../services/auth_service.dart';
+import '../../services/app_exit_service.dart';
 import '../../services/core_permission_service.dart';
 import '../../services/live_tracking_service.dart';
 import '../../services/navigation_history_service.dart';
@@ -93,14 +94,14 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   @override
   void initState() {
     super.initState();
-    SosService.onAuthDone      = SosRtTimer.onAuthDone;
+    SosService.onAuthDone = SosRtTimer.onAuthDone;
     SosService.onFirestoreDone = SosRtTimer.onFirestoreDone;
-    SosService.onWorkerDone    = SosRtTimer.onWorkerDone;
+    SosService.onWorkerDone = SosRtTimer.onWorkerDone;
     GpsRtTimer.reset();
-    LiveTrackingService.onWriteStart      = GpsRtTimer.onWriteStart;
-    LiveTrackingService.onBatteryDone     = GpsRtTimer.onBatteryDone;
+    LiveTrackingService.onWriteStart = GpsRtTimer.onWriteStart;
+    LiveTrackingService.onBatteryDone = GpsRtTimer.onBatteryDone;
     LiveTrackingService.onGetWriteStartMs = GpsRtTimer.getWriteStartMs;
-    LiveTrackingService.onGetSampleNum    = GpsRtTimer.getSampleNum;
+    LiveTrackingService.onGetSampleNum = GpsRtTimer.getSampleNum;
     RealtimeLiveTrackingService.onRtdbWriteDone = GpsRtTimer.onRtdbWriteDone;
     WidgetsBinding.instance.addObserver(this);
     _initializeAnimations();
@@ -306,7 +307,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   void _handleCommand(String command) async {
     await _stopHomeStt();
 
-    if (TunaNetraVoiceCommands.isHomeCommand(command)) {
+    if (TunaNetraVoiceCommands.isCloseAppCommand(command)) {
+      await _confirmCloseAppFromVoice();
+    } else if (TunaNetraVoiceCommands.isHomeCommand(command)) {
       await speakSafe("Kamu sudah berada di halaman utama");
     } else if (TunaNetraVoiceCommands.isSosCommand(command)) {
       await _triggerEmergency();
@@ -365,7 +368,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           onNoSpeechDetected: () {
             if (!mounted) return;
             unawaited(
-              speakSafe('Tidak ada suara terdeteksi. Tekan tombol dan coba lagi.'),
+              speakSafe(
+                'Tidak ada suara terdeteksi. Tekan tombol dan coba lagi.',
+              ),
             );
           },
           onStatus: (status) {
@@ -417,8 +422,40 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         text.contains("smartcane") ||
         text.contains("smarthcane") ||
         text.contains("pengaturan") ||
+        TunaNetraVoiceCommands.isCloseAppCommand(text) ||
         TunaNetraVoiceCommands.isPageStatusCommand(text) ||
         TunaNetraVoiceCommands.isSosCommand(text);
+  }
+
+  Future<void> _confirmCloseAppFromVoice() async {
+    await speakSafe(
+      'Apakah Anda yakin ingin menutup aplikasi? Jawab ya untuk menutup, atau tidak untuk batal.',
+    );
+
+    await _sttService.startListening(
+      (answer) async {
+        await _stopHomeStt();
+        final text = answer.toLowerCase();
+        if (TunaNetraVoiceCommands.isAcceptCommand(text)) {
+          await speakSafe('Menutup aplikasi. Semua layanan dihentikan.');
+          await AppExitService.closeApp();
+          return;
+        }
+
+        await speakSafe('Batal menutup aplikasi.');
+      },
+      onNoSpeechDetected: () {
+        unawaited(speakSafe('Tidak ada jawaban. Batal menutup aplikasi.'));
+      },
+      onStatus: (status) {
+        _homeSttActive = status == 'listening';
+      },
+      onError: (_) {
+        _homeSttActive = false;
+      },
+      pauseFor: const Duration(seconds: 4),
+      finalResultsOnly: true,
+    );
   }
 
   bool _isConnectSmartCaneCommand(String command) {
@@ -848,8 +885,8 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     }
   }
 
-  Future<void> _startHomeBleScan({
-    Duration timeout = const Duration(seconds: 12),
+  Future<bool> _startHomeBleScan({
+    Duration timeout = const Duration(seconds: 10),
   }) async {
     await _checkHomeBluetoothStatus();
     await _requestHomeBlePermissions();
@@ -864,7 +901,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
           'Bluetooth belum aktif. Nyalakan Bluetooth lalu coba kembali.',
           isError: true,
         );
-        return;
+        return false;
       }
     }
 
@@ -873,12 +910,12 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         'Izin Bluetooth belum lengkap. Periksa izin aplikasi lalu coba kembali.',
         isError: true,
       );
-      return;
+      return false;
     }
 
     await _stopHomeBleScan(logWhenStopped: false);
 
-    if (!mounted) return;
+    if (!mounted) return false;
     setState(() {
       _homeScanResults.clear();
       _homeSelectedCaneResult = null;
@@ -906,9 +943,15 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
 
     try {
       await FlutterBluePlus.startScan(timeout: timeout);
+      await Future<void>.delayed(timeout);
+      if (FlutterBluePlus.isScanningNow) {
+        await FlutterBluePlus.stopScan();
+      }
+      return true;
     } catch (error) {
       _updateHomeBleStatus('Gagal mencari tongkat');
       debugPrint('[HOME-BLE] Scan gagal: $error');
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -944,8 +987,9 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
   Future<void> _scanAndShowHomeBleDevices() async {
     if (_bleService.isAutoConnecting) return;
 
-    await _startHomeBleScan();
+    final scanCompleted = await _startHomeBleScan();
     if (!mounted) return;
+    if (!scanCompleted) return;
 
     final results = _visibleHomeScanResults();
     if (results.isEmpty) {
@@ -1620,9 +1664,7 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
         );
   }
 
-  void _processPairingSnapshot(
-    QuerySnapshot<Map<String, dynamic>> snapshot,
-  ) {
+  void _processPairingSnapshot(QuerySnapshot<Map<String, dynamic>> snapshot) {
     if (!mounted || _isPairingDialogOpen) return;
 
     // Bersihkan ID yang sudah tidak ada di snapshot (Fix masalah 2)
@@ -1730,15 +1772,15 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     );
 
     // 3. Listener pembatalan: tutup dialog otomatis jika request dibatalkan keluarga (Fix masalah 3)
-    final cancelSub = _pairingService.watchPairingRequest(requestId).listen(
-      (doc) {
-        if (!mounted) return;
-        if (!doc.exists || doc.data()?['status'] != 'pending') {
-          sttCommandHandled = true;
-          Navigator.of(context, rootNavigator: true).pop(null);
-        }
-      },
-    );
+    final cancelSub = _pairingService.watchPairingRequest(requestId).listen((
+      doc,
+    ) {
+      if (!mounted) return;
+      if (!doc.exists || doc.data()?['status'] != 'pending') {
+        sttCommandHandled = true;
+        Navigator.of(context, rootNavigator: true).pop(null);
+      }
+    });
 
     // 4. Tampilkan dialog konfirmasi bersamaan dengan TTS
     final accepted = await showAppConfirmDialog(
@@ -2190,13 +2232,13 @@ class _TunaNetraHomeScreenState extends State<TunaNetraHomeScreen>
     routeObserver.unsubscribe(this);
     _pairingRequestSub?.cancel();
     _fadeController.dispose();
-    SosService.onAuthDone      = null;
+    SosService.onAuthDone = null;
     SosService.onFirestoreDone = null;
-    SosService.onWorkerDone    = null;
-    LiveTrackingService.onWriteStart      = null;
-    LiveTrackingService.onBatteryDone     = null;
+    SosService.onWorkerDone = null;
+    LiveTrackingService.onWriteStart = null;
+    LiveTrackingService.onBatteryDone = null;
     LiveTrackingService.onGetWriteStartMs = null;
-    LiveTrackingService.onGetSampleNum    = null;
+    LiveTrackingService.onGetSampleNum = null;
     RealtimeLiveTrackingService.onRtdbWriteDone = null;
     super.dispose();
   }
@@ -2306,72 +2348,79 @@ class _HomeBleDeviceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
-        child: Ink(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.infoLight.withValues(alpha: 0.62),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.bluetooth_rounded,
-                  color: AppColors.primaryDark,
-                  size: 22,
-                ),
+    return Semantics(
+      button: true,
+      label: 'Perangkat SmartCane $name, sinyal $rssi dBm',
+      hint: 'Menghubungkan ke perangkat ini',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: ExcludeSemantics(
+            child: Ink(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: AppColors.infoLight.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      remoteId,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption.copyWith(
-                        color: AppColors.textSecondary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    child: Icon(
+                      Icons.bluetooth_rounded,
+                      color: AppColors.primaryDark,
+                      size: 22,
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          remoteId,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption.copyWith(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    '$rssi dBm',
+                    style: AppTextStyles.caption.copyWith(
+                      color: AppColors.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 10),
-              Text(
-                '$rssi dBm',
-                style: AppTextStyles.caption.copyWith(
-                  color: AppColors.textSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -2426,6 +2475,9 @@ class _HomePairingTextFieldState extends State<_HomePairingTextField> {
         prefixIcon: Icon(widget.icon, color: AppColors.primaryDark, size: 20),
         suffixIcon: widget.obscureText
             ? IconButton(
+                tooltip: _obscureText
+                    ? 'Tampilkan ${widget.label}'
+                    : 'Sembunyikan ${widget.label}',
                 onPressed: () {
                   setState(() => _obscureText = !_obscureText);
                 },
@@ -2574,55 +2626,61 @@ class _SafetyMenuCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Ink(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, size: 20, color: color),
+    return Semantics(
+      button: true,
+      label: '$title, $subtitle',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: ExcludeSemantics(
+            child: Ink(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              const Spacer(),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.bodySmall.copyWith(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                  height: 1.15,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Icon(icon, size: 20, color: color),
+                  ),
+                  const Spacer(),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                      height: 1.15,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption.copyWith(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.caption.copyWith(
-                  fontSize: 12,
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

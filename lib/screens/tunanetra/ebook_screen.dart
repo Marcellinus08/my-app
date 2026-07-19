@@ -369,22 +369,27 @@ class _EbookScreenState extends State<EbookScreen>
       ),
       child: Row(
         children: [
-          Material(
+          Semantics(
+            button: true,
+            label: 'Kembali',
+            child: Material(
             color: AppColors.primaryDark,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
-              child: const SizedBox(
+              child: const ExcludeSemantics(
+                child: SizedBox(
                 width: 48,
                 height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 24,
-                  semanticLabel: 'Kembali',
                 ),
               ),
+              ),
+            ),
             ),
           ),
           const SizedBox(width: 12),
@@ -689,22 +694,27 @@ class _GuideDetailScreenState extends State<_GuideDetailScreen>
       ),
       child: Row(
         children: [
-          Material(
+          Semantics(
+            button: true,
+            label: 'Kembali',
+            child: Material(
             color: AppColors.primaryDark,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
-              child: const SizedBox(
+              child: const ExcludeSemantics(
+                child: SizedBox(
                 width: 48,
                 height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 24,
-                  semanticLabel: 'Kembali',
                 ),
               ),
+              ),
+            ),
             ),
           ),
           const SizedBox(width: 12),

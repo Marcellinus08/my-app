@@ -270,7 +270,11 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
       ),
       child: Row(
         children: [
-          Material(
+          Semantics(
+            button: true,
+            label: _isEditing ? 'Batal mengubah profil' : 'Kembali',
+            hint: _isEditing ? 'Membatalkan perubahan' : null,
+            child: Material(
             color: AppColors.primaryDark,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
@@ -283,18 +287,18 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
                 Navigator.pop(context);
               },
               borderRadius: BorderRadius.circular(12),
-              child: SizedBox(
+              child: ExcludeSemantics(
+                child: SizedBox(
                 width: 48,
                 height: 48,
                 child: Icon(
                   _isEditing ? Icons.close_rounded : Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 23,
-                  semanticLabel: _isEditing
-                      ? 'Batal mengubah profil'
-                      : 'Kembali',
                 ),
               ),
+              ),
+            ),
             ),
           ),
           const SizedBox(width: 12),
@@ -510,12 +514,17 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
           ),
         ),
         const SizedBox(width: 8),
-        Material(
+        Semantics(
+          button: true,
+          label: 'Buat ulang kode pairing',
+          hint: 'Membuat kode pairing baru',
+          child: Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: _regeneratePairingCode,
             borderRadius: BorderRadius.circular(10),
-            child: Ink(
+            child: ExcludeSemantics(
+              child: Ink(
               width: 32,
               height: 32,
               decoration: BoxDecoration(
@@ -528,7 +537,9 @@ class _TunaNetraProfileScreenState extends State<TunaNetraProfileScreen>
                 color: AppColors.primaryDark,
                 size: 18,
               ),
+              ),
             ),
+          ),
           ),
         ),
       ],

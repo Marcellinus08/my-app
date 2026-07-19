@@ -133,6 +133,9 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                         labelText: 'Sandi lama',
                         prefixIcon: const Icon(Icons.lock_outline_rounded),
                         suffixIcon: IconButton(
+                          tooltip: obscureCurrentPassword
+                              ? 'Tampilkan sandi lama'
+                              : 'Sembunyikan sandi lama',
                           onPressed: isSaving
                               ? null
                               : () {
@@ -164,6 +167,9 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                         labelText: 'Sandi baru',
                         prefixIcon: const Icon(Icons.lock_reset_rounded),
                         suffixIcon: IconButton(
+                          tooltip: obscureNewPassword
+                              ? 'Tampilkan sandi baru'
+                              : 'Sembunyikan sandi baru',
                           onPressed: isSaving
                               ? null
                               : () {
@@ -200,6 +206,9 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
                         labelText: 'Konfirmasi sandi',
                         prefixIcon: const Icon(Icons.verified_user_rounded),
                         suffixIcon: IconButton(
+                          tooltip: obscureConfirmPassword
+                              ? 'Tampilkan konfirmasi sandi'
+                              : 'Sembunyikan konfirmasi sandi',
                           onPressed: isSaving
                               ? null
                               : () {
@@ -459,22 +468,27 @@ class _PasswordSettingsScreenState extends State<PasswordSettingsScreen>
       ),
       child: Row(
         children: [
-          Material(
+          Semantics(
+            button: true,
+            label: 'Kembali',
+            child: Material(
             color: AppColors.primaryDark,
             borderRadius: BorderRadius.circular(12),
             child: InkWell(
               onTap: () => Navigator.pop(context),
               borderRadius: BorderRadius.circular(12),
-              child: const SizedBox(
+              child: const ExcludeSemantics(
+                child: SizedBox(
                 width: 48,
                 height: 48,
                 child: Icon(
                   Icons.arrow_back_rounded,
                   color: Colors.white,
                   size: 23,
-                  semanticLabel: 'Kembali',
                 ),
               ),
+              ),
+            ),
             ),
           ),
           const SizedBox(width: 12),

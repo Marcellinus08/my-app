@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../services/auth_service.dart';
+import '../../services/app_exit_service.dart';
 import '../../services/notification_service.dart';
 import '../../utils/constants.dart';
+import '../../widgets/app_dialog.dart';
 import '../tunanetra/password_settings_screen.dart';
 import 'family_connected_tunanetra_screen.dart';
 import 'family_profile_screen.dart';
@@ -50,8 +52,7 @@ class _FamilySettingsScreenState extends State<FamilySettingsScreen> {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  const FamilyProfileScreen(),
+                              builder: (context) => const FamilyProfileScreen(),
                             ),
                           );
                         },
@@ -66,7 +67,9 @@ class _FamilySettingsScreenState extends State<FamilySettingsScreen> {
                             context,
                             MaterialPageRoute(
                               builder: (context) =>
-                                  const PasswordSettingsScreen(enableVoice: false),
+                                  const PasswordSettingsScreen(
+                                    enableVoice: false,
+                                  ),
                             ),
                           );
                         },
@@ -99,6 +102,14 @@ class _FamilySettingsScreenState extends State<FamilySettingsScreen> {
                         subtitle: 'Keluar dari akun Teman Arah',
                         color: AppColors.error,
                         onTap: _showLogoutDialog,
+                      ),
+                      const _SettingsDivider(),
+                      _SettingsItem(
+                        icon: Icons.power_settings_new_rounded,
+                        title: 'Tutup Aplikasi',
+                        subtitle: 'Hentikan layanan dan tutup aplikasi',
+                        color: AppColors.error,
+                        onTap: _showCloseAppDialog,
                       ),
                     ],
                   ),
@@ -375,10 +386,7 @@ class _FamilySettingsScreenState extends State<FamilySettingsScreen> {
         actionsPadding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(
-            color: Color(0xFFE2E8F0),
-            width: 1,
-          ),
+          side: const BorderSide(color: Color(0xFFE2E8F0), width: 1),
         ),
         title: Row(
           children: [
@@ -481,6 +489,24 @@ class _FamilySettingsScreenState extends State<FamilySettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showCloseAppDialog() async {
+    final confirmed = await showAppConfirmDialog(
+      context: context,
+      title: 'Tutup Aplikasi',
+      description:
+          'Apakah Anda yakin ingin menutup aplikasi dan menghentikan layanan latar belakang?',
+      icon: Icons.power_settings_new_rounded,
+      iconColor: AppColors.error,
+      cancelText: 'Batal',
+      confirmText: 'Tutup',
+      confirmButtonColor: AppColors.error,
+      isDangerous: true,
+    );
+
+    if (confirmed != true) return;
+    await AppExitService.closeApp();
   }
 }
 

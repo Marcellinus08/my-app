@@ -312,7 +312,10 @@ class _ModernRoleButtonState extends State<_ModernRoleButton>
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
+    return Semantics(
+      button: true,
+      label: '${widget.title}, ${widget.subtitle}',
+      child: ScaleTransition(
       scale: _scaleAnimation,
       child: Material(
         color: Colors.transparent,
@@ -328,6 +331,7 @@ class _ModernRoleButtonState extends State<_ModernRoleButton>
             }
           },
           borderRadius: BorderRadius.circular(28),
+          child: ExcludeSemantics(
           child: Container(
             padding: const EdgeInsets.all(28),
             decoration: BoxDecoration(
@@ -436,7 +440,9 @@ class _ModernRoleButtonState extends State<_ModernRoleButton>
               ],
             ),
           ),
+          ),
         ),
+      ),
       ),
     );
   }
