@@ -3,6 +3,8 @@ import 'package:latlong2/latlong.dart';
 import '../models/navigation_instruction_model.dart';
 
 class RoutingService {
+  static const double _microStepMergeDistanceMeters = 5.0;
+
   // Menggunakan OSRM Public (router.project-osrm.org) - gratis, stabil di Android, tidak perlu API key
   // Profiles: 'car' untuk rute kendaraan, 'foot' untuk rute pejalan kaki
   // Fallback logic diterapkan jika OSRM mengembalikan durasi yang sama
@@ -312,8 +314,13 @@ class RoutingService {
             if (normalizedManeuverType == 'arrive') {
               _mergeStepIntoPreviousInstruction(
                 instructions,
+                instruction: instruction,
+                roadName: roadName,
                 distance: distance,
                 duration: duration,
+                turnType: turnType,
+                bearing: bearing,
+                location: location,
                 polylinePoints: polylinePoints,
               );
               continue;
@@ -331,8 +338,13 @@ class RoutingService {
             if (!shouldCreateInstruction) {
               _mergeStepIntoPreviousInstruction(
                 instructions,
+                instruction: instruction,
+                roadName: roadName,
                 distance: distance,
                 duration: duration,
+                turnType: turnType,
+                bearing: bearing,
+                location: location,
                 polylinePoints: polylinePoints,
               );
               continue;
@@ -353,7 +365,7 @@ class RoutingService {
           }
         }
 
-        return instructions;
+        return _postProcessInstructions(instructions);
       } else {
         throw Exception(
           'Failed to get navigation instructions: ${response.statusCode}',
@@ -435,13 +447,20 @@ class RoutingService {
 
   void _mergeStepIntoPreviousInstruction(
     List<NavigationInstruction> instructions, {
+    required String instruction,
+    required String roadName,
     required double distance,
     required double duration,
+    required TurnType turnType,
+    required double bearing,
+    required LatLng location,
     required List<LatLng> polylinePoints,
   }) {
     if (instructions.isEmpty) return;
 
     final previous = instructions.last;
+    final shouldUseIncomingInstruction =
+        _turnPriority(turnType) > _turnPriority(previous.turnType);
     final mergedPolyline = <LatLng>[...previous.polylinePoints];
 
     for (final point in polylinePoints) {
@@ -455,15 +474,115 @@ class RoutingService {
     }
 
     instructions[instructions.length - 1] = NavigationInstruction(
-      instruction: previous.instruction,
-      roadName: previous.roadName,
+      instruction: shouldUseIncomingInstruction
+          ? instruction
+          : previous.instruction,
+      roadName: shouldUseIncomingInstruction ? roadName : previous.roadName,
       distance: previous.distance + distance,
       duration: previous.duration + duration,
-      turnType: previous.turnType,
-      bearing: previous.bearing,
-      location: previous.location,
+      turnType: shouldUseIncomingInstruction ? turnType : previous.turnType,
+      bearing: shouldUseIncomingInstruction ? bearing : previous.bearing,
+      location: shouldUseIncomingInstruction ? location : previous.location,
       polylinePoints: mergedPolyline,
     );
+  }
+
+  List<NavigationInstruction> _postProcessInstructions(
+    List<NavigationInstruction> instructions,
+  ) {
+    final result = <NavigationInstruction>[];
+
+    for (final instruction in instructions) {
+      if (result.isEmpty) {
+        result.add(instruction);
+        continue;
+      }
+
+      final previous = result.last;
+      final previousIsTinyNonTurn =
+          previous.distance < _microStepMergeDistanceMeters &&
+          !_isDirectionalTurn(previous.turnType);
+      final currentIsTinyNonTurn =
+          instruction.distance < _microStepMergeDistanceMeters &&
+          !_isDirectionalTurn(instruction.turnType);
+
+      if (previousIsTinyNonTurn && _isDirectionalTurn(instruction.turnType)) {
+        result[result.length - 1] = _mergeInstructions(
+          previous,
+          instruction,
+          preferSecondInstruction: true,
+        );
+        continue;
+      }
+
+      if (currentIsTinyNonTurn) {
+        result[result.length - 1] = _mergeInstructions(
+          previous,
+          instruction,
+          preferSecondInstruction:
+              _turnPriority(instruction.turnType) >
+              _turnPriority(previous.turnType),
+        );
+        continue;
+      }
+
+      result.add(instruction);
+    }
+
+    return result;
+  }
+
+  NavigationInstruction _mergeInstructions(
+    NavigationInstruction first,
+    NavigationInstruction second, {
+    required bool preferSecondInstruction,
+  }) {
+    final mergedPolyline = <LatLng>[...first.polylinePoints];
+    for (final point in second.polylinePoints) {
+      final isDuplicate =
+          mergedPolyline.isNotEmpty &&
+          mergedPolyline.last.latitude == point.latitude &&
+          mergedPolyline.last.longitude == point.longitude;
+      if (!isDuplicate) {
+        mergedPolyline.add(point);
+      }
+    }
+
+    return NavigationInstruction(
+      instruction: preferSecondInstruction
+          ? second.instruction
+          : first.instruction,
+      roadName: preferSecondInstruction ? second.roadName : first.roadName,
+      distance: first.distance + second.distance,
+      duration: first.duration + second.duration,
+      turnType: preferSecondInstruction ? second.turnType : first.turnType,
+      bearing: preferSecondInstruction ? second.bearing : first.bearing,
+      location: preferSecondInstruction ? second.location : first.location,
+      polylinePoints: mergedPolyline,
+    );
+  }
+
+  bool _isDirectionalTurn(TurnType turnType) {
+    return switch (turnType) {
+      TurnType.uturn ||
+      TurnType.sharpRight ||
+      TurnType.right ||
+      TurnType.slightRight ||
+      TurnType.slightLeft ||
+      TurnType.left ||
+      TurnType.sharpLeft => true,
+      TurnType.straight || TurnType.unknown => false,
+    };
+  }
+
+  int _turnPriority(TurnType turnType) {
+    return switch (turnType) {
+      TurnType.uturn || TurnType.sharpRight || TurnType.sharpLeft => 4,
+      TurnType.right || TurnType.left => 3,
+      TurnType.slightRight || TurnType.slightLeft => 2,
+      TurnType.straight => 1,
+      TurnType.unknown => 0,
+    };
   }
 
   /// Find next instruction based on current location

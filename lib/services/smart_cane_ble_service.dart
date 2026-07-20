@@ -802,11 +802,17 @@ class SmartCaneDetection {
     required this.label,
     required this.position,
     required this.confidence,
+    this.confirmed = true,
   });
 
   final String label;
   final String position; // "kiri" | "tengah" | "kanan"
   final double confidence;
+
+  /// True kalau deteksi ini udah diverifikasi ultrasonik (RPi kirim field "ok").
+  /// Untuk label non-kendaraan RPi selalu kirim true (gak butuh verifikasi).
+  /// Default true kalau payload lama belum ngirim field ini (backward-compat).
+  final bool confirmed;
 
   /// Label dalam Bahasa Indonesia untuk ditampilkan di UI.
   String get localizedLabel => SmartCaneSensorData._translateObjectLabel(label);
@@ -818,17 +824,20 @@ class SmartCaneDetection {
     final conf = SmartCaneSensorData._readDouble(
       raw['conf'] ?? raw['confidence'],
     );
+    final confirmedRaw = raw['ok'] ?? raw['confirmed'];
+    final confirmed = confirmedRaw is bool ? confirmedRaw : true;
     if (label == null || label.isEmpty) return null;
     return SmartCaneDetection(
       label: label,
       position: pos ?? 'tengah',
       confidence: conf ?? 0.0,
+      confirmed: confirmed,
     );
   }
 
   @override
   String toString() =>
-      'SmartCaneDetection($label @ $position, conf=$confidence)';
+      'SmartCaneDetection($label @ $position, conf=$confidence, confirmed=$confirmed)';
 }
 
 @immutable
@@ -879,18 +888,37 @@ class SmartCaneSensorData {
         detections.isNotEmpty;
   }
 
-  /// Deteksi paling berbahaya (index 0 = prioritas tertinggi dari RPi).
-  SmartCaneDetection? get primaryDetection =>
-      detections.isNotEmpty ? detections.first : null;
+  /// Deteksi paling berbahaya (prioritas: yang udah confirmed sensor duluan,
+  /// baru fallback ke deteksi pertama kalau gak ada yang confirmed).
+  SmartCaneDetection? get primaryDetection {
+    if (detections.isEmpty) return null;
+    for (final d in detections) {
+      if (d.confirmed) return d;
+    }
+    return detections.first;
+  }
 
   /// Semua label unik yang terdeteksi di frame ini.
   List<String> get detectedLabels =>
       detections.map((d) => d.label).toSet().toList();
 
-  /// True jika ada deteksi bahaya aktif (pothole/obstacle/stair/road).
-  bool get hasDangerDetection => detections.any(
-    (d) => const {'pothole', 'obstacle', 'stair', 'road'}.contains(d.label),
-  );
+  /// Deteksi yang udah diverifikasi (label statis selalu lolos, kendaraan
+  /// cuma lolos kalau udah dikonfirmasi ultrasonik oleh RPi).
+  List<SmartCaneDetection> get confirmedDetections =>
+      detections.where((d) => d.confirmed).toList();
+
+  static const _staticHazardLabels = {'drainage', 'obstacle', 'stair', 'road'};
+  static const _vehicleHazardLabels = {
+    'person', 'car', 'motorcycle', 'truck', 'bus', 'bicycle',
+  };
+
+  /// True jika ada deteksi bahaya aktif: label statis (jalur/halangan/tangga)
+  /// selalu dihitung, kendaraan cuma dihitung kalau udah confirmed ultrasonik.
+  bool get hasDangerDetection => detections.any((d) {
+    if (_staticHazardLabels.contains(d.label)) return true;
+    if (_vehicleHazardLabels.contains(d.label)) return d.confirmed;
+    return false;
+  });
 
   String? get detectedObjectLabel => _detectedObjectLabel;
   String? get guidanceDecisionText => _decisionText;
@@ -965,8 +993,16 @@ class SmartCaneSensorData {
       caseSensitive: false,
     ).firstMatch(message);
 
-    if (match == null) return null;
-    return _normalizeObjectLabel(match.group(2));
+    if (match != null) {
+      final fromMessage = _normalizeObjectLabel(match.group(2));
+      if (fromMessage != null) return fromMessage;
+    }
+
+    // Payload RPi gak pernah kirim field mlLabel/objek-di-pesan terpisah,
+    // jadi fallback ke deteksi utama dari array "detections".
+    final primary = primaryDetection;
+    if (primary == null) return null;
+    return _normalizeObjectLabel(primary.label);
   }
 
   String? _normalizeObjectLabel(String? value) {

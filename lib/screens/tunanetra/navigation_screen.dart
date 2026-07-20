@@ -67,6 +67,9 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const double _fairGpsAccuracyMeters = 20.0;
   static const double _turnCompletionHeadingToleranceDegrees = 45.0;
   static const double _turnAreaDistanceMeters = 10.0;
+  static const double _instructionLookAheadMeters = 15.0;
+  static const double _turnCompletionMinimumDistanceMeters = 7.0;
+  static const double _turnCompletionRouteToleranceMeters = 8.0;
   static const double _minimumWalkingSpeedMs = 0.2;
   static const double _maximumWalkingCueSpeedMs = 3.0;
   static const double _turnAnchorSearchRadiusMeters = 35.0;
@@ -74,6 +77,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   static const int _requiredArrivalConfirmations = 3;
   static const int _requiredManeuverConfirmations = 2;
   static const int _requiredFairAccuracyManeuverConfirmations = 3;
+  static const int _requiredTurnCompletionConfirmations = 2;
   static const int _requiredGpsStatusChangeSamples = 3;
   static const int _gpsCueWindowSize = 5;
   static const Duration _gpsWeakAnnouncementInterval = Duration(seconds: 5);
@@ -167,6 +171,7 @@ class _NavigationScreenState extends State<NavigationScreen>
   final Map<int, Set<int>> _announcedInstructionCueMeters = {};
   final Set<int> _announcedNowInstructionIndexes = {};
   final Map<int, int> _maneuverConfirmationCounts = {};
+  final Map<int, int> _turnCompletionConfirmationCounts = {};
   final Map<int, DateTime> _lastManeuverConfirmationAt = {};
   final Map<int, double> _lastDistanceToManeuver = {};
   final List<LatLng> _gpsCueWindow = [];
@@ -1330,6 +1335,10 @@ class _NavigationScreenState extends State<NavigationScreen>
   }
 
   void _clearPendingTurn() {
+    final sourceInstructionIndex = _pendingTurnSourceInstructionIndex;
+    if (sourceInstructionIndex != null) {
+      _turnCompletionConfirmationCounts.remove(sourceInstructionIndex);
+    }
     _pendingTurnSourceInstructionIndex = null;
     _pendingTurnNextInstructionIndex = null;
     _pendingTurnExpectedHeading = null;
@@ -1356,17 +1365,38 @@ class _NavigationScreenState extends State<NavigationScreen>
       return;
     }
 
+    final nextInstruction = _navigationInstructions[nextInstructionIndex];
+    if (!_isDirectionalTurn(nextInstruction.turnType)) {
+      _clearPendingTurn();
+      return;
+    }
+
     final distanceAfterCue = _distanceBetweenPoints(
       turnStartLocation,
       stabilizedLocation,
     );
-    if (distanceAfterCue < 2) return;
+    if (distanceAfterCue < _turnCompletionMinimumDistanceMeters) return;
 
     final movementHeading = _currentMovementHeading();
     final hasEnteredNextSegment =
         _headingDifference(movementHeading, expectedHeading) <=
         _turnCompletionHeadingToleranceDegrees;
-    if (!hasEnteredNextSegment) return;
+    final distanceToNextSegment = _distanceToPolyline(
+      stabilizedLocation,
+      nextInstruction.polylinePoints,
+    );
+    final isNearNextSegment =
+        distanceToNextSegment <= _turnCompletionRouteToleranceMeters;
+    if (!hasEnteredNextSegment || !isNearNextSegment) {
+      _turnCompletionConfirmationCounts[sourceInstructionIndex] = 0;
+      return;
+    }
+
+    final confirmationCount =
+        (_turnCompletionConfirmationCounts[sourceInstructionIndex] ?? 0) + 1;
+    _turnCompletionConfirmationCounts[sourceInstructionIndex] =
+        confirmationCount;
+    if (confirmationCount < _requiredTurnCompletionConfirmations) return;
 
     if (mounted) {
       setState(() {
@@ -1707,6 +1737,40 @@ class _NavigationScreenState extends State<NavigationScreen>
     );
   }
 
+  bool _isDirectionalTurn(TurnType turnType) {
+    return switch (turnType) {
+      TurnType.uturn ||
+      TurnType.sharpRight ||
+      TurnType.right ||
+      TurnType.slightRight ||
+      TurnType.slightLeft ||
+      TurnType.left ||
+      TurnType.sharpLeft => true,
+      TurnType.straight || TurnType.unknown => false,
+    };
+  }
+
+  double _distanceToPolyline(LatLng position, List<LatLng> polylinePoints) {
+    if (polylinePoints.isEmpty) return double.infinity;
+    if (polylinePoints.length == 1) {
+      return _distanceBetweenPoints(position, polylinePoints.first);
+    }
+
+    var bestDistance = double.infinity;
+    for (var i = 0; i < polylinePoints.length - 1; i++) {
+      final projected = _projectPointToSegment(
+        position,
+        polylinePoints[i],
+        polylinePoints[i + 1],
+      );
+      final distance = _distanceBetweenPoints(position, projected);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+      }
+    }
+    return bestDistance;
+  }
+
   bool _hasReachedDestination(LatLng currentLocation) {
     if (!_isNavigating || _hasArrivedAtDestination || _selectedPlace == null) {
       return false;
@@ -1917,9 +1981,15 @@ class _NavigationScreenState extends State<NavigationScreen>
 
     final instruction = _navigationInstructions[_currentInstructionIndex];
     final nextInstructionIndex = _currentInstructionIndex + 1;
-    final hasNextTurn = nextInstructionIndex < _navigationInstructions.length;
-    final cueInstruction = hasNextTurn
-        ? _navigationInstructions[nextInstructionIndex].instruction
+    final hasNextInstruction =
+        nextInstructionIndex < _navigationInstructions.length;
+    final nextInstruction = hasNextInstruction
+        ? _navigationInstructions[nextInstructionIndex]
+        : null;
+    final hasNextTurn =
+        nextInstruction != null && _isDirectionalTurn(nextInstruction.turnType);
+    final cueInstruction = nextInstruction != null
+        ? nextInstruction.instruction
         : 'tujuan berada di depan';
     final cueLocation = _resolveTurnAnchor(instruction, nextInstructionIndex);
     final distanceToCueLocation = cueLocation == null
@@ -2021,7 +2091,10 @@ class _NavigationScreenState extends State<NavigationScreen>
       _currentInstructionIndex,
       () => <int>{},
     );
-    if (cueMeters == 50 && announcedCueMeters.contains(30)) return;
+    if (cueMeters == 50 &&
+        (announcedCueMeters.contains(30) || announcedCueMeters.contains(20))) {
+      return;
+    }
     if (cueMeters == 30 && announcedCueMeters.contains(20)) return;
     if (!announcedCueMeters.add(cueMeters)) return;
 
@@ -2799,6 +2872,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _announcedInstructionCueMeters.clear();
       _announcedNowInstructionIndexes.clear();
       _maneuverConfirmationCounts.clear();
+      _turnCompletionConfirmationCounts.clear();
       _lastManeuverConfirmationAt.clear();
       _lastDistanceToManeuver.clear();
       _gpsCueWindow.clear();
@@ -3247,6 +3321,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       _announcedInstructionCueMeters.clear();
       _announcedNowInstructionIndexes.clear();
       _maneuverConfirmationCounts.clear();
+      _turnCompletionConfirmationCounts.clear();
       _lastManeuverConfirmationAt.clear();
       _lastDistanceToManeuver.clear();
       _gpsCueWindow.clear();
@@ -3303,6 +3378,7 @@ class _NavigationScreenState extends State<NavigationScreen>
           _announcedInstructionCueMeters.clear();
           _announcedNowInstructionIndexes.clear();
           _maneuverConfirmationCounts.clear();
+          _turnCompletionConfirmationCounts.clear();
           _lastManeuverConfirmationAt.clear();
           _lastDistanceToManeuver.clear();
           _gpsCueWindow.clear();
@@ -3557,6 +3633,70 @@ class _NavigationScreenState extends State<NavigationScreen>
     });
   }
 
+  ({int index, double? distanceMeters, bool isLookAhead})
+  _resolveDisplayedInstruction() {
+    final currentIndex = _currentInstructionIndex;
+    var displayDistance = _currentInstructionRemainingMeters;
+
+    if (!_isNavigating ||
+        currentIndex >= _navigationInstructions.length ||
+        currentIndex + 1 >= _navigationInstructions.length) {
+      return (
+        index: currentIndex,
+        distanceMeters: displayDistance,
+        isLookAhead: false,
+      );
+    }
+
+    final currentInstruction = _navigationInstructions[currentIndex];
+    final nextInstruction = _navigationInstructions[currentIndex + 1];
+    if (!_isDirectionalTurn(nextInstruction.turnType)) {
+      return (
+        index: currentIndex,
+        distanceMeters: displayDistance,
+        isLookAhead: false,
+      );
+    }
+
+    final displayLocation = _currentSnappedRoutePoint ?? _animatedUserLocation;
+    final cueLocation = _resolveTurnAnchor(
+      currentInstruction,
+      currentIndex + 1,
+    );
+    if (cueLocation == null) {
+      return (
+        index: currentIndex,
+        distanceMeters: displayDistance,
+        isLookAhead: false,
+      );
+    }
+
+    final directDistance = _distanceBetweenPoints(displayLocation, cueLocation);
+    final routeDistance =
+        _remainingDistanceToAnchorAlongPolyline(
+          displayLocation,
+          currentInstruction.polylinePoints,
+          cueLocation,
+        ) ??
+        directDistance;
+    final conservativeDistance = math.max(routeDistance, directDistance);
+
+    if (conservativeDistance <= _instructionLookAheadMeters) {
+      return (
+        index: currentIndex + 1,
+        distanceMeters: conservativeDistance,
+        isLookAhead: true,
+      );
+    }
+
+    displayDistance ??= currentInstruction.distance;
+    return (
+      index: currentIndex,
+      distanceMeters: displayDistance,
+      isLookAhead: false,
+    );
+  }
+
   /// Build next instruction card for turn-by-turn navigation
   Widget _buildNextInstructionCard() {
     if (_navigationInstructions.isEmpty ||
@@ -3564,22 +3704,26 @@ class _NavigationScreenState extends State<NavigationScreen>
       return const SizedBox.shrink();
     }
 
-    final instruction = _navigationInstructions[_currentInstructionIndex];
+    final displayInfo = _resolveDisplayedInstruction();
+    final instruction = _navigationInstructions[displayInfo.index];
     final emoji = ManeuverParser.getTurnEmoji(instruction.turnType);
-    final displayDistance =
-        _currentInstructionRemainingMeters ?? instruction.distance;
+    final displayDistance = displayInfo.distanceMeters ?? instruction.distance;
     final distanceText = displayDistance > 1000
         ? '${(displayDistance / 1000).toStringAsFixed(1)} km'
         : '${displayDistance.toStringAsFixed(0)} m';
 
     final stepText =
-        '${_currentInstructionIndex + 1} dari ${_navigationInstructions.length} langkah';
+        '${displayInfo.index + 1} dari ${_navigationInstructions.length} langkah';
+    final semanticsPrefix = displayInfo.isLookAhead
+        ? 'Bersiap instruksi berikutnya'
+        : 'Instruksi berikutnya';
+    final distancePrefix = displayInfo.isLookAhead ? 'Dalam' : 'Setelah';
     final routeSummary =
         '${_routeDistanceKm.toStringAsFixed(1)} km · ${_routeDurationMinutes.toStringAsFixed(0)} menit';
 
     return Semantics(
       button: true,
-      label: 'Instruksi berikutnya: ${instruction.instruction}, $stepText',
+      label: '$semanticsPrefix: ${instruction.instruction}, $stepText',
       hint: 'Menampilkan detail rute',
       child: GestureDetector(
         onTap: _showRouteInfoPanel,
@@ -3637,7 +3781,7 @@ class _NavigationScreenState extends State<NavigationScreen>
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'Setelah $distanceText',
+                            '$distancePrefix $distanceText',
                             style: AppTextStyles.bodySmall.copyWith(
                               color: AppColors.textSecondary,
                               fontSize: 12,
@@ -4332,7 +4476,7 @@ class _NavigationScreenState extends State<NavigationScreen>
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          hasValue ? '${valueCm!.round()} cm' : '-',
+          valueCm != null ? '${valueCm.round()} cm' : '-',
           style: AppTextStyles.bodyLarge.copyWith(
             color: hasValue ? AppColors.textPrimary : AppColors.textSecondary,
             fontWeight: FontWeight.w800,
