@@ -837,23 +837,37 @@ class _NavigationScreenState extends State<NavigationScreen>
 
   PlaceModel? _findPlaceFromCommand(String command) {
     final normalizedCommand = _normalizeSearchText(command);
+    if (normalizedCommand.isEmpty) return null;
 
+    PlaceModel? bestPlace;
+    var bestScore = 0;
     for (final place in _places) {
       final normalizedName = _normalizeSearchText(place.name);
-      final normalizedCategory = _normalizeSearchText(place.category);
-      final normalizedAddress = _normalizeSearchText(place.address);
+      if (normalizedName.isEmpty) continue;
 
-      if (normalizedCommand.contains(normalizedName) ||
-          normalizedName.contains(normalizedCommand) ||
-          normalizedCommand.contains(normalizedCategory) ||
-          normalizedCategory.contains(normalizedCommand) ||
-          normalizedCommand.contains(normalizedAddress) ||
-          normalizedAddress.contains(normalizedCommand)) {
+      if (normalizedCommand == normalizedName) {
         return place;
+      }
+
+      final commandWords = normalizedCommand.split(' ').toSet();
+      final nameWords = normalizedName.split(' ').toSet();
+      final sharedWordCount = commandWords.intersection(nameWords).length;
+
+      final containsScore =
+          normalizedCommand.contains(normalizedName) ||
+              normalizedName.contains(normalizedCommand)
+          ? 100
+          : 0;
+      final wordScore = sharedWordCount * 20;
+      final score = containsScore + wordScore;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPlace = place;
       }
     }
 
-    return null;
+    return bestScore >= 40 ? bestPlace : null;
   }
 
   String _normalizeSearchText(String value) {

@@ -45,6 +45,8 @@ class SmartCaneBleService extends ChangeNotifier {
   SmartCaneSensorData? _latestSensorData;
   DateTime? _latestSensorReceivedAt;
   SmartCaneBatteryData? _latestBatteryData;
+  DateTime? _lastAutomaticSosAt;
+  static const Duration _automaticSosDedupWindow = Duration(seconds: 5);
   bool _isConnecting = false;
   bool _isAutoConnecting = false;
   bool _navigationHazardAnnouncementsEnabled = false;
@@ -134,6 +136,7 @@ class SmartCaneBleService extends ChangeNotifier {
           _connectedDevice = null;
           _connectedBleName = null;
           _latestBatteryData = null;
+          _lastAutomaticSosAt = null;
           _latestSensorData = null;
           _latestSensorReceivedAt = null;
           _sensorPayloadBuffer = '';
@@ -290,7 +293,12 @@ class SmartCaneBleService extends ChangeNotifier {
 
       final event = decoded['e']?.toString();
 
-      // Event dari a004 di sini bisa ditambahkan nanti
+      if (event == 'fall') {
+        final fallEvent = SmartCaneFallEvent.tryParse(jsonStr);
+        if (fallEvent != null) {
+          _publishFallEvent(fallEvent, source: 'a004');
+        }
+      }
     } catch (e) {
       log('[FALL] Gagal parse IMU payload: $e');
     }
@@ -312,7 +320,7 @@ class SmartCaneBleService extends ChangeNotifier {
 
     final fallEvent = SmartCaneFallEvent.tryParse(chunk);
     if (fallEvent != null) {
-      _fallEventController.add(fallEvent);
+      _publishFallEvent(fallEvent, source: 'a002');
       _sensorPayloadBuffer = '';
       return;
     }
@@ -361,6 +369,38 @@ class SmartCaneBleService extends ChangeNotifier {
     if (_sensorPayloadBuffer.length > 512) {
       _sensorPayloadBuffer = '';
     }
+  }
+
+  void _publishFallEvent(
+    SmartCaneFallEvent event, {
+    required String source,
+  }) {
+    debugPrint(
+      '[FALL] Event diterima dari $source | '
+      'prob=${event.probability.toStringAsFixed(2)}',
+    );
+
+    _fallEventController.add(event);
+
+    // Fall otomatis memakai jalur SOS yang sama dengan tombol SOS fisik.
+    // Listener buttonEventStream yang sudah menangani event "sos" tidak perlu
+    // membuat alur notifikasi baru.
+    final now = DateTime.now();
+    final lastSosAt = _lastAutomaticSosAt;
+    if (lastSosAt != null &&
+        now.difference(lastSosAt) < _automaticSosDedupWindow) {
+      debugPrint('[FALL] Event SOS duplikat diabaikan');
+      return;
+    }
+
+    _lastAutomaticSosAt = now;
+    _buttonEventController.add(
+      SmartCaneButtonEvent(
+        type: 'sos',
+        timestamp: event.timestamp,
+      ),
+    );
+    debugPrint('[FALL] Event fall diteruskan ke alur SOS aplikasi');
   }
 
   void _publishSensorData(SmartCaneSensorData data) {
@@ -621,6 +661,7 @@ class SmartCaneBleService extends ChangeNotifier {
     final device = _connectedDevice;
     if (device == null) {
       _latestBatteryData = null;
+      _lastAutomaticSosAt = null;
       _latestSensorData = null;
       _latestSensorReceivedAt = null;
       _sensorPayloadBuffer = '';
@@ -640,6 +681,7 @@ class SmartCaneBleService extends ChangeNotifier {
       _connectedDevice = null;
       _connectedBleName = null;
       _latestBatteryData = null;
+      _lastAutomaticSosAt = null;
       _latestSensorData = null;
       _latestSensorReceivedAt = null;
       _sensorPayloadBuffer = '';
@@ -718,10 +760,12 @@ class SmartCaneFallEvent {
   const SmartCaneFallEvent({
     required this.probability,
     required this.timestamp,
+    this.peakG,
   });
 
   final double probability;
   final DateTime timestamp;
+  final double? peakG;
 
   static SmartCaneFallEvent? tryParse(String payload) {
     try {
@@ -729,8 +773,17 @@ class SmartCaneFallEvent {
       if (decoded is! Map<String, dynamic>) return null;
       final event = decoded['e']?.toString();
       if (event != 'fall') return null;
+
       final prob = SmartCaneSensorData._readDouble(decoded['prob']) ?? 0.0;
-      return SmartCaneFallEvent(probability: prob, timestamp: DateTime.now());
+      return SmartCaneFallEvent(
+        probability: prob,
+        timestamp: SmartCaneSensorData._readTimestamp(
+          decoded['t'] ?? decoded['timestamp'],
+        ),
+        peakG: SmartCaneSensorData._readDouble(
+          decoded['peak'] ?? decoded['peakG'],
+        ),
+      );
     } catch (_) {
       return null;
     }
